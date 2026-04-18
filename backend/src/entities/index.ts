@@ -3,6 +3,7 @@ export * from './driver.entity';
 export * from './driver-transaction.entity';
 export * from './third-party.entity';
 export * from './trip.entity';
+export * from './parcel-expedition.entity';
 export * from './expense.entity';
 export * from './invoice.entity';
 export * from './bank-account.entity';

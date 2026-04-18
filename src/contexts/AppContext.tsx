@@ -3,10 +3,12 @@ import {
   trucksApi,
   driversApi,
   tripsApi,
+  parcelExpeditionsApi,
   expensesApi,
   invoicesApi,
   thirdPartiesApi,
 } from '@/lib/api';
+import type { ParcelExpeditionPayload } from '@/lib/api';
 import { refreshCaisseFromApi, isRemoteCaisse } from '@/lib/caisse-local';
 import { refreshBankFromApi } from '@/lib/bank-local';
 
@@ -47,6 +49,34 @@ export interface Trip {
   marchandise?: string;
   description?: string;
   statut: TripStatus;
+}
+
+export interface ParcelExpeditionLot {
+  id: string;
+  entreprise: string;
+  marchandise: string;
+  poidsKg: number;
+  notes?: string;
+}
+
+export interface ParcelExpedition {
+  id: string;
+  reference: string;
+  origine: string;
+  origineLat?: number;
+  origineLng?: number;
+  destination: string;
+  destinationLat?: number;
+  destinationLng?: number;
+  tracteurId?: string;
+  remorqueuseId?: string;
+  chauffeurId: string;
+  dateDepart: string;
+  dateArrivee: string;
+  statut: TripStatus;
+  lots: ParcelExpeditionLot[];
+  description?: string;
+  dateCreation: string;
 }
 
 export interface Expense {
@@ -159,6 +189,47 @@ function normalizeTrip(r: Record<string, unknown>): Trip {
   };
 }
 
+function normalizeParcelExpedition(r: Record<string, unknown>): ParcelExpedition {
+  const chauffeurId =
+    r.chauffeurId != null && String(r.chauffeurId) !== ''
+      ? String(r.chauffeurId)
+      : (r.chauffeur as Record<string, unknown> | undefined)?.id != null
+        ? String((r.chauffeur as Record<string, unknown>).id)
+        : '';
+  const lotsRaw = r.lots;
+  const lots: ParcelExpeditionLot[] = Array.isArray(lotsRaw)
+    ? (lotsRaw as Record<string, unknown>[]).map((row) => ({
+        id: String(row.id ?? ''),
+        entreprise: String(row.entreprise ?? ''),
+        marchandise: String(row.marchandise ?? ''),
+        poidsKg: parseNum(row.poidsKg),
+        notes: row.notes ? String(row.notes) : undefined,
+      }))
+    : [];
+  const dateDepart = String(r.dateDepart ?? '');
+  const dateArrivee = r.dateArrivee != null && String(r.dateArrivee) !== '' ? String(r.dateArrivee) : '';
+  const dateCreation = String(r.dateCreation ?? '');
+  return {
+    id: String(r.id),
+    reference: String(r.reference ?? ''),
+    origine: String(r.origine ?? ''),
+    origineLat: r.origineLat != null ? parseNum(r.origineLat) : undefined,
+    origineLng: r.origineLng != null ? parseNum(r.origineLng) : undefined,
+    destination: String(r.destination ?? ''),
+    destinationLat: r.destinationLat != null ? parseNum(r.destinationLat) : undefined,
+    destinationLng: r.destinationLng != null ? parseNum(r.destinationLng) : undefined,
+    tracteurId: r.tracteurId ? String(r.tracteurId) : undefined,
+    remorqueuseId: r.remorqueuseId ? String(r.remorqueuseId) : undefined,
+    chauffeurId,
+    dateDepart: dateDepart.includes('T') ? dateDepart.split('T')[0] : dateDepart,
+    dateArrivee: dateArrivee.includes('T') ? dateArrivee.split('T')[0] : dateArrivee,
+    statut: r.statut as TripStatus,
+    lots,
+    description: r.description ? String(r.description) : undefined,
+    dateCreation: dateCreation.includes('T') ? dateCreation.split('T')[0] : dateCreation,
+  };
+}
+
 function normalizeExpense(r: Record<string, unknown>): Expense {
   return {
     id: String(r.id),
@@ -265,6 +336,8 @@ interface AppContextType {
   setTrucks: React.Dispatch<React.SetStateAction<Truck[]>>;
   trips: Trip[];
   setTrips: React.Dispatch<React.SetStateAction<Trip[]>>;
+  parcelExpeditions: ParcelExpedition[];
+  setParcelExpeditions: React.Dispatch<React.SetStateAction<ParcelExpedition[]>>;
   expenses: Expense[];
   setExpenses: React.Dispatch<React.SetStateAction<Expense[]>>;
   invoices: Invoice[];
@@ -280,6 +353,7 @@ interface AppContextType {
   refreshTrucks: () => Promise<void>;
   refreshDrivers: () => Promise<void>;
   refreshTrips: () => Promise<void>;
+  refreshParcelExpeditions: (params?: import('@/lib/api').ParcelExpeditionQueryParams) => Promise<void>;
   refreshExpenses: () => Promise<void>;
   refreshInvoices: () => Promise<void>;
   refreshThirdParties: () => Promise<void>;
@@ -292,6 +366,12 @@ interface AppContextType {
   createTrip: (data: Parameters<typeof tripsApi.create>[0]) => Promise<Trip>;
   updateTrip: (id: string, data: Parameters<typeof tripsApi.update>[1]) => Promise<Trip>;
   deleteTrip: (id: string) => Promise<void>;
+  createParcelExpedition: (data: ParcelExpeditionPayload) => Promise<ParcelExpedition>;
+  updateParcelExpedition: (
+    id: string,
+    data: Partial<ParcelExpeditionPayload>,
+  ) => Promise<ParcelExpedition>;
+  deleteParcelExpedition: (id: string) => Promise<void>;
   createExpense: (data: Parameters<typeof expensesApi.create>[0]) => Promise<Expense>;
   updateExpense: (id: string, data: Parameters<typeof expensesApi.update>[1]) => Promise<Expense>;
   deleteExpense: (id: string) => Promise<void>;
@@ -308,6 +388,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [parcelExpeditions, setParcelExpeditions] = useState<ParcelExpedition[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -355,6 +436,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const refreshParcelExpeditions = async (
+    params?: import('@/lib/api').ParcelExpeditionQueryParams,
+  ) => {
+    try {
+      const data = await parcelExpeditionsApi.getAll(params);
+      setParcelExpeditions(
+        dedup(
+          Array.isArray(data)
+            ? data.map((row) => normalizeParcelExpedition(row as Record<string, unknown>))
+            : [],
+        ),
+      );
+    } catch (e) {
+      console.error('refreshParcelExpeditions', e);
+      setApiError(e instanceof Error ? e.message : 'Erreur API');
+    }
+  };
+
   const refreshExpenses = async () => {
     try {
       const data = await expensesApi.getAll();
@@ -396,6 +495,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           refreshTrucks(),
           refreshDrivers(),
           refreshTrips(),
+          refreshParcelExpeditions(),
           refreshExpenses(),
           refreshInvoices(),
           refreshThirdParties(),
@@ -476,6 +576,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     void refreshTrips();
   };
 
+  const createParcelExpedition = async (data: ParcelExpeditionPayload) => {
+    const r = await parcelExpeditionsApi.create(data);
+    void refreshParcelExpeditions();
+    return normalizeParcelExpedition(r as Record<string, unknown>);
+  };
+
+  const updateParcelExpedition = async (id: string, data: Partial<ParcelExpeditionPayload>) => {
+    const r = await parcelExpeditionsApi.update(id, data);
+    void refreshParcelExpeditions();
+    return normalizeParcelExpedition(r as Record<string, unknown>);
+  };
+
+  const deleteParcelExpedition = async (id: string) => {
+    await parcelExpeditionsApi.delete(id);
+    void refreshParcelExpeditions();
+  };
+
   const createExpense = async (data: Parameters<typeof expensesApi.create>[0]) => {
     const r = await expensesApi.create(data);
     void refreshExpenses();
@@ -534,6 +651,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setTrucks,
         trips,
         setTrips,
+        parcelExpeditions,
+        setParcelExpeditions,
         expenses,
         setExpenses,
         invoices,
@@ -549,6 +668,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         refreshTrucks,
         refreshDrivers,
         refreshTrips,
+        refreshParcelExpeditions,
         refreshExpenses,
         refreshInvoices,
         refreshThirdParties,
@@ -561,6 +681,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         createTrip,
         updateTrip,
         deleteTrip,
+        createParcelExpedition,
+        updateParcelExpedition,
+        deleteParcelExpedition,
         createExpense,
         updateExpense,
         deleteExpense,

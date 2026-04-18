@@ -215,6 +215,56 @@ export const tripsApi = {
   delete: (id: string) => request<void>(`/trips/${id}`, { method: 'DELETE' }),
 };
 
+export interface ParcelExpeditionLotPayload {
+  id?: string;
+  entreprise: string;
+  marchandise: string;
+  poidsKg?: number;
+  notes?: string;
+}
+
+export interface ParcelExpeditionPayload {
+  reference: string;
+  origine: string;
+  origineLat?: number;
+  origineLng?: number;
+  destination: string;
+  destinationLat?: number;
+  destinationLng?: number;
+  tracteurId?: string;
+  remorqueuseId?: string;
+  chauffeurId: string;
+  dateDepart: string;
+  dateArrivee?: string;
+  statut: TripPayload['statut'];
+  lots: ParcelExpeditionLotPayload[];
+  description?: string;
+  dateCreation?: string;
+}
+
+export type ParcelExpeditionQueryParams = {
+  statut?: TripPayload['statut'];
+  destination?: string;
+  chauffeurId?: string;
+  tracteurId?: string;
+  remorqueuseId?: string;
+  q?: string;
+  dateDepartFrom?: string;
+  dateDepartTo?: string;
+};
+
+// --- Expéditions colis (Douala → …, multi-lots) ---
+export const parcelExpeditionsApi = {
+  getAll: (params?: ParcelExpeditionQueryParams) =>
+    request<any[]>(`/parcel-expeditions${buildQuery(params as Record<string, string | number | undefined>)}`),
+  getOne: (id: string) => request<any>(`/parcel-expeditions/${id}`),
+  create: (data: ParcelExpeditionPayload) =>
+    request<any>('/parcel-expeditions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ParcelExpeditionPayload>) =>
+    request<any>(`/parcel-expeditions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/parcel-expeditions/${id}`, { method: 'DELETE' }),
+};
+
 // --- Expenses ---
 export const expensesApi = {
   getAll: () => request<any[]>('/expenses'),

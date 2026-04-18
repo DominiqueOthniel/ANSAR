@@ -1,7 +1,7 @@
 /**
  * Comptes / transactions bancaires : localStorage hors ligne, ou API Nest + Supabase si VITE_API_URL.
  */
-import type { BankAccount, BankTransaction } from '@/pages/Bank';
+import type { BankAccount, BankTransaction } from '@/lib/bank-types';
 import { bankApi } from '@/lib/api';
 import { isBankCreditType } from '@/lib/bank-rules';
 import { getCaisseSoldeInitialSync, getCaisseTransactions, isRemoteCaisse } from '@/lib/caisse-local';
@@ -131,7 +131,7 @@ export function setBankTransactions(transactions: BankTransaction[]): void {
   localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
 }
 
-/** Solde calculé comme sur la page Banque (soldeInitial + mouvements). */
+/** Solde calculé comme sur l’écran Banque (soldeInitial + mouvements). */
 export function calculateAccountBalance(
   accountId: string,
   accounts: BankAccount[],

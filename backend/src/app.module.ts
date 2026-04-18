@@ -12,6 +12,7 @@ import { BankModule } from './bank/bank.module';
 import { CaisseModule } from './caisse/caisse.module';
 import { CreditsModule } from './credits/credits.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { ParcelExpeditionsModule } from './parcel-expeditions/parcel-expeditions.module';
 
 @Module({
   controllers: [AppController],
@@ -50,6 +51,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
     CaisseModule,
     CreditsModule,
     AuditLogsModule,
+    ParcelExpeditionsModule,
   ],
 })
 export class AppModule {}

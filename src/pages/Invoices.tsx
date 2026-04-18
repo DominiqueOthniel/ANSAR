@@ -231,7 +231,7 @@ export default function Invoices() {
     if (paymentAmount > 0 && isPaiementVersBanque(mode)) {
       const accs = getBankAccounts();
       if (accs.length === 0) {
-        toast.error('Créez au moins un compte dans la page Banque pour enregistrer un virement.');
+        toast.error('Créez au moins un compte dans Banque pour enregistrer un virement.');
         return;
       }
       if (!paymentCompteBanqueId) {
@@ -2982,7 +2982,7 @@ export default function Invoices() {
                   </div>
                   {getBankAccounts().length === 0 ? (
                     <p className="text-sm text-destructive">
-                      Aucun compte enregistré. Créez-en un dans la page <strong>Banque</strong>.
+                      Aucun compte enregistré. Créez-en un dans <strong>Banque</strong>.
                     </p>
                   ) : (
                     <>

@@ -31,6 +31,7 @@ export class AppController {
         invoices,
         expenses,
         trips,
+        parcel_expeditions,
         driver_transactions,
         bank_transactions,
         bank_accounts,
@@ -54,6 +55,7 @@ export class AppController {
       invoices,
       bankAccounts,
       bankTransactions,
+      parcelExpeditions,
     ] = await Promise.all([
       this.dataSource.query('SELECT * FROM third_parties'),
       this.dataSource.query('SELECT * FROM drivers'),
@@ -64,6 +66,7 @@ export class AppController {
       this.dataSource.query('SELECT * FROM invoices'),
       this.dataSource.query('SELECT * FROM bank_accounts'),
       this.dataSource.query('SELECT * FROM bank_transactions ORDER BY date ASC'),
+      this.dataSource.query('SELECT * FROM parcel_expeditions ORDER BY "dateDepart" DESC'),
     ]);
 
     const backup = {
@@ -79,6 +82,7 @@ export class AppController {
         invoices,
         bankAccounts,
         bankTransactions,
+        parcelExpeditions,
       },
     };
 
@@ -102,7 +106,7 @@ export class AppController {
       // Vider les tables dans l'ordre des dépendances
       await queryRunner.query(`
         TRUNCATE TABLE
-          invoices, expenses, trips,
+          invoices, expenses, trips, parcel_expeditions,
           driver_transactions, bank_transactions, bank_accounts,
           trucks, drivers, third_parties
         RESTART IDENTITY CASCADE
@@ -126,6 +130,7 @@ export class AppController {
       await insert('driver_transactions', data.driverTransactions);
       await insert('trucks', data.trucks);
       await insert('trips', data.trips);
+      await insert('parcel_expeditions', data.parcelExpeditions);
       await insert('expenses', data.expenses);
       await insert('invoices', data.invoices);
       await insert('bank_accounts', data.bankAccounts);
@@ -144,6 +149,7 @@ export class AppController {
           invoices: data.invoices?.length ?? 0,
           bankAccounts: data.bankAccounts?.length ?? 0,
           bankTransactions: data.bankTransactions?.length ?? 0,
+          parcelExpeditions: data.parcelExpeditions?.length ?? 0,
         },
       };
     } catch (err) {

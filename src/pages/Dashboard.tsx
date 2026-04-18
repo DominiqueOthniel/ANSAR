@@ -21,7 +21,7 @@ import { getCaisseSoldeActuel, getTotalBanqueDisponible } from '@/lib/bank-local
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { trucks, trips, expenses, invoices, drivers, refreshTrucks, refreshDrivers, refreshTrips, refreshExpenses, refreshInvoices, refreshThirdParties } = useApp();
+  const { trucks, trips, expenses, invoices, drivers, refreshTrucks, refreshDrivers, refreshTrips, refreshParcelExpeditions, refreshExpenses, refreshInvoices, refreshThirdParties } = useApp();
   const { user, users, changeUserPassword } = useAuth();
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -72,7 +72,7 @@ export default function Dashboard() {
       const parsed = JSON.parse(text);
       if (!parsed.data || !parsed.version) throw new Error('Fichier de backup invalide ou corrompu');
       const result = await adminApi.restore(parsed.data);
-      await Promise.all([refreshTrucks(), refreshDrivers(), refreshTrips(), refreshExpenses(), refreshInvoices(), refreshThirdParties()]);
+      await Promise.all([refreshTrucks(), refreshDrivers(), refreshTrips(), refreshParcelExpeditions(), refreshExpenses(), refreshInvoices(), refreshThirdParties()]);
       toast.success(`Restauration réussie — ${Object.values(result.counts).reduce((a, b) => a + b, 0)} enregistrements restaurés`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur lors de la restauration');
@@ -115,6 +115,7 @@ export default function Dashboard() {
     { name: 'Factures', href: '/factures', icon: FileText, color: 'from-indigo-500 to-blue-500', bgColor: 'bg-indigo-50 dark:bg-indigo-950/30', borderColor: 'border-indigo-200 dark:border-indigo-800' },
     { name: 'Chauffeurs', href: '/chauffeurs', icon: Users, color: 'from-cyan-500 to-teal-500', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-200 dark:border-cyan-800' },
     { name: 'Tiers', href: '/tiers', icon: Building2, color: 'from-violet-500 to-purple-500', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-200 dark:border-violet-800' },
+    { name: 'Envoi colis', href: '/envoi-colis', icon: Package, color: 'from-sky-500 to-cyan-500', bgColor: 'bg-sky-50 dark:bg-sky-950/30', borderColor: 'border-sky-200 dark:border-sky-800' },
     { name: 'Banque', href: '/banque', icon: Landmark, color: 'from-amber-500 to-yellow-500', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-200 dark:border-amber-800' },
     { name: 'Suivi créances', href: '/credits', icon: CreditCard, color: 'from-emerald-500 to-teal-500', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30', borderColor: 'border-emerald-200 dark:border-emerald-800' },
     { name: 'Suivi GPS', href: '/suivi', icon: MapPin, color: 'from-sky-500 to-blue-500', bgColor: 'bg-sky-50 dark:bg-sky-950/30', borderColor: 'border-sky-200 dark:border-sky-800' },

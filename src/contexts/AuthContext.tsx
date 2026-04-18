@@ -78,7 +78,7 @@ interface AuthContextType {
   changeUserPassword: (targetLogin: string, newPassword: string) => Promise<void>;
   /** Flotte : camions, trajets, chauffeurs, tiers (pas les dépenses — comptable) */
   canManageFleet: boolean;
-  /** Comptabilité : dépenses, factures, banque */
+  /** Comptabilité : dépenses, factures, comptes bancaires */
   canManageAccounting: boolean;
   /** Trésorerie : caisse */
   canManageTreasury: boolean;
@@ -186,13 +186,13 @@ export const LOGIN_USER_OPTIONS = [
     login: 'gestionnaire',
     label: 'Gestionnaire',
     description:
-      'Flotte : camions, trajets, chauffeurs, tiers. GPS. Pas dépenses, facturation, banque, caisse ni crédits.',
+      'Flotte : camions, trajets, envoi colis, chauffeurs, tiers. GPS. Pas dépenses, facturation, comptes bancaires, caisse ni crédits.',
   },
   {
     login: 'comptable',
     label: 'Comptable',
     description:
-      'Comptabilité : dépenses, factures, banque, caisse et crédits. Consultation du reste de l’application (lecture seule hors ces modules).',
+      'Comptabilité : dépenses, factures, comptes bancaires, caisse et crédits. Consultation du reste de l’application (lecture seule hors ces modules).',
   },
   {
     login: 'admin',

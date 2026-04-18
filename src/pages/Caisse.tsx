@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { BankAccount, BankTransaction } from '@/pages/Bank';
+import type { BankAccount, BankTransaction } from '@/lib/bank-types';
 import {
   addRetraitPourCaisse,
   calculateAccountBalance,
@@ -125,7 +125,7 @@ export default function Caisse() {
     refreshBankAccounts();
   }, [transactions]);
 
-  /** Soldes bancaires recalculés (même logique que la page Banque) — dynamique avec dépôts, retraits, caisse liée. */
+  /** Soldes bancaires recalculés (même logique que l’écran Banque) — dynamique avec dépôts, retraits, caisse liée. */
   const statsBanque = useMemo(() => {
     const accs = getBankAccounts();
     const txs = getBankTransactions();
@@ -786,7 +786,7 @@ export default function Caisse() {
               {statsBanque.totalDisponible.toLocaleString('fr-FR')} FCFA
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Somme des comptes — mis à jour par la page Banque et les prélèvements caisse
+              Somme des comptes — mis à jour via Banque et les prélèvements caisse
             </p>
             {statsBanque.parCompte.length > 1 && (
               <ul className="mt-2 text-xs text-muted-foreground space-y-0.5 max-h-20 overflow-y-auto">
