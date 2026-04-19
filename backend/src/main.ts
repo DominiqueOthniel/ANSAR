@@ -64,10 +64,12 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const port = Number.parseInt(String(process.env.PORT || 3000), 10) || 3000;
+  /** Koyeb / Docker : écouter sur toutes les interfaces (sinon health checks échouent). */
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
 
-  console.log(`🚚 Truck Track API: http://localhost:${port}/api`);
+  console.log(`🚚 Truck Track API: http://${host}:${port}/api`);
 }
 
 bootstrap();
