@@ -92,6 +92,10 @@ export class ParcelExpeditionsService {
       statut: dto.statut,
       lots: this.normalizeLots(dto.lots),
       description: dto.description,
+      commissionPct:
+        dto.commissionPct !== undefined && dto.commissionPct !== null
+          ? Number(dto.commissionPct)
+          : undefined,
       dateCreation: dto.dateCreation?.split('T')[0] ?? today,
     });
     return this.repo.save(row);
@@ -163,6 +167,7 @@ export class ParcelExpeditionsService {
       'dateArrivee',
       'statut',
       'description',
+      'commissionPct',
       'lots',
       'dateCreation',
     ] as const;
@@ -186,6 +191,10 @@ export class ParcelExpeditionsService {
     }
     if (dto.dateCreation) {
       patch.dateCreation = dto.dateCreation.split('T')[0];
+    }
+    if (dto.commissionPct !== undefined) {
+      patch.commissionPct =
+        dto.commissionPct === null ? undefined : Number(dto.commissionPct);
     }
     if (dto.lots) {
       if (!dto.lots.length) {

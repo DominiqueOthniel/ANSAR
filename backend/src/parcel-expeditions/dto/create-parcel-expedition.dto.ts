@@ -8,6 +8,8 @@ import {
   IsIn,
   IsDateString,
   MinLength,
+  Min,
+  Max,
 } from 'class-validator';
 import { ParcelExpeditionLotDto } from './parcel-expedition-lot.dto';
 
@@ -70,6 +72,13 @@ export class CreateParcelExpeditionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** Commission sur le CA des lignes (0–100 %). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  commissionPct?: number;
 
   @IsOptional()
   @IsDateString()

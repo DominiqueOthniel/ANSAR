@@ -74,6 +74,10 @@ export class ParcelExpedition {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  /** Commission société sur le CA des lignes (pourcentage, ex. 10 = 10 %). */
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  commissionPct?: number;
+
   @Column({ type: 'date' })
   dateCreation: string;
 

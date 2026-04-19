@@ -243,6 +243,8 @@ export interface ParcelExpeditionPayload {
   statut: TripPayload['statut'];
   lots: ParcelExpeditionLotPayload[];
   description?: string;
+  /** Commission société sur le CA des lignes (0–100 %). */
+  commissionPct?: number;
   dateCreation?: string;
 }
 

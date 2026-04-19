@@ -78,6 +78,8 @@ export interface ParcelExpedition {
   statut: TripStatus;
   lots: ParcelExpeditionLot[];
   description?: string;
+  /** Commission sur le CA des lignes (%), optionnel. */
+  commissionPct?: number;
   dateCreation: string;
 }
 
@@ -267,6 +269,10 @@ function normalizeParcelExpedition(r: Record<string, unknown>): ParcelExpedition
     statut: r.statut as TripStatus,
     lots,
     description: r.description ? String(r.description) : undefined,
+    commissionPct:
+      r.commissionPct != null && String(r.commissionPct) !== ''
+        ? parseNum(r.commissionPct)
+        : undefined,
     dateCreation: dateCreation.includes('T') ? dateCreation.split('T')[0] : dateCreation,
   };
 }

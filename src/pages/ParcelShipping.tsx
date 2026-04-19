@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,6 +44,9 @@ import {
   Filter,
   X,
   Loader2,
+  Eye,
+  Receipt,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
@@ -166,16 +171,18 @@ export default function ParcelShipping() {
     trucks,
     drivers,
     parcelExpeditions,
+    invoices,
     isLoading,
     refreshParcelExpeditions,
     createParcelExpedition,
     updateParcelExpedition,
     deleteParcelExpedition,
   } = useApp();
-  const { canManageFleet } = useAuth();
+  const { canManageFleet, canManageAccounting } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [destPickerOpen, setDestPickerOpen] = useState(false);
   const [editing, setEditing] = useState<ParcelExpedition | null>(null);
+  const [viewing, setViewing] = useState<ParcelExpedition | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState<string>('all');
   const [filterDestination, setFilterDestination] = useState<string>('all');
@@ -199,6 +206,7 @@ export default function ParcelShipping() {
     dateArrivee: '',
     statut: 'planifie' as TripStatus,
     description: '',
+    commissionPct: 0,
     lots: [emptyLot(), emptyLot()] as ParcelExpeditionLot[],
   });
 
@@ -254,6 +262,7 @@ export default function ParcelShipping() {
       dateArrivee: '',
       statut: 'planifie',
       description: '',
+      commissionPct: 0,
       lots: [emptyLot(), emptyLot()],
     });
   };
@@ -278,6 +287,7 @@ export default function ParcelShipping() {
       dateArrivee: ex.dateArrivee ?? '',
       statut: ex.statut,
       description: ex.description ?? '',
+      commissionPct: ex.commissionPct ?? 0,
       lots: ex.lots.length > 0 ? ex.lots.map((l) => ({ ...l })) : [emptyLot()],
     });
     setDialogOpen(true);
@@ -375,6 +385,9 @@ export default function ParcelShipping() {
         observations: l.observations,
       })),
       description: form.description.trim() || undefined,
+      commissionPct: Number.isFinite(form.commissionPct)
+        ? Math.min(100, Math.max(0, form.commissionPct))
+        : undefined,
       dateCreation: editing?.dateCreation,
     };
 
@@ -540,6 +553,17 @@ export default function ParcelShipping() {
     }
     return c;
   }, [parcelExpeditions]);
+
+  const getInvoiceForExpedition = (expeditionId: string) =>
+    invoices.find((inv) => inv.parcelExpeditionId === expeditionId);
+
+  const recipientsSummary = (ex: ParcelExpedition) => {
+    const uniq = [...new Set(ex.lots.map((l) => l.clients?.trim()).filter(Boolean) as string[])];
+    return uniq.length ? uniq.join(', ') : '—';
+  };
+
+  const commissionAmount = (ex: ParcelExpedition) =>
+    Math.round((sumExpeditionMontant(ex.lots) * (ex.commissionPct ?? 0)) / 100);
 
   const exportSortLine = useMemo(() => {
     const parts: string[] = [];
@@ -975,6 +999,27 @@ export default function ParcelShipping() {
                     </div>
 
                     <div>
+                      <Label htmlFor="commissionPct">Commission société (%)</Label>
+                      <Input
+                        id="commissionPct"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={form.commissionPct}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            commissionPct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)),
+                          })
+                        }
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Commission estimée : {formatFcfa(Math.round(sumExpeditionMontant(form.lots) * (form.commissionPct / 100)))}
+                      </p>
+                    </div>
+
+                    <div>
                       <Label htmlFor="desc">Notes expédition</Label>
                       <Textarea
                         id="desc"
@@ -1203,6 +1248,22 @@ export default function ParcelShipping() {
           <CardTitle className="text-lg">Liste des expéditions</CardTitle>
         </CardHeader>
         <CardContent>
+          <Alert className="mb-4 border-sky-200 bg-sky-50/60">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Facturation des envois colis</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>
+                La création d’un envoi colis <span className="font-medium">ne génère pas automatiquement</span> une
+                facture. Le cas apparaît dans l’écran `Factures` au moment de créer une nouvelle facture de type
+                `Envoi colis`.
+              </p>
+              {canManageAccounting && (
+                <p>
+                  Vous pouvez ouvrir directement la création ici via le bouton `Facturer`.
+                </p>
+              )}
+            </AlertDescription>
+          </Alert>
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[1020px]">
               <TableHeader>
@@ -1259,16 +1320,35 @@ export default function ParcelShipping() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setViewing(ex)} title="Consulter">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {canManageAccounting && !getInvoiceForExpedition(ex.id) && (
+                            <Button asChild variant="outline" size="sm" title="Créer la facture">
+                              <Link to={`/factures?create=1&parcelExpeditionId=${encodeURIComponent(ex.id)}`}>
+                                <Receipt className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
+                          {canManageAccounting && getInvoiceForExpedition(ex.id) && (
+                            <Button asChild variant="outline" size="sm" title="Voir la facture associée">
+                              <Link to="/factures">
+                                <Receipt className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
                         {canManageFleet && (
-                          <div className="flex justify-end gap-2">
+                          <>
                             <Button variant="outline" size="sm" onClick={() => openEdit(ex)}>
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button variant="destructive" size="sm" onClick={() => handleDelete(ex.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
-                          </div>
+                          </>
                         )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1278,6 +1358,196 @@ export default function ParcelShipping() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
+        <DialogContent className="w-[96vw] max-w-5xl max-h-[90vh] overflow-y-auto">
+          {viewing && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Envoi colis {viewing.reference} — {viewing.origine} → {viewing.destination}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Statut & dates</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Statut</span>
+                        <Badge variant={statutBadgeVariant(viewing.statut)}>
+                          {formatTripStatusFr(viewing.statut)}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Départ</span>
+                        <span>{dateLocaleOrDash(viewing.dateDepart)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Arrivée</span>
+                        <span>{dateLocaleOrDash(viewing.dateArrivee)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Création</span>
+                        <span>{dateLocaleOrDash(viewing.dateCreation)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Affectation</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Chauffeur</span>
+                        <span className="text-right">{driverLabel(viewing.chauffeurId)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Téléphone</span>
+                        <span>{driverPhone(viewing.chauffeurId)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Camions</span>
+                        <span className="text-right font-mono">{truckBits(viewing.tracteurId, viewing.remorqueuseId)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Récipients / clients</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Différents recipients</span>
+                        <span>{[...new Set(viewing.lots.map((l) => l.clients?.trim()).filter(Boolean))].length}</span>
+                      </div>
+                      <p className="text-sm">{recipientsSummary(viewing)}</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Valeurs</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">CA total</span>
+                        <span className="font-semibold">{formatFcfa(sumExpeditionMontant(viewing.lots))}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Commission</span>
+                        <span>
+                          {(viewing.commissionPct ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}% · {formatFcfa(commissionAmount(viewing))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Net estimé</span>
+                        <span className="font-semibold">
+                          {formatFcfa(sumExpeditionMontant(viewing.lots) - commissionAmount(viewing))}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Détail des produits / lignes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table className="min-w-[920px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Recipient / client</TableHead>
+                            <TableHead>Produit / observations</TableHead>
+                            <TableHead>Unité</TableHead>
+                            <TableHead className="text-right">Qté</TableHead>
+                            <TableHead className="text-right">Valeur unitaire</TableHead>
+                            <TableHead className="text-right">Valeur totale</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {viewing.lots.map((lot) => (
+                            <TableRow key={lot.id}>
+                              <TableCell className="font-medium">{lot.clients}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{lot.observations || '—'}</TableCell>
+                              <TableCell>{lot.unite}</TableCell>
+                              <TableCell className="text-right">{lot.quantite.toLocaleString('fr-FR')}</TableCell>
+                              <TableCell className="text-right">{formatFcfa(lot.prixUnitaire)}</TableCell>
+                              <TableCell className="text-right font-semibold">{formatFcfa(lot.montant)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {viewing.description?.trim() && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Notes expédition</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      {viewing.description}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Facturation</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 text-sm">
+                    {(() => {
+                      const linkedInvoice = getInvoiceForExpedition(viewing.id);
+                      if (linkedInvoice) {
+                        return (
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium">Facture liée : {linkedInvoice.numero}</p>
+                              <p className="text-muted-foreground">
+                                Montant TTC : {linkedInvoice.montantTTC.toLocaleString('fr-FR')} FCFA
+                              </p>
+                            </div>
+                            <Button asChild variant="outline">
+                              <Link to="/factures">Ouvrir les factures</Link>
+                            </Button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">Aucune facture créée pour cet envoi.</p>
+                            <p className="text-muted-foreground">
+                              Les cas `Envoi colis` deviennent facturables dans l’écran `Factures`, mais la facture doit être créée séparément.
+                            </p>
+                          </div>
+                          {canManageAccounting && (
+                            <Button asChild>
+                              <Link to={`/factures?create=1&parcelExpeditionId=${encodeURIComponent(viewing.id)}`}>
+                                Créer la facture
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <CityPicker
         open={destPickerOpen}

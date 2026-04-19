@@ -211,6 +211,10 @@ CREATE TABLE IF NOT EXISTS credit_remboursements (
 
 CREATE INDEX IF NOT EXISTS idx_credit_remboursements_credit ON credit_remboursements("creditId");
 
+-- Expéditions colis : commission (ajout sur bases déjà déployées)
+ALTER TABLE IF EXISTS parcel_expeditions
+  ADD COLUMN IF NOT EXISTS "commissionPct" DECIMAL(5, 2);
+
 -- =============================================
 -- Optionnel : activer les extensions si besoin
 -- =============================================

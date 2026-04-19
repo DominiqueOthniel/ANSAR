@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useApp, Invoice, InvoiceStatus, Trip } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -63,8 +64,10 @@ export default function Invoices() {
     createInvoice,
     updateInvoice,
     deleteInvoice,
+    isLoading,
   } = useApp();
   const { canManageAccounting } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isExpenseInvoiceDialogOpen, setIsExpenseInvoiceDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -90,6 +93,29 @@ export default function Invoices() {
   const { isSubmitting: isCreatingTripInvoice, withGuard: withTripInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isCreatingExpenseInvoice, withGuard: withExpenseInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isConfirmingPayment, withGuard: withPaymentGuard } = useSubmitGuard();
+
+  // Pré-ouverture du dialog de création (ex. depuis Envoi colis → Créer facture).
+  useEffect(() => {
+    if (isLoading) return;
+    const shouldOpen = searchParams.get('create') === '1';
+    const parcelExpeditionId = searchParams.get('parcelExpeditionId')?.trim() || '';
+    if (!shouldOpen || !parcelExpeditionId) return;
+
+    const exists = parcelExpeditions.some((e) => e.id === parcelExpeditionId);
+    if (!exists) {
+      toast.error("L'envoi colis demandé est introuvable. Actualisez la liste puis réessayez.");
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    setInvoiceMissionKind('parcel');
+    setSelectedTripId('');
+    setSelectedParcelExpeditionId(parcelExpeditionId);
+    setIsDialogOpen(true);
+
+    // Nettoyer l’URL pour éviter de rouvrir le dialog à chaque refresh.
+    setSearchParams({}, { replace: true });
+  }, [isLoading, searchParams, setSearchParams, parcelExpeditions]);
 
   // États pour les filtres
   const [filters, setFilters] = useState({
