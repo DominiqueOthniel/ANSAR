@@ -16,28 +16,39 @@ async function bootstrap() {
   );
 
   // CORS pour le frontend (Netlify, Vercel, Render, Railway, dev local)
+  const trimOrigin = (u: string) => u.trim().replace(/\/+$/, '');
   const allowedOrigins = [
     'http://localhost:3001',
     'http://localhost:5173',
     'http://127.0.0.1:3001',
     'http://127.0.0.1:5173',
   ];
-  if (process.env.FRONTEND_URL) {
-    allowedOrigins.push(process.env.FRONTEND_URL);
+  if (process.env.FRONTEND_URL?.trim()) {
+    allowedOrigins.push(trimOrigin(process.env.FRONTEND_URL));
   }
+  const extraOrigins = (process.env.ADDITIONAL_CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => trimOrigin(s))
+    .filter(Boolean);
+  allowedOrigins.push(...extraOrigins);
+
   app.enableCors({
     origin: (origin, callback) => {
+      // Pas d’Origin (curl, healthcheck) : autoriser sans en-tête reflect
       if (!origin) return callback(null, true);
+      const o = trimOrigin(origin);
       const isAllowed =
-        allowedOrigins.includes(origin) ||
-        /^https:\/\/.*\.netlify\.app$/.test(origin) ||
-        /^https:\/\/.*\.vercel\.app$/.test(origin) ||
-        /^https:\/\/.*\.onrender\.com$/.test(origin) ||
-        /^https:\/\/.*\.railway\.app$/.test(origin) ||
-        /^https:\/\/.*\.koyeb\.app$/.test(origin);
-      callback(isAllowed ? null : new Error('Not allowed by CORS'), isAllowed);
+        allowedOrigins.some((a) => trimOrigin(a) === o) ||
+        /^https:\/\/[\w.-]+\.netlify\.app$/i.test(o) ||
+        /^https:\/\/[\w.-]+\.vercel\.app$/i.test(o) ||
+        /^https:\/\/[\w.-]+\.onrender\.com$/i.test(o) ||
+        /^https:\/\/[\w.-]+\.railway\.app$/i.test(o) ||
+        /^https:\/\/[\w.-]+\.koyeb\.app$/i.test(o);
+      // Ne jamais passer une Error en 1er argument : le preflight OPTIONS peut perdre les en-têtes CORS.
+      callback(null, isAllowed);
     },
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-actor-login', 'x-actor-role'],
   });
 

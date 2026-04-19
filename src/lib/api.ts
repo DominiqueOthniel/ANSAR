@@ -23,8 +23,9 @@ export function setApiActor(actor: { login?: string; role?: string } | null): vo
   apiActor = actor;
 }
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(params?: Record<string, string | number | undefined> | null): string {
   const q = new URLSearchParams();
+  if (params == null) return '';
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== '') q.set(k, String(v));
   }
