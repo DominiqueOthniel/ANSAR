@@ -33,6 +33,7 @@ export class DriversService {
       prenom: dto.prenom,
       telephone: dto.telephone,
       cni: dto.cni,
+      numeroPermis: dto.numeroPermis,
       photo,
     });
     const saved = await this.driverRepository.save(driver);

@@ -135,7 +135,7 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
       .join('');
     detailBlock = `
                 <div class="mb-8">
-                  <h3 class="font-bold text-lg mb-4 uppercase" style="letter-spacing:0.06em;font-size:13px;color:#475569;">Détails de l'envoi colis</h3>
+                  <h3 class="font-bold text-lg mb-4 uppercase" style="letter-spacing:0.06em;font-size:13px;color:#475569;">Détails de l'expédition</h3>
                   <p class="text-sm text-gray-600 mb-3">Réf. <span class="font-semibold text-black">${escapeHtml(pe.reference)}</span> · ${escapeHtml(pe.origine)} → ${escapeHtml(pe.destination)}</p>
                   <div class="border rounded-lg overflow-hidden" style="border-color:#e2e8f0;">
                     <table class="w-full">

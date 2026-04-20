@@ -99,6 +99,16 @@ export const calculatePaidAmountForTrip = (tripId: string, invoices: Invoice[]):
     .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
 };
 
+/** Montant encaissé sur une expédition, à partir des factures liées. */
+export const calculatePaidAmountForParcelExpedition = (
+  expeditionId: string,
+  invoices: Invoice[],
+): number => {
+  return invoices
+    .filter((inv) => inv.parcelExpeditionId === expeditionId)
+    .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
+};
+
 /**
  * Somme des restes à payer sur toutes les factures (argent dû par les clients, pas encore en caisse/banque).
  * Utile pour distinguer liquidités vs « hors trésorerie ».
@@ -138,20 +148,42 @@ export const syncInvoicePaymentWithTrip = (
 /**
  * Vérifie si un camion est actuellement utilisé dans un trajet en cours
  */
-export const isTruckInUse = (truckId: string, trips: Trip[]): boolean => {
-  return trips.some(trip =>
-    (trip.tracteurId === truckId || trip.remorqueuseId === truckId) &&
-    (trip.statut === 'en_cours' || trip.statut === 'planifie')
+export const isTruckInUse = (
+  truckId: string,
+  trips: Trip[],
+  expeditions: ParcelExpedition[] = [],
+): boolean => {
+  const usedByTrip = trips.some(
+    (trip) =>
+      (trip.tracteurId === truckId || trip.remorqueuseId === truckId) &&
+      (trip.statut === 'en_cours' || trip.statut === 'planifie'),
+  );
+  if (usedByTrip) return true;
+  return expeditions.some(
+    (ex) =>
+      (ex.tracteurId === truckId || ex.remorqueuseId === truckId) &&
+      (ex.statut === 'en_cours' || ex.statut === 'planifie'),
   );
 };
 
 /**
  * Vérifie si un chauffeur est actuellement en mission
  */
-export const isDriverOnMission = (driverId: string, trips: Trip[]): boolean => {
-  return trips.some(trip =>
-    trip.chauffeurId === driverId &&
-    (trip.statut === 'en_cours' || trip.statut === 'planifie')
+export const isDriverOnMission = (
+  driverId: string,
+  trips: Trip[],
+  expeditions: ParcelExpedition[] = [],
+): boolean => {
+  const onTrip = trips.some(
+    (trip) =>
+      trip.chauffeurId === driverId &&
+      (trip.statut === 'en_cours' || trip.statut === 'planifie'),
+  );
+  if (onTrip) return true;
+  return expeditions.some(
+    (ex) =>
+      ex.chauffeurId === driverId &&
+      (ex.statut === 'en_cours' || ex.statut === 'planifie'),
   );
 };
 
@@ -193,7 +225,9 @@ export const calculateDriverStatsFromTripsAndExpenses = (
   driverId: string,
   driver: Driver,
   trips: Trip[],
-  expenses: Expense[]
+  expenses: Expense[],
+  expeditions: ParcelExpedition[] = [],
+  invoices: Invoice[] = [],
 ) => {
   const driverTrips = trips.filter(
     t => t.chauffeurId === driverId && t.statut === 'termine'
@@ -203,11 +237,20 @@ export const calculateDriverStatsFromTripsAndExpenses = (
     e => e.chauffeurId === driverId || (e.tripId && driverExpenseIds.has(e.tripId))
   );
 
+  const driverExpeditions = expeditions.filter(
+    (ex) => ex.chauffeurId === driverId && ex.statut === 'termine',
+  );
   const apportsFromTrips = driverTrips.reduce((sum, t) => sum + t.recette, 0);
+  const apportsFromExpeditions = invoices.length
+    ? driverExpeditions.reduce(
+        (sum, ex) => sum + calculatePaidAmountForParcelExpedition(ex.id, invoices),
+        0,
+      )
+    : driverExpeditions.reduce((sum, ex) => sum + sumParcelExpeditionLotsCa(ex), 0);
   const apportsFromManual = driver.transactions
     .filter(t => t.type === 'apport')
     .reduce((sum, t) => sum + t.montant, 0);
-  const apports = apportsFromTrips + apportsFromManual;
+  const apports = apportsFromTrips + apportsFromExpeditions + apportsFromManual;
 
   const sortiesFromExpenses = driverExpenses.reduce((sum, e) => sum + e.montant, 0);
   const sortiesFromManual = driver.transactions
@@ -233,6 +276,16 @@ export const calculateDriverStatsFromTripsAndExpenses = (
     description: `Dépense: ${e.description} (${e.categorie})`,
     source: 'depense',
   }));
+  const fromExpeditions: DriverTransactionDisplay[] = driverExpeditions.map((ex) => ({
+    id: `parcel_${ex.id}`,
+    type: 'apport',
+    montant: invoices.length
+      ? calculatePaidAmountForParcelExpedition(ex.id, invoices)
+      : sumParcelExpeditionLotsCa(ex),
+    date: ex.dateArrivee || ex.dateDepart,
+    description: `Expédition: ${ex.origine} → ${ex.destination}`,
+    source: 'trajet',
+  }));
   const fromManual: DriverTransactionDisplay[] = driver.transactions.map(t => ({
     id: t.id,
     type: t.type,
@@ -244,6 +297,7 @@ export const calculateDriverStatsFromTripsAndExpenses = (
 
   const allTransactions: DriverTransactionDisplay[] = [
     ...fromTrips,
+    ...fromExpeditions,
     ...fromExpenses,
     ...fromManual,
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -253,6 +307,7 @@ export const calculateDriverStatsFromTripsAndExpenses = (
     sorties,
     balance,
     apportsFromTrips,
+    apportsFromExpeditions,
     apportsFromManual,
     sortiesFromExpenses,
     sortiesFromManual,
@@ -286,7 +341,8 @@ export const calculateTruckStats = (
   truckId: string, 
   trips: Trip[], 
   expenses: Expense[],
-  invoices?: Invoice[]
+  invoices?: Invoice[],
+  expeditions: ParcelExpedition[] = [],
 ) => {
   const allLinked = trips.filter(
     t => t.tracteurId === truckId || t.remorqueuseId === truckId,
@@ -295,18 +351,29 @@ export const calculateTruckStats = (
   const tripsCancelledCount = allLinked.filter(t => t.statut === 'annule').length;
   const tripsTotalCount = allLinked.length;
 
-  // Chiffre d’affaires (montants payés) : uniquement trajets terminés
-  const revenue = invoices
+  const linkedExpeditions = expeditions.filter(
+    (ex) => ex.tracteurId === truckId || ex.remorqueuseId === truckId,
+  );
+  const expeditionsTerminees = linkedExpeditions.filter((ex) => ex.statut === 'termine');
+  // Chiffre d’affaires (montants payés) : trajets + expéditions terminés
+  const revenueTrips = invoices
     ? truckTripsTermines.reduce((sum, t) => sum + calculatePaidAmountForTrip(t.id, invoices), 0)
     : truckTripsTermines.reduce((sum, t) => sum + t.recette, 0);
+  const revenueExpeditions = invoices
+    ? expeditionsTerminees.reduce(
+        (sum, ex) => sum + calculatePaidAmountForParcelExpedition(ex.id, invoices),
+        0,
+      )
+    : expeditionsTerminees.reduce((sum, ex) => sum + sumParcelExpeditionLotsCa(ex), 0);
+  const revenue = revenueTrips + revenueExpeditions;
 
   const truckExpenses = expenses
     .filter(e => e.camionId === truckId)
     .reduce((sum, e) => sum + e.montant, 0);
 
   const profit = revenue - truckExpenses;
-  /** Nombre de trajets terminés (recettes) — compatibilité */
-  const tripsCount = truckTripsTermines.length;
+  /** Nombre de missions terminées (trajets + expéditions). */
+  const tripsCount = truckTripsTermines.length + expeditionsTerminees.length;
 
   return {
     revenue,

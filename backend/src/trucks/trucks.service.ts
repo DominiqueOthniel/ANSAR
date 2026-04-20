@@ -14,6 +14,42 @@ export class TrucksService {
     private readonly truckRepository: Repository<Truck>,
   ) {}
 
+  private normalizeImmatriculation(raw?: string): string {
+    return (raw ?? '').trim().replace(/\s+/g, '').toUpperCase();
+  }
+
+  private normalizeTruckPayload(
+    dto: CreateTruckDto | UpdateTruckDto,
+    current?: Truck,
+  ): Partial<Truck> {
+    const type = dto.type ?? current?.type;
+    const immat = this.normalizeImmatriculation(dto.immatriculation ?? current?.immatriculation);
+    const remorqueImmat = this.normalizeImmatriculation(
+      dto.remorqueImmatriculation ?? current?.remorqueImmatriculation,
+    );
+
+    if (type === 'tracteur') {
+      const sousType = dto.sousType ?? (remorqueImmat ? 'tracteur_jumele' : 'tracteur_seul');
+      const finalImmat =
+        sousType === 'tracteur_jumele' && remorqueImmat ? `${immat}-${remorqueImmat}` : immat;
+      return {
+        ...dto,
+        immatriculation: finalImmat,
+        sousType,
+        remorqueImmatriculation:
+          sousType === 'tracteur_jumele' ? remorqueImmat || undefined : undefined,
+      } as Partial<Truck>;
+    }
+
+    // Remorqueuse: sous-type cohérent et immat simple.
+    return {
+      ...dto,
+      immatriculation: immat,
+      sousType: 'remorque_seule',
+      remorqueImmatriculation: undefined,
+    } as Partial<Truck>;
+  }
+
   async create(dto: CreateTruckDto): Promise<Truck> {
     const id = uuidv4();
 
@@ -24,9 +60,10 @@ export class TrucksService {
       photo = await uploadImageFromDataUrl(bucket, path, dto.photo);
     }
 
+    const normalized = this.normalizeTruckPayload(dto);
     const truck = this.truckRepository.create({
       id,
-      ...dto,
+      ...normalized,
       photo,
     });
     return this.truckRepository.save(truck);
@@ -49,8 +86,8 @@ export class TrucksService {
   }
 
   async update(id: string, dto: UpdateTruckDto): Promise<Truck> {
-    await this.findOne(id);
-    let patch: Partial<Truck> = dto as Partial<Truck>;
+    const current = await this.findOne(id);
+    let patch: Partial<Truck> = this.normalizeTruckPayload(dto, current);
 
     if (dto.photo && dto.photo.startsWith('data:image/')) {
       const bucket = process.env.SUPABASE_BUCKET_TRUCKS || 'truck-photos';

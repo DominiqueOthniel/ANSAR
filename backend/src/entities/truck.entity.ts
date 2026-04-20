@@ -13,6 +13,7 @@ import { Expense } from './expense.entity';
 
 export type TruckType = 'tracteur' | 'remorqueuse';
 export type TruckStatus = 'actif' | 'inactif';
+export type TruckSousType = 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';
 
 @Entity('trucks')
 export class Truck {
@@ -27,6 +28,13 @@ export class Truck {
 
   @Column({ type: 'varchar', length: 20 })
   type: TruckType;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  sousType?: TruckSousType;
+
+  /** Immatriculation de la remorque quand le tracteur est jumelé. */
+  @Column({ type: 'varchar', nullable: true })
+  remorqueImmatriculation?: string;
 
   @Column({ type: 'varchar', length: 20 })
   statut: TruckStatus;

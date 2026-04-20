@@ -77,7 +77,7 @@ export default function Invoices() {
   /** Compte qui reçoit le virement (dialog paiement) */
   const [paymentCompteBanqueId, setPaymentCompteBanqueId] = useState<string>('');
   const [selectedTripId, setSelectedTripId] = useState('');
-  /** Facture liée à un envoi colis (exclusif avec trajet). */
+  /** Facture liée à une expédition (exclusif avec trajet). */
   const [invoiceMissionKind, setInvoiceMissionKind] = useState<'trip' | 'parcel'>('trip');
   const [selectedParcelExpeditionId, setSelectedParcelExpeditionId] = useState('');
   const [selectedExpenseId, setSelectedExpenseId] = useState('');
@@ -94,7 +94,7 @@ export default function Invoices() {
   const { isSubmitting: isCreatingExpenseInvoice, withGuard: withExpenseInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isConfirmingPayment, withGuard: withPaymentGuard } = useSubmitGuard();
 
-  // Pré-ouverture du dialog de création (ex. depuis Envoi colis → Créer facture).
+  // Pré-ouverture du dialog de création (ex. depuis Expéditions → Créer facture).
   useEffect(() => {
     if (isLoading) return;
     const shouldOpen = searchParams.get('create') === '1';
@@ -103,7 +103,7 @@ export default function Invoices() {
 
     const exists = parcelExpeditions.some((e) => e.id === parcelExpeditionId);
     if (!exists) {
-      toast.error("L'envoi colis demandé est introuvable. Actualisez la liste puis réessayez.");
+      toast.error("L'expédition demandée est introuvable. Actualisez la liste puis réessayez.");
       setSearchParams({}, { replace: true });
       return;
     }
@@ -165,7 +165,7 @@ export default function Invoices() {
       montantHTInitial = trip.recette;
     } else {
       if (!selectedParcelExpeditionId) {
-        toast.error('Veuillez sélectionner un envoi colis');
+        toast.error('Veuillez sélectionner une expédition');
         return;
       }
       const ex = parcelExpeditions.find((e) => e.id === selectedParcelExpeditionId);
@@ -515,7 +515,7 @@ export default function Invoices() {
           if (invoice.trajetId !== filters.tripId) return false;
         }
 
-        // Filtre par chauffeur (pour trajets, dépenses et envois colis)
+        // Filtre par chauffeur (pour trajets, dépenses et expéditions)
         if (filters.driverId) {
           const driverMatch =
             trip?.chauffeurId === filters.driverId ||
@@ -630,7 +630,7 @@ export default function Invoices() {
       const typeLabels: Record<string, string> = {
         expense: 'Dépense',
         trip: 'Trajet',
-        parcel: 'Envoi colis',
+        parcel: 'Expédition',
       };
       parts.push(`Type: ${typeLabels[filters.type] ?? filters.type}`);
     }
@@ -674,7 +674,7 @@ export default function Invoices() {
         {
           header: 'Type',
           value: (inv) =>
-            inv.expenseId ? 'Dépense' : inv.parcelExpeditionId ? 'Envoi colis' : 'Trajet',
+            inv.expenseId ? 'Dépense' : inv.parcelExpeditionId ? 'Expédition' : 'Trajet',
         },
         {
           header: 'Statut mission',
@@ -766,9 +766,11 @@ export default function Invoices() {
     const resteAPayer = (inv: Invoice) => Math.max(0, inv.montantTTC - montantDejaPaye(inv));
 
     // Calculer les totaux (montants réels : TTC, encaissé, reste — y compris paiements partiels)
-    const facturesTrajets = filteredInvoices.filter(inv => !inv.expenseId);
+    const facturesTrajets = filteredInvoices.filter(inv => !inv.expenseId && !inv.parcelExpeditionId);
+    const facturesColis = filteredInvoices.filter(inv => !!inv.parcelExpeditionId);
     const facturesDepenses = filteredInvoices.filter(inv => inv.expenseId);
     const totalTrajets = facturesTrajets.reduce((sum, inv) => sum + inv.montantTTC, 0);
+    const totalColis = facturesColis.reduce((sum, inv) => sum + inv.montantTTC, 0);
     const totalDepenses = facturesDepenses.reduce((sum, inv) => sum + inv.montantTTC, 0);
     const totalTTC = filteredInvoices.reduce((sum, inv) => sum + inv.montantTTC, 0);
     const totalDejaPaye = filteredInvoices.reduce((sum, inv) => sum + montantDejaPaye(inv), 0);
@@ -798,6 +800,7 @@ export default function Invoices() {
         { label: 'Total reste à payer', value: `${totalResteAPayer.toLocaleString('fr-FR')} FCFA`, style: totalResteAPayer > tol ? 'negative' : 'positive', icon: '⏳' },
         { label: 'Soldées / avec reste', value: `${facturesSoldees} / ${facturesAvecReste}`, style: 'neutral', icon: '📋' },
         { label: 'Chiffre d’affaires (trajets)', value: `+${totalTrajets.toLocaleString('fr-FR')} FCFA`, style: 'positive', icon: EMOJI.camion },
+        { label: 'Chiffre d’affaires (expéditions)', value: `+${totalColis.toLocaleString('fr-FR')} FCFA`, style: 'positive', icon: '📦' },
         { label: 'Dépenses', value: `-${totalDepenses.toLocaleString('fr-FR')} FCFA`, style: 'negative', icon: '💸' },
       ],
       columns: [
@@ -814,18 +817,28 @@ export default function Invoices() {
               const supplier = expense?.fournisseurId ? thirdParties.find(tp => tp.id === expense.fournisseurId) : null;
               return supplier?.nom || '—';
             }
+            if (inv.parcelExpeditionId) {
+              const ex = getParcelExpedition(inv.parcelExpeditionId);
+              if (!ex) return '—';
+              const clients = [...new Set(ex.lots.map((l) => l.clients?.trim()).filter(Boolean) as string[])];
+              return clients.join(', ') || '—';
+            }
             const trip = getTrip(inv.trajetId);
             return trip?.client || '—';
           },
         },
         {
           header: 'Type',
-          value: (inv) => (inv.expenseId ? 'Dépense' : 'Trajet'),
+          value: (inv) => (inv.expenseId ? 'Dépense' : inv.parcelExpeditionId ? 'Expédition' : 'Trajet'),
         },
         {
-          header: 'Statut trajet',
+          header: 'Statut mission',
           value: (inv) => {
             if (inv.expenseId) return '—';
+            if (inv.parcelExpeditionId) {
+              const ex = getParcelExpedition(inv.parcelExpeditionId);
+              return ex ? formatTripStatusFr(ex.statut) : '—';
+            }
             const trip = getTrip(inv.trajetId);
             return trip ? formatTripStatusFr(trip.statut) : '—';
           },
@@ -837,6 +850,10 @@ export default function Invoices() {
               const expense = getExpense(inv.expenseId);
               return expense ? expense.description : '';
             }
+            if (inv.parcelExpeditionId) {
+              const ex = getParcelExpedition(inv.parcelExpeditionId);
+              return ex ? `${ex.reference} · ${ex.origine} → ${ex.destination}` : '';
+            }
             return getTripLabel(inv.trajetId);
           },
         },
@@ -846,6 +863,10 @@ export default function Invoices() {
             if (inv.expenseId) {
               const expense = getExpense(inv.expenseId);
               return expense ? `${expense.categorie}${expense.sousCategorie ? ' · ' + expense.sousCategorie : ''}` : '';
+            }
+            if (inv.parcelExpeditionId) {
+              const ex = getParcelExpedition(inv.parcelExpeditionId);
+              return ex ? `${ex.lots.length} ligne(s) colis` : '—';
             }
             const trip = getTrip(inv.trajetId);
             return trip?.marchandise || '—';
@@ -1088,11 +1109,11 @@ export default function Invoices() {
               </Button>
             </DialogTrigger>
             )}
-            <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[96vw] max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Créer une facture professionnelle</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {/* Afficher le numéro de facture qui sera généré */}
                 <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
                   <div className="flex items-center justify-between">
@@ -1106,7 +1127,7 @@ export default function Invoices() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
                   <Label>Type de mission</Label>
                   <RadioGroup
                     value={invoiceMissionKind}
@@ -1115,25 +1136,25 @@ export default function Invoices() {
                       setSelectedTripId('');
                       setSelectedParcelExpeditionId('');
                     }}
-                    className="flex flex-wrap gap-4"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-3"
                   >
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 rounded-md border border-border bg-background px-3 py-2">
                       <RadioGroupItem value="trip" id="inv-kind-trip" />
                       <Label htmlFor="inv-kind-trip" className="font-normal cursor-pointer">
                         Trajet
                       </Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 rounded-md border border-border bg-background px-3 py-2">
                       <RadioGroupItem value="parcel" id="inv-kind-parcel" />
                       <Label htmlFor="inv-kind-parcel" className="font-normal cursor-pointer">
-                        Envoi colis
+                        Expédition
                       </Label>
                     </div>
                   </RadioGroup>
                 </div>
 
                 {invoiceMissionKind === 'trip' && (
-                <div>
+                <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
                   <Label htmlFor="trip">Sélectionner un trajet *</Label>
                   <Select value={selectedTripId} onValueChange={setSelectedTripId}>
                     <SelectTrigger>
@@ -1195,8 +1216,8 @@ export default function Invoices() {
                 )}
 
                 {invoiceMissionKind === 'parcel' && (
-                <div>
-                  <Label htmlFor="parcel-ex">Sélectionner un envoi colis *</Label>
+                <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
+                  <Label htmlFor="parcel-ex">Sélectionner une expédition *</Label>
                   <Select value={selectedParcelExpeditionId} onValueChange={setSelectedParcelExpeditionId}>
                     <SelectTrigger id="parcel-ex">
                       <SelectValue placeholder="Réf. · destination · CA" />
@@ -1204,7 +1225,7 @@ export default function Invoices() {
                     <SelectContent>
                       {availableParcelExpeditions.length === 0 ? (
                         <div className="p-4 text-sm text-muted-foreground text-center">
-                          <p className="mb-2">{EMOJI.alerte} Aucun envoi colis disponible</p>
+                          <p className="mb-2">{EMOJI.alerte} Aucune expédition disponible</p>
                           <p className="text-xs">
                             CA lignes &gt; 0, pas annulé, sans facture déjà créée.
                           </p>
@@ -1403,7 +1424,7 @@ export default function Invoices() {
                       <div className="flex items-center justify-between gap-2">
                         <Label className="text-base font-bold flex items-center gap-2">
                           <Package className="h-4 w-4" />
-                          Détail envoi colis (base HT facture = CA lignes)
+                          Détail expédition (base HT facture = CA lignes)
                         </Label>
                         <Badge variant="outline">
                           {formatTripStatusFr(ex.statut)}
@@ -1923,7 +1944,13 @@ export default function Invoices() {
               <Label htmlFor="typeFilter" className="text-xs">Type</Label>
               <Select
                 value={filters.type || 'all'}
-                onValueChange={(value) => setFilters({ ...filters, type: value === 'all' ? '' : value })}
+                onValueChange={(value) =>
+                  setFilters({
+                    ...filters,
+                    type: value === 'all' ? '' : value,
+                    tripId: value === 'parcel' ? '' : filters.tripId,
+                  })
+                }
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Tous les types" />
@@ -1931,7 +1958,7 @@ export default function Invoices() {
                 <SelectContent>
                   <SelectItem value="all">Tous les types</SelectItem>
                   <SelectItem value="trip">{EMOJI.camion} Trajets</SelectItem>
-                  <SelectItem value="parcel">📦 Envois colis</SelectItem>
+                  <SelectItem value="parcel">📦 Expéditions</SelectItem>
                   <SelectItem value="expense">{EMOJI.argent} Dépenses</SelectItem>
                 </SelectContent>
               </Select>
@@ -2162,7 +2189,7 @@ export default function Invoices() {
                           </Badge>
                         ) : isParcelInvoice ? (
                           <Badge variant="outline" className="bg-sky-100 text-sky-800 dark:bg-sky-950/30 dark:text-sky-300 border-sky-300">
-                            📦 Envoi colis
+                            📦 Expédition
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-300">
@@ -2355,7 +2382,7 @@ export default function Invoices() {
                         </Badge>
                       ) : isParcelInvoice ? (
                         <Badge variant="outline" className="bg-sky-100 text-sky-800 dark:bg-sky-950/30 dark:text-sky-300 border-sky-300">
-                          📦 Envoi colis
+                          📦 Expédition
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-300">
@@ -2596,7 +2623,7 @@ export default function Invoices() {
                   ) : isParcelInvoice && parcelEx ? (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="font-semibold mb-3">Détails de l&apos;envoi colis</h4>
+                        <h4 className="font-semibold mb-3">Détails de l&apos;expédition</h4>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between gap-4">
                             <span className="text-muted-foreground shrink-0">Référence</span>

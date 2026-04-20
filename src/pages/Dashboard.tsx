@@ -11,7 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '@/components/PageHeader';
-import { calculatePaidAmountForTrip, getTotalCreancesClients } from '@/lib/sync-utils';
+import {
+  calculatePaidAmountForParcelExpedition,
+  calculatePaidAmountForTrip,
+  getTotalCreancesClients,
+} from '@/lib/sync-utils';
 import { cn } from '@/lib/utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,7 +25,7 @@ import { getCaisseSoldeActuel, getTotalBanqueDisponible } from '@/lib/bank-local
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { trucks, trips, expenses, invoices, drivers, refreshTrucks, refreshDrivers, refreshTrips, refreshParcelExpeditions, refreshExpenses, refreshInvoices, refreshThirdParties } = useApp();
+  const { trucks, trips, parcelExpeditions, expenses, invoices, drivers, refreshTrucks, refreshDrivers, refreshTrips, refreshParcelExpeditions, refreshExpenses, refreshInvoices, refreshThirdParties } = useApp();
   const { user, users, changeUserPassword } = useAuth();
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -115,13 +119,13 @@ export default function Dashboard() {
     { name: 'Factures', href: '/factures', icon: FileText, color: 'from-indigo-500 to-blue-500', bgColor: 'bg-indigo-50 dark:bg-indigo-950/30', borderColor: 'border-indigo-200 dark:border-indigo-800' },
     { name: 'Chauffeurs', href: '/chauffeurs', icon: Users, color: 'from-cyan-500 to-teal-500', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-200 dark:border-cyan-800' },
     { name: 'Tiers', href: '/tiers', icon: Building2, color: 'from-violet-500 to-purple-500', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-200 dark:border-violet-800' },
-    { name: 'Envoi colis', href: '/envoi-colis', icon: Package, color: 'from-sky-500 to-cyan-500', bgColor: 'bg-sky-50 dark:bg-sky-950/30', borderColor: 'border-sky-200 dark:border-sky-800' },
+    { name: 'Expéditions', href: '/envoi-colis', icon: Package, color: 'from-sky-500 to-cyan-500', bgColor: 'bg-sky-50 dark:bg-sky-950/30', borderColor: 'border-sky-200 dark:border-sky-800' },
     { name: 'Suivi créances', href: '/credits', icon: CreditCard, color: 'from-emerald-500 to-teal-500', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30', borderColor: 'border-emerald-200 dark:border-emerald-800' },
     { name: 'Suivi GPS', href: '/suivi', icon: MapPin, color: 'from-sky-500 to-blue-500', bgColor: 'bg-sky-50 dark:bg-sky-950/30', borderColor: 'border-sky-200 dark:border-sky-800' },
     { name: 'GPS', href: '/gps', icon: Satellite, color: 'from-blue-500 to-cyan-500', bgColor: 'bg-blue-50 dark:bg-blue-950/30', borderColor: 'border-blue-200 dark:border-blue-800' },
   ];
 
-  // Chiffre d’affaires (montants payés sur factures trajets + envois colis)
+  // Chiffre d’affaires (montants payés sur factures trajets + expéditions)
   const totalRecettes = invoices
     .filter((inv) => inv.trajetId || inv.parcelExpeditionId)
     .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
@@ -162,11 +166,18 @@ export default function Dashboard() {
   // Top camions par encaissement (basé sur les montants payés)
   const truckRevenue = trucks.map(truck => {
     const truckTrips = trips.filter(t => t.tracteurId === truck.id || t.remorqueuseId === truck.id);
+    const truckExpeditions = parcelExpeditions.filter(
+      (ex) => ex.tracteurId === truck.id || ex.remorqueuseId === truck.id,
+    );
     // Encaissements à partir des montants payés
-    const revenue = truckTrips.reduce((sum, trip) => {
+    const revenueTrips = truckTrips.reduce((sum, trip) => {
       return sum + calculatePaidAmountForTrip(trip.id, invoices);
     }, 0);
-    const tripsCount = truckTrips.length;
+    const revenueExpeditions = truckExpeditions.reduce((sum, ex) => {
+      return sum + calculatePaidAmountForParcelExpedition(ex.id, invoices);
+    }, 0);
+    const revenue = revenueTrips + revenueExpeditions;
+    const tripsCount = truckTrips.length + truckExpeditions.length;
     return { 
       name: truck.immatriculation, 
       revenue,
@@ -205,6 +216,10 @@ export default function Dashboard() {
         return tripDate.getMonth() === date.getMonth() && 
                tripDate.getFullYear() === date.getFullYear();
       });
+      const monthExpeditions = parcelExpeditions.filter((ex) => {
+        const exDate = new Date(ex.dateDepart);
+        return exDate.getMonth() === date.getMonth() && exDate.getFullYear() === date.getFullYear();
+      });
       
       const monthExpenses = expenses.filter(exp => {
         const expDate = new Date(exp.date);
@@ -213,9 +228,13 @@ export default function Dashboard() {
       });
       
       // Chiffre d’affaires du mois à partir des montants payés
-      const monthRecettes = monthTrips.reduce((sum, trip) => {
+      const monthRecettesTrips = monthTrips.reduce((sum, trip) => {
         return sum + calculatePaidAmountForTrip(trip.id, invoices);
       }, 0);
+      const monthRecettesExpeditions = monthExpeditions.reduce((sum, ex) => {
+        return sum + calculatePaidAmountForParcelExpedition(ex.id, invoices);
+      }, 0);
+      const monthRecettes = monthRecettesTrips + monthRecettesExpeditions;
       const monthDepenses = monthExpenses.reduce((sum, exp) => sum + exp.montant, 0);
       
       months.push({
@@ -241,7 +260,7 @@ export default function Dashboard() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Tableau de Bord"
-        description="Encaissements et bénéfice : factures (montants payés sur trajets) et dépenses enregistrées — les dons saisis uniquement en Caisse n’y sont pas inclus."
+        description="Encaissements et bénéfice : factures (montants payés sur trajets et expéditions) et dépenses enregistrées — les dons saisis uniquement en Caisse n’y sont pas inclus."
         icon={LayoutDashboard}
         gradient="from-violet-500/20 via-fuchsia-500/10 to-transparent"
         stats={[

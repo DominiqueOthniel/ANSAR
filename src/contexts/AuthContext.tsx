@@ -186,7 +186,7 @@ export const LOGIN_USER_OPTIONS = [
     login: 'gestionnaire',
     label: 'Gestionnaire',
     description:
-      'Flotte : camions, trajets, envoi colis, chauffeurs, tiers. GPS. Pas dépenses, facturation, comptes bancaires, caisse ni crédits.',
+      'Flotte : camions, trajets, expéditions, chauffeurs, tiers. GPS. Pas dépenses, facturation, comptes bancaires, caisse ni crédits.',
   },
   {
     login: 'comptable',

@@ -172,6 +172,7 @@ export default function ParcelShipping() {
     drivers,
     parcelExpeditions,
     invoices,
+    createExpense,
     isLoading,
     refreshParcelExpeditions,
     createParcelExpedition,
@@ -205,6 +206,7 @@ export default function ParcelShipping() {
     dateDepart: '',
     dateArrivee: '',
     statut: 'planifie' as TripStatus,
+    prefinancement: 0,
     description: '',
     commissionPct: 0,
     lots: [emptyLot(), emptyLot()] as ParcelExpeditionLot[],
@@ -261,6 +263,7 @@ export default function ParcelShipping() {
       dateDepart: new Date().toISOString().split('T')[0],
       dateArrivee: '',
       statut: 'planifie',
+      prefinancement: 0,
       description: '',
       commissionPct: 0,
       lots: [emptyLot(), emptyLot()],
@@ -286,6 +289,7 @@ export default function ParcelShipping() {
       dateDepart: ex.dateDepart,
       dateArrivee: ex.dateArrivee ?? '',
       statut: ex.statut,
+      prefinancement: 0,
       description: ex.description ?? '',
       commissionPct: ex.commissionPct ?? 0,
       lots: ex.lots.length > 0 ? ex.lots.map((l) => ({ ...l })) : [emptyLot()],
@@ -361,6 +365,10 @@ export default function ParcelShipping() {
     }
 
     const ref = form.reference.trim() || defaultReference();
+    const prefinancementValue = Number.isFinite(form.prefinancement)
+      ? Math.max(0, form.prefinancement)
+      : 0;
+
     const payload = {
       reference: ref,
       origine: ORIGIN_NAME,
@@ -396,10 +404,28 @@ export default function ParcelShipping() {
         await updateParcelExpedition(editing.id, payload);
         toast.success('Expédition mise à jour');
       } else {
-        await createParcelExpedition({
+        const createdExpedition = await createParcelExpedition({
           ...payload,
           dateCreation: payload.dateCreation ?? new Date().toISOString().split('T')[0],
         });
+        if (prefinancementValue > 0) {
+          try {
+            await createExpense({
+              camionId: payload.tracteurId || payload.remorqueuseId || undefined,
+              chauffeurId: payload.chauffeurId || undefined,
+              categorie: 'Préfinancement',
+              sousCategorie: 'Expédition',
+              montant: prefinancementValue,
+              date: payload.dateDepart,
+              description: `Préfinancement expédition ${createdExpedition.reference} (${payload.origine} → ${payload.destination})`,
+            });
+          } catch (prefiErr) {
+            console.error('createParcelExpedition prefinancement expense', prefiErr);
+            toast.warning(
+              "Expédition créée, mais la dépense de préfinancement n'a pas pu être enregistrée automatiquement.",
+            );
+          }
+        }
         toast.success('Expédition enregistrée');
       }
       setDialogOpen(false);
@@ -668,7 +694,7 @@ export default function ParcelShipping() {
   return (
     <div className="space-y-6 p-1">
       <PageHeader
-        title="Envoi colis"
+        title="Expéditions"
         description="Expéditions groupées depuis Douala : pour chaque ligne, clients, unité, quantité, prix unitaire et montant (FCFA), avec observations — idéal pour le suivi commercial du colis."
         icon={Package}
         gradient="from-sky-500/20 via-cyan-500/10 to-transparent"
@@ -999,6 +1025,26 @@ export default function ParcelShipping() {
                     </div>
 
                     <div>
+                      <Label htmlFor="prefinancement">Préfinancement (FCFA)</Label>
+                      <Input
+                        id="prefinancement"
+                        type="number"
+                        min={0}
+                        step={500}
+                        value={form.prefinancement}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            prefinancement: Math.max(0, parseFloat(e.target.value) || 0),
+                          })
+                        }
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Enregistré automatiquement en dépense à la création de l&apos;expédition.
+                      </p>
+                    </div>
+
+                    <div>
                       <Label htmlFor="commissionPct">Commission société (%)</Label>
                       <Input
                         id="commissionPct"
@@ -1250,12 +1296,12 @@ export default function ParcelShipping() {
         <CardContent>
           <Alert className="mb-4 border-sky-200 bg-sky-50/60">
             <Info className="h-4 w-4" />
-            <AlertTitle>Facturation des envois colis</AlertTitle>
+            <AlertTitle>Facturation des expéditions</AlertTitle>
             <AlertDescription className="space-y-2">
               <p>
-                La création d’un envoi colis <span className="font-medium">ne génère pas automatiquement</span> une
+                La création d’une expédition <span className="font-medium">ne génère pas automatiquement</span> une
                 facture. Le cas apparaît dans l’écran `Factures` au moment de créer une nouvelle facture de type
-                `Envoi colis`.
+                `Expédition`.
               </p>
               {canManageAccounting && (
                 <p>
@@ -1365,7 +1411,7 @@ export default function ParcelShipping() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  Envoi colis {viewing.reference} — {viewing.origine} → {viewing.destination}
+                  Expédition {viewing.reference} — {viewing.origine} → {viewing.destination}
                 </DialogTitle>
               </DialogHeader>
 
@@ -1528,7 +1574,7 @@ export default function ParcelShipping() {
                           <div>
                             <p className="font-medium">Aucune facture créée pour cet envoi.</p>
                             <p className="text-muted-foreground">
-                              Les cas `Envoi colis` deviennent facturables dans l’écran `Factures`, mais la facture doit être créée séparément.
+                              Les cas `Expédition` deviennent facturables dans l’écran `Factures`, mais la facture doit être créée séparément.
                             </p>
                           </div>
                           {canManageAccounting && (

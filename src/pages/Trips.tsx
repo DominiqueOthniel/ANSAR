@@ -93,7 +93,19 @@ async function getRoadDistanceKm(a: GeoPoint, b: GeoPoint): Promise<number | nul
 }
 
 export default function Trips() {
-  const { trips, trucks, drivers, invoices, expenses, thirdParties, createTrip, updateTrip, deleteTrip, createInvoice } = useApp();
+  const {
+    trips,
+    trucks,
+    drivers,
+    invoices,
+    expenses,
+    thirdParties,
+    createTrip,
+    updateTrip,
+    deleteTrip,
+    createInvoice,
+    createExpense,
+  } = useApp();
   const { canManageFleet, canManageAccounting } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
@@ -225,7 +237,7 @@ export default function Trips() {
 
     await withGuard(async () => {
       try {
-        await createTrip({
+        const createdTrip = await createTrip({
           origine: formData.origine,
           destination: formData.destination,
           origineLat: formData.origineLat,
@@ -244,6 +256,25 @@ export default function Trips() {
           description: formData.description || undefined,
           statut: 'planifie',
         });
+        if (formData.prefinancement > 0) {
+          try {
+            await createExpense({
+              camionId: formData.tracteurId || formData.remorqueuseId || undefined,
+              tripId: createdTrip.id,
+              chauffeurId: formData.chauffeurId || undefined,
+              categorie: 'Préfinancement',
+              sousCategorie: 'Trajet',
+              montant: formData.prefinancement,
+              date: formData.dateDepart,
+              description: `Préfinancement trajet ${formData.origine} → ${formData.destination}`,
+            });
+          } catch (prefiErr) {
+            console.error('createTrip prefinancement expense', prefiErr);
+            toast.warning(
+              'Trajet créé, mais la dépense de préfinancement n’a pas pu être enregistrée automatiquement.',
+            );
+          }
+        }
         toast.success('Trajet ajouté avec succès');
         setIsDialogOpen(false);
         resetForm();

@@ -15,12 +15,15 @@ import { refreshBankFromApi } from '@/lib/bank-local';
 // Types
 export type TruckType = 'tracteur' | 'remorqueuse';
 export type TruckStatus = 'actif' | 'inactif';
+export type TruckSousType = 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';
 
 export interface Truck {
   id: string;
   immatriculation: string;
   modele: string;
   type: TruckType;
+  sousType?: TruckSousType;
+  remorqueImmatriculation?: string;
   statut: TruckStatus;
   dateMiseEnCirculation: string;
   photo?: string;
@@ -134,6 +137,7 @@ export interface Driver {
   prenom: string;
   telephone: string;
   cni?: string;
+  numeroPermis?: string;
   photo?: string;
   transactions: DriverTransaction[];
 }
@@ -163,6 +167,10 @@ function normalizeTruck(r: Record<string, unknown>): Truck {
     immatriculation: String(r.immatriculation),
     modele: String(r.modele),
     type: r.type as TruckType,
+    sousType: r.sousType ? (String(r.sousType) as TruckSousType) : undefined,
+    remorqueImmatriculation: r.remorqueImmatriculation
+      ? String(r.remorqueImmatriculation)
+      : undefined,
     statut: r.statut as TruckStatus,
     dateMiseEnCirculation: String(r.dateMiseEnCirculation),
     photo: r.photo ? String(r.photo) : undefined,
@@ -332,6 +340,7 @@ function normalizeDriver(r: Record<string, unknown>): Driver {
     prenom: String(r.prenom),
     telephone: String(r.telephone),
     cni: r.cni ? String(r.cni) : undefined,
+    numeroPermis: r.numeroPermis ? String(r.numeroPermis) : undefined,
     photo: r.photo ? String(r.photo) : undefined,
     transactions,
   };
@@ -660,19 +669,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const createInvoice = async (data: Parameters<typeof invoicesApi.create>[0]) => {
     const r = await invoicesApi.create(data);
-    void refreshInvoices();
+    await refreshInvoices();
     return normalizeInvoice(r as Record<string, unknown>);
   };
 
   const updateInvoice = async (id: string, data: Parameters<typeof invoicesApi.update>[1]) => {
     const r = await invoicesApi.update(id, data);
-    void refreshInvoices();
+    await refreshInvoices();
     return normalizeInvoice(r as Record<string, unknown>);
   };
 
   const deleteInvoice = async (id: string) => {
     await invoicesApi.delete(id);
-    void refreshInvoices();
+    await refreshInvoices();
   };
 
   const createThirdParty = async (data: Parameters<typeof thirdPartiesApi.create>[0]) => {

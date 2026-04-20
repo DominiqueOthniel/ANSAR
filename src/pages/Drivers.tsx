@@ -28,7 +28,7 @@ const DRIVER_SORT_OPTIONS = [
 ] as const;
 
 export default function Drivers() {
-  const { drivers, trips, expenses, createDriver, updateDriver, deleteDriver } = useApp();
+  const { drivers, trips, parcelExpeditions, expenses, invoices, createDriver, updateDriver, deleteDriver } = useApp();
   const { canManageFleet } = useAuth();
   const [isAddDriverDialogOpen, setIsAddDriverDialogOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
@@ -45,6 +45,7 @@ export default function Drivers() {
     prenom: '',
     telephone: '',
     cni: '',
+    numeroPermis: '',
     photo: '',
   });
 
@@ -71,7 +72,7 @@ export default function Drivers() {
   };
 
   const resetDriverForm = () => {
-    setDriverForm({ nom: '', prenom: '', telephone: '', cni: '', photo: '' });
+    setDriverForm({ nom: '', prenom: '', telephone: '', cni: '', numeroPermis: '', photo: '' });
     setPhotoPreview('');
     setEditingDriver(null);
   };
@@ -83,6 +84,7 @@ export default function Drivers() {
       prenom: driver.prenom,
       telephone: driver.telephone,
       cni: driver.cni || '',
+      numeroPermis: driver.numeroPermis || '',
       photo: driver.photo || '',
     });
     setPhotoPreview(driver.photo || '');
@@ -100,6 +102,7 @@ export default function Drivers() {
             prenom: driverForm.prenom,
             telephone: driverForm.telephone,
             cni: driverForm.cni || undefined,
+            numeroPermis: driverForm.numeroPermis || undefined,
             photo: driverForm.photo || undefined,
           });
           toast.success('Chauffeur modifié avec succès');
@@ -109,6 +112,7 @@ export default function Drivers() {
             prenom: driverForm.prenom,
             telephone: driverForm.telephone,
             cni: driverForm.cni || undefined,
+            numeroPermis: driverForm.numeroPermis || undefined,
             photo: driverForm.photo || undefined,
             transactions: [],
           });
@@ -123,7 +127,7 @@ export default function Drivers() {
   };
 
   const handleDeleteDriver = async (id: string) => {
-    if (isDriverOnMission(id, trips)) {
+    if (isDriverOnMission(id, trips, parcelExpeditions)) {
       toast.error('Impossible de supprimer ce chauffeur : il est assigné à un trajet en cours ou planifié');
       return;
     }
@@ -158,7 +162,14 @@ export default function Drivers() {
   };
 
   const getDriverStats = (driver: Driver) =>
-    calculateDriverStatsFromTripsAndExpenses(driver.id, driver, trips, expenses);
+    calculateDriverStatsFromTripsAndExpenses(
+      driver.id,
+      driver,
+      trips,
+      expenses,
+      parcelExpeditions,
+      invoices,
+    );
 
   const calculateBalance = (driver: Driver) => getDriverStats(driver).balance;
 
@@ -171,15 +182,16 @@ export default function Drivers() {
       const matchesNom = driver.nom.toLowerCase().includes(search);
       const matchesTelephone = driver.telephone.includes(search);
       const matchesCni = driver.cni?.toLowerCase().includes(search);
+      const matchesPermis = driver.numeroPermis?.toLowerCase().includes(search);
       
-      if (!matchesPrenom && !matchesNom && !matchesTelephone && !matchesCni) {
+      if (!matchesPrenom && !matchesNom && !matchesTelephone && !matchesCni && !matchesPermis) {
         return false;
       }
     }
     
     // Filtre par statut (en mission / disponible)
     if (filterStatus !== 'all') {
-      const onMission = isDriverOnMission(driver.id, trips);
+      const onMission = isDriverOnMission(driver.id, trips, parcelExpeditions);
       if (filterStatus === 'en_mission' && !onMission) return false;
       if (filterStatus === 'disponible' && onMission) return false;
     }
@@ -226,7 +238,7 @@ export default function Drivers() {
   }, [filteredDrivers, listSort, trips, expenses]);
 
   // Calculer les statistiques
-  const driversOnMission = drivers.filter(d => isDriverOnMission(d.id, trips)).length;
+  const driversOnMission = drivers.filter(d => isDriverOnMission(d.id, trips, parcelExpeditions)).length;
   const totalBalance = drivers.reduce((sum, d) => sum + calculateBalance(d), 0);
   const positiveBalance = drivers.filter(d => calculateBalance(d) > 0).length;
 
@@ -257,7 +269,8 @@ export default function Drivers() {
         { header: 'Nom', value: (d) => d.nom },
         { header: 'Téléphone', value: (d) => d.telephone },
         { header: 'CNI', value: (d) => d.cni || '-' },
-        { header: 'Statut', value: (d) => isDriverOnMission(d.id, trips) ? 'En mission' : 'Disponible' },
+        { header: 'Permis', value: (d) => d.numeroPermis || '-' },
+        { header: 'Statut', value: (d) => isDriverOnMission(d.id, trips, parcelExpeditions) ? 'En mission' : 'Disponible' },
         { header: 'Trajets (total)', value: (d) => getDriverTripCounts(d.id, trips).total },
         { header: 'Trajets terminés', value: (d) => getDriverTripCounts(d.id, trips).termines },
         { header: 'Trajets annulés', value: (d) => getDriverTripCounts(d.id, trips).annules },
@@ -302,7 +315,8 @@ export default function Drivers() {
         { header: 'Nom', value: (d) => d.nom },
         { header: 'Téléphone', value: (d) => `${EMOJI.telephone} ${d.telephone}` },
         { header: 'CNI', value: (d) => d.cni ? `🪪 ${d.cni}` : '-' },
-        { header: 'Statut', value: (d) => isDriverOnMission(d.id, trips) ? `${EMOJI.camion} En mission` : `${EMOJI.succes} Disponible` },
+        { header: 'Permis', value: (d) => d.numeroPermis ? `🚘 ${d.numeroPermis}` : '-' },
+        { header: 'Statut', value: (d) => isDriverOnMission(d.id, trips, parcelExpeditions) ? `${EMOJI.camion} En mission` : `${EMOJI.succes} Disponible` },
         { header: 'Total', value: (d) => getDriverTripCounts(d.id, trips).total },
         { header: 'Terminés', value: (d) => getDriverTripCounts(d.id, trips).termines },
         { header: 'Annulés', value: (d) => getDriverTripCounts(d.id, trips).annules },
@@ -351,7 +365,7 @@ export default function Drivers() {
       const stats = getDriverStats(driver);
       const { balance, apports, sorties, allTransactions } = stats;
       const tc = getDriverTripCounts(driver.id, trips);
-      const onMission = isDriverOnMission(driver.id, trips);
+      const onMission = isDriverOnMission(driver.id, trips, parcelExpeditions);
       const driverTripsList = trips
         .filter((t) => t.chauffeurId === driver.id)
         .slice()
@@ -406,6 +420,7 @@ export default function Drivers() {
               <div class="driver-details">
                 <span>${EMOJI.telephone} ${driver.telephone}</span>
                 ${driver.cni ? `<span>${EMOJI.cni} ${driver.cni}</span>` : ''}
+                ${driver.numeroPermis ? `<span>🚘 Permis: ${driver.numeroPermis}</span>` : ''}
                 <span class="status ${onMission ? 'on-mission' : 'available'}">${onMission ? `${EMOJI.camion} En mission` : `${EMOJI.succes} Disponible`}</span>
               </div>
             </div>
@@ -783,6 +798,15 @@ export default function Drivers() {
                       placeholder="CE-123456789"
                     />
                   </div>
+                <div>
+                  <Label htmlFor="numeroPermis">Numéro de permis de conduire</Label>
+                  <Input
+                    id="numeroPermis"
+                    value={driverForm.numeroPermis}
+                    onChange={(e) => setDriverForm({ ...driverForm, numeroPermis: e.target.value })}
+                    placeholder="P-1234-2026"
+                  />
+                </div>
                   <div>
                     <Label htmlFor="photo">Photo du chauffeur</Label>
                     <Input
@@ -853,7 +877,7 @@ export default function Drivers() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search-drivers"
-                  placeholder="Rechercher par nom, prénom, téléphone ou CNI..."
+                  placeholder="Rechercher par nom, prénom, téléphone, CNI ou permis..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -1005,7 +1029,7 @@ export default function Drivers() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-lg">{driver.prenom} {driver.nom}</CardTitle>
-                        {isDriverOnMission(driver.id, trips) && (
+                        {isDriverOnMission(driver.id, trips, parcelExpeditions) && (
                           <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400">
                             Indisponible
                           </Badge>
@@ -1017,6 +1041,11 @@ export default function Drivers() {
                       {driver.cni && (
                         <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                           🪪 CNI: {driver.cni}
+                        </p>
+                      )}
+                      {driver.numeroPermis && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          🚘 Permis: {driver.numeroPermis}
                         </p>
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">

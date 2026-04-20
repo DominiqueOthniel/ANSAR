@@ -89,6 +89,8 @@ export interface TruckPayload {
   immatriculation: string;
   modele: string;
   type: 'tracteur' | 'remorqueuse';
+  sousType?: 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';
+  remorqueImmatriculation?: string;
   statut: 'actif' | 'inactif';
   dateMiseEnCirculation: string;
   photo?: string;
@@ -154,6 +156,7 @@ export interface DriverPayload {
   prenom: string;
   telephone: string;
   cni?: string;
+  numeroPermis?: string;
   photo?: string;
   transactions?: Array<{ type: 'apport' | 'sortie'; montant: number; date: string; description: string }>;
 }

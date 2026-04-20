@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, Truck, TruckType, TruckStatus, ThirdParty } from '@/contexts/AppContext';
+import { useApp, Truck, TruckType, TruckStatus, TruckSousType, ThirdParty } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,9 +34,15 @@ const TRUCK_SORT_OPTIONS = [
   { value: 'depense_asc', label: 'Dépenses (plus bas → plus haut)' },
 ] as const;
 
+function labelTruckType(truck: Pick<Truck, 'type' | 'sousType'>): string {
+  if (truck.type === 'remorqueuse') return 'Remorque';
+  if (truck.sousType === 'tracteur_jumele') return 'Tracteur jumelé';
+  return 'Tracteur seul';
+}
+
 export default function Trucks() {
   const navigate = useNavigate();
-  const { trucks, trips, expenses, invoices, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
+  const { trucks, trips, parcelExpeditions, expenses, invoices, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
@@ -58,8 +64,10 @@ export default function Trucks() {
 
   const [formData, setFormData] = useState({
     immatriculation: '',
+    remorqueImmatriculation: '',
     modele: '',
     type: 'tracteur' as TruckType,
+    sousType: 'tracteur_seul' as TruckSousType,
     statut: 'actif' as TruckStatus,
     dateMiseEnCirculation: '',
     photo: '',
@@ -70,8 +78,10 @@ export default function Trucks() {
   const resetForm = () => {
     setFormData({
       immatriculation: '',
+      remorqueImmatriculation: '',
       modele: '',
       type: 'tracteur',
+      sousType: 'tracteur_seul',
       statut: 'actif',
       dateMiseEnCirculation: '',
       photo: '',
@@ -105,10 +115,30 @@ export default function Trucks() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const tracteurImmat = formData.immatriculation.trim().toUpperCase().replace(/\s+/g, '');
+    const remorqueImmat = formData.remorqueImmatriculation
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '');
+    const isJumele = formData.type === 'tracteur' && formData.sousType === 'tracteur_jumele';
+    const immatriculationFinale =
+      isJumele && remorqueImmat ? `${tracteurImmat}-${remorqueImmat}` : tracteurImmat;
+
+    if (!tracteurImmat) {
+      toast.error("L'immatriculation du tracteur est obligatoire.");
+      return;
+    }
+    if (isJumele && !remorqueImmat) {
+      toast.error("Renseigne l'immatriculation de la remorque pour un tracteur jumelé.");
+      return;
+    }
+
     const truckData = {
-      immatriculation: formData.immatriculation,
+      immatriculation: immatriculationFinale,
+      remorqueImmatriculation: isJumele ? remorqueImmat : undefined,
       modele: formData.modele,
       type: formData.type,
+      sousType: formData.type === 'tracteur' ? formData.sousType : 'remorque_seule',
       statut: formData.statut,
       dateMiseEnCirculation: formData.dateMiseEnCirculation,
       photo: formData.photo || undefined,
@@ -136,8 +166,13 @@ export default function Trucks() {
     setEditingTruck(truck);
     setFormData({
       immatriculation: truck.immatriculation,
+      remorqueImmatriculation: truck.remorqueImmatriculation || '',
       modele: truck.modele,
       type: truck.type,
+      sousType:
+        truck.type === 'tracteur'
+          ? (truck.sousType ?? (truck.remorqueImmatriculation ? 'tracteur_jumele' : 'tracteur_seul'))
+          : 'remorque_seule',
       statut: truck.statut,
       dateMiseEnCirculation: truck.dateMiseEnCirculation,
       photo: truck.photo || '',
@@ -150,18 +185,18 @@ export default function Trucks() {
 
   const handleDelete = async (id: string) => {
     // Vérifier si le camion est utilisé dans un trajet actif
-    if (isTruckInUse(id, trips)) {
-      toast.error('Impossible de supprimer ce camion : il est utilisé dans un trajet en cours ou planifié');
+    if (isTruckInUse(id, trips, parcelExpeditions)) {
+      toast.error('Impossible de supprimer ce camion : il est utilisé dans une mission en cours ou planifiée');
       return;
     }
 
     // Calculer les statistiques avant suppression
-    const stats = calculateTruckStats(id, trips, expenses, invoices);
+    const stats = calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions);
     
     if (confirm(
       `Êtes-vous sûr de vouloir supprimer ce camion ?\n\n` +
       `Statistiques :\n` +
-      `- ${stats.tripsCount} trajet(s) terminé(s)${stats.tripsCancelledCount > 0 ? `, ${stats.tripsCancelledCount} annulé(s)` : ''}\n` +
+      `- ${stats.tripsCount} mission(s) terminée(s)${stats.tripsCancelledCount > 0 ? `, ${stats.tripsCancelledCount} annulée(s)` : ''}\n` +
       `- ${stats.revenue.toLocaleString('fr-FR')} FCFA d’encaissement\n` +
       `- ${stats.expenses.toLocaleString('fr-FR')} FCFA de dépenses\n\n` +
       `Toutes les dépenses associées seront également supprimées.`
@@ -182,7 +217,7 @@ export default function Trucks() {
 
   // Calculer les statistiques pour chaque camion
   const trucksWithStats = trucks.map(truck => {
-    const stats = calculateTruckStats(truck.id, trips, expenses, invoices);
+    const stats = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions);
     return { truck, stats };
   });
 
@@ -233,7 +268,7 @@ export default function Trucks() {
 
   const sortedTrucks = useMemo(() => {
     const list = [...filteredTrucks];
-    const stats = (id: string) => calculateTruckStats(id, trips, expenses, invoices);
+    const stats = (id: string) => calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions);
     switch (listSort) {
       case 'immat_desc':
         return stableSort(list, (a, b) => frCollator.compare(b.immatriculation, a.immatriculation));
@@ -261,13 +296,13 @@ export default function Trucks() {
 
   const activeTrucks = trucks.filter(t => t.statut === 'actif').length;
   const tracteurs = trucks.filter(t => t.type === 'tracteur').length;
-  const remorqueuses = trucks.filter(t => t.type === 'remorqueuse').length;
+  const remorques = trucks.filter(t => t.type === 'remorqueuse').length;
 
   // Fonction pour générer la description des filtres
   const getFiltersDescription = () => {
     const filters: string[] = [];
     if (searchTerm) filters.push(`Recherche: "${searchTerm}"`);
-    if (filterType !== 'all') filters.push(`Type: ${filterType === 'tracteur' ? 'Tracteur' : 'Remorqueuse'}`);
+    if (filterType !== 'all') filters.push(`Type: ${filterType === 'tracteur' ? 'Tracteur' : 'Remorque'}`);
     if (filterStatus !== 'all') filters.push(`Statut: ${filterStatus === 'actif' ? 'Actif' : 'Inactif'}`);
     if (filterProprietaire !== 'all') {
       if (filterProprietaire === 'none') filters.push('Propriétaire: Aucun');
@@ -294,18 +329,18 @@ export default function Trucks() {
       columns: [
         { header: 'Immatriculation', value: (t) => t.immatriculation },
         { header: 'Modèle', value: (t) => t.modele },
-        { header: 'Type', value: (t) => t.type === 'tracteur' ? 'Tracteur' : 'Remorqueuse' },
+        { header: 'Type', value: (t) => labelTruckType(t) },
         { header: 'Statut', value: (t) => t.statut === 'actif' ? 'Actif' : 'Inactif' },
         { header: 'Chauffeur attitré', value: (t) => {
           const chauffeur = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
           return chauffeur ? `${chauffeur.prenom} ${chauffeur.nom}` : '-';
         }},
         { header: 'Propriétaire', value: (t) => t.proprietaireId ? (thirdParties.find(tp => tp.id === t.proprietaireId)?.nom || '-') : '-' },
-        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).tripsCount },
-        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).tripsCancelledCount },
-        { header: 'Chiffre d’affaires (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).revenue },
-        { header: 'Dépenses (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).expenses },
-        { header: 'Bénéfice (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).profit },
+        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount },
+        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount },
+        { header: 'Chiffre d’affaires (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue },
+        { header: 'Dépenses (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses },
+        { header: 'Bénéfice (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit },
         { header: 'Mise en circulation', value: (t) => new Date(t.dateMiseEnCirculation).toLocaleDateString('fr-FR') },
       ],
       rows: sortedTrucks,
@@ -315,11 +350,11 @@ export default function Trucks() {
 
   const handleExportPDF = () => {
     // Calculer les totaux
-    const totalRecettes = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices).revenue, 0);
-    const totalDepenses = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices).expenses, 0);
+    const totalRecettes = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue, 0);
+    const totalDepenses = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses, 0);
     const totalBenefice = totalRecettes - totalDepenses;
-    const totalTrajetsTermines = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices).tripsCount, 0);
-    const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices).tripsCancelledCount, 0);
+    const totalTrajetsTermines = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount, 0);
+    const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount, 0);
 
     exportToPrintablePDF({
       title: 'Liste des Camions',
@@ -341,33 +376,33 @@ export default function Trucks() {
       columns: [
         { header: 'Immatriculation', value: (t) => t.immatriculation },
         { header: 'Modèle', value: (t) => t.modele },
-        { header: 'Type', value: (t) => t.type === 'tracteur' ? 'Tracteur' : 'Remorqueuse' },
+        { header: 'Type', value: (t) => labelTruckType(t) },
         { header: 'Statut', value: (t) => t.statut === 'actif' ? `${EMOJI.succes} Actif` : `${EMOJI.inactif} Inactif` },
         { header: 'Chauffeur attitré', value: (t) => {
           const chauffeur = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
           return chauffeur ? `👤 ${chauffeur.prenom} ${chauffeur.nom}` : '-';
         }},
         { header: 'Propriétaire', value: (t) => t.proprietaireId ? (thirdParties.find(tp => tp.id === t.proprietaireId)?.nom || '-') : '-' },
-        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).tripsCount },
-        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices).tripsCancelledCount },
+        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount },
+        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount },
         { 
           header: 'Chiffre d’affaires (FCFA)', 
-          value: (t) => `+${calculateTruckStats(t.id, trips, expenses, invoices).revenue.toLocaleString('fr-FR')}`,
-          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices).revenue > 0 ? 'positive' : 'neutral'
+          value: (t) => `+${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue.toLocaleString('fr-FR')}`,
+          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue > 0 ? 'positive' : 'neutral'
         },
         { 
           header: 'Dépenses (FCFA)', 
-          value: (t) => `-${calculateTruckStats(t.id, trips, expenses, invoices).expenses.toLocaleString('fr-FR')}`,
-          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices).expenses > 0 ? 'negative' : 'neutral'
+          value: (t) => `-${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses.toLocaleString('fr-FR')}`,
+          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses > 0 ? 'negative' : 'neutral'
         },
         { 
           header: 'Bénéfice (FCFA)', 
           value: (t) => {
-            const profit = calculateTruckStats(t.id, trips, expenses, invoices).profit;
+            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit;
             return profit >= 0 ? `+${profit.toLocaleString('fr-FR')}` : profit.toLocaleString('fr-FR');
           },
           cellStyle: (t) => {
-            const profit = calculateTruckStats(t.id, trips, expenses, invoices).profit;
+            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit;
             return profit >= 0 ? 'positive' : 'negative';
           }
         },
@@ -381,7 +416,7 @@ export default function Trucks() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion de la Flotte"
-        description="Gérez vos camions, tracteurs et remorqueuses avec facilité"
+        description="Gérez vos camions, tracteurs seuls ou jumelés, et remorques"
         icon={TruckIcon}
         gradient="from-orange-500/20 via-red-500/10 to-transparent"
         stats={[
@@ -404,8 +439,8 @@ export default function Trucks() {
             color: 'text-orange-600 dark:text-orange-400'
           },
           {
-            label: 'Remorqueuses',
-            value: remorqueuses,
+            label: 'Remorques',
+            value: remorques,
             icon: <TruckIcon className="h-4 w-4" />,
             color: 'text-purple-600 dark:text-purple-400'
           }
@@ -461,11 +496,13 @@ export default function Trucks() {
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="immatriculation">Immatriculation</Label>
+                  <Label htmlFor="immatriculation">
+                    Immatriculation {formData.type === 'tracteur' ? 'tracteur' : 'remorque'}
+                  </Label>
                   <Input
                     id="immatriculation"
                     value={formData.immatriculation}
-                    onChange={(e) => setFormData({ ...formData, immatriculation: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, immatriculation: e.target.value.toUpperCase() })}
                     required
                   />
                 </div>
@@ -480,16 +517,71 @@ export default function Trucks() {
                 </div>
                 <div>
                   <Label htmlFor="type">Type</Label>
-                  <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as TruckType })}>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        type: value as TruckType,
+                        sousType: value === 'tracteur' ? 'tracteur_seul' : 'remorque_seule',
+                        remorqueImmatriculation: value === 'tracteur' ? prev.remorqueImmatriculation : '',
+                      }))
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="tracteur">Tracteur</SelectItem>
-                      <SelectItem value="remorqueuse">Remorqueuse</SelectItem>
+                      <SelectItem value="remorqueuse">Remorque</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                {formData.type === 'tracteur' && (
+                  <>
+                    <div>
+                      <Label htmlFor="sousType">Sous-type tracteur</Label>
+                      <Select
+                        value={formData.sousType}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            sousType: value as TruckSousType,
+                            remorqueImmatriculation:
+                              value === 'tracteur_jumele' ? prev.remorqueImmatriculation : '',
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tracteur_seul">Tracteur seul</SelectItem>
+                          <SelectItem value="tracteur_jumele">Tracteur jumelé à remorque</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formData.sousType === 'tracteur_jumele' && (
+                      <div>
+                        <Label htmlFor="remorqueImmatriculation">Immatriculation remorque</Label>
+                        <Input
+                          id="remorqueImmatriculation"
+                          value={formData.remorqueImmatriculation}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              remorqueImmatriculation: e.target.value.toUpperCase(),
+                            })
+                          }
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Format enregistré : {formData.immatriculation || 'TRACTEUR'}-{formData.remorqueImmatriculation || 'REMORQUE'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div>
                   <Label htmlFor="statut">Statut</Label>
                   <Select value={formData.statut} onValueChange={(value) => setFormData({ ...formData, statut: value as TruckStatus })}>
@@ -690,7 +782,7 @@ export default function Trucks() {
               <div className="flex flex-wrap gap-2 pb-2">
                 {filterType !== 'all' && (
                   <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
-                    Type: {filterType === 'tracteur' ? 'Tracteur' : 'Remorqueuse'}
+                    Type: {filterType === 'tracteur' ? 'Tracteur' : 'Remorque'}
                     <button
                       onClick={() => setFilterType('all')}
                       className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
@@ -754,7 +846,7 @@ export default function Trucks() {
             <SelectContent>
               <SelectItem value="all">Tous les types</SelectItem>
               <SelectItem value="tracteur">Tracteur</SelectItem>
-              <SelectItem value="remorqueuse">Remorqueuse</SelectItem>
+              <SelectItem value="remorqueuse">Remorque</SelectItem>
             </SelectContent>
           </Select>
             </div>
@@ -922,7 +1014,7 @@ export default function Trucks() {
                 <TableRow key={truck.id} className="hover:bg-muted/50 transition-colors duration-200">
                   <TableCell className="font-semibold">{truck.immatriculation}</TableCell>
                   <TableCell>{truck.modele}</TableCell>
-                  <TableCell className="capitalize">{truck.type}</TableCell>
+                  <TableCell>{labelTruckType(truck)}</TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       <Badge 
@@ -931,7 +1023,7 @@ export default function Trucks() {
                       >
                         {truck.statut}
                       </Badge>
-                      {isTruckInUse(truck.id, trips) && (
+                      {isTruckInUse(truck.id, trips, parcelExpeditions) && (
                         <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 text-xs">
                           Indisponible
                         </Badge>
@@ -974,7 +1066,7 @@ export default function Trucks() {
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const st = calculateTruckStats(truck.id, trips, expenses, invoices);
+                      const st = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions);
                       return (
                         <div className="flex flex-col gap-0.5 text-sm">
                           <div className="flex items-center gap-2">
@@ -1063,7 +1155,9 @@ export default function Trucks() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Type</p>
-                <p className="text-lg font-semibold capitalize">{viewingTruck?.type}</p>
+                <p className="text-lg font-semibold">
+                  {viewingTruck ? labelTruckType(viewingTruck) : '—'}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Chauffeur attitré</p>
@@ -1106,7 +1200,7 @@ export default function Trucks() {
                   <Badge variant={viewingTruck?.statut === 'actif' ? 'default' : 'secondary'}>
                     {viewingTruck?.statut}
                   </Badge>
-                  {viewingTruck && isTruckInUse(viewingTruck.id, trips) && (
+                  {viewingTruck && isTruckInUse(viewingTruck.id, trips, parcelExpeditions) && (
                     <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 text-xs">
                       Indisponible
                     </Badge>
@@ -1114,7 +1208,7 @@ export default function Trucks() {
                 </div>
               </div>
               {viewingTruck && (() => {
-                const stats = calculateTruckStats(viewingTruck.id, trips, expenses, invoices);
+                const stats = calculateTruckStats(viewingTruck.id, trips, expenses, invoices, parcelExpeditions);
                 return (
                   <div className="col-span-2 space-y-3">
                     {/* Statistiques principales */}

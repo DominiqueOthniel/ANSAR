@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   prenom VARCHAR NOT NULL,
   telephone VARCHAR NOT NULL,
   cni VARCHAR,
+  "numeroPermis" VARCHAR,
   photo VARCHAR
 );
 
@@ -42,6 +43,8 @@ CREATE TABLE IF NOT EXISTS trucks (
   immatriculation VARCHAR NOT NULL,
   modele VARCHAR NOT NULL,
   type VARCHAR(20) NOT NULL CHECK (type IN ('tracteur', 'remorqueuse')),
+  "sousType" VARCHAR(30),
+  "remorqueImmatriculation" VARCHAR,
   statut VARCHAR(20) NOT NULL CHECK (statut IN ('actif', 'inactif')),
   "dateMiseEnCirculation" DATE NOT NULL,
   photo VARCHAR,
@@ -214,6 +217,16 @@ CREATE INDEX IF NOT EXISTS idx_credit_remboursements_credit ON credit_remboursem
 -- Expéditions colis : commission (ajout sur bases déjà déployées)
 ALTER TABLE IF EXISTS parcel_expeditions
   ADD COLUMN IF NOT EXISTS "commissionPct" DECIMAL(5, 2);
+
+-- Camions : sous-type et immatriculation remorque jumelée
+ALTER TABLE IF EXISTS trucks
+  ADD COLUMN IF NOT EXISTS "sousType" VARCHAR(30);
+ALTER TABLE IF EXISTS trucks
+  ADD COLUMN IF NOT EXISTS "remorqueImmatriculation" VARCHAR;
+
+-- Chauffeurs : numéro de permis
+ALTER TABLE IF EXISTS drivers
+  ADD COLUMN IF NOT EXISTS "numeroPermis" VARCHAR;
 
 -- =============================================
 -- Optionnel : activer les extensions si besoin

@@ -32,6 +32,10 @@ export class CreateDriverDto {
 
   @IsOptional()
   @IsString()
+  numeroPermis?: string;
+
+  @IsOptional()
+  @IsString()
   photo?: string;
 
   @IsOptional()

@@ -49,7 +49,7 @@ const navigation = [
   { name: 'Factures',   href: '/factures',   icon: FileText,        color: 'from-blue-500 to-cyan-500' },
   { name: 'Chauffeurs', href: '/chauffeurs', icon: Users,           color: 'from-cyan-500 to-sky-500' },
   { name: 'Tiers',      href: '/tiers',      icon: Building2,       color: 'from-violet-500 to-purple-500' },
-  { name: 'Envoi colis', href: '/envoi-colis', icon: Package,       color: 'from-sky-500 to-cyan-500' },
+  { name: 'Expéditions', href: '/envoi-colis', icon: Package,       color: 'from-sky-500 to-cyan-500' },
   { name: 'Caisse',     href: '/caisse',     icon: Wallet,          color: 'from-green-500 to-emerald-500' },
   { name: 'Suivi créances', href: '/credits', icon: CreditCard,      color: 'from-rose-500 to-pink-500' },
   { name: 'Suivi GPS',  href: '/suivi',      icon: MapPin,          color: 'from-sky-500 to-blue-500' },
