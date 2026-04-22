@@ -30,8 +30,12 @@ export class TrucksService {
 
     if (type === 'tracteur') {
       const sousType = dto.sousType ?? (remorqueImmat ? 'tracteur_jumele' : 'tracteur_seul');
-      const finalImmat =
-        sousType === 'tracteur_jumele' && remorqueImmat ? `${immat}-${remorqueImmat}` : immat;
+      let finalImmat = immat;
+      if (sousType === 'tracteur_jumele' && remorqueImmat) {
+        const suffix = `-${remorqueImmat}`;
+        // Le client peut déjà envoyer « TRACT-REMORQ » + remorque : ne pas recoller une 2e fois.
+        finalImmat = immat.endsWith(suffix) ? immat : `${immat}-${remorqueImmat}`;
+      }
       return {
         ...dto,
         immatriculation: finalImmat,

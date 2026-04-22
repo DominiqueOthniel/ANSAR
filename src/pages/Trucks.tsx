@@ -49,9 +49,15 @@ function tracteurImmatForForm(truck: Truck): string {
   const rem = (truck.remorqueImmatriculation || '').trim().replace(/\s+/g, '').toUpperCase();
   const jumele = truck.sousType === 'tracteur_jumele' || !!rem;
   if (!jumele || !rem) return truck.immatriculation;
-  const full = truck.immatriculation.trim().replace(/\s+/g, '').toUpperCase();
+  let full = truck.immatriculation.trim().replace(/\s+/g, '').toUpperCase();
   const suffix = `-${rem}`;
-  return full.endsWith(suffix) ? full.slice(0, -suffix.length) : truck.immatriculation;
+  // Retirer toutes les répétitions « -REMORQ » en fin (ex. bug ancien : TRACT-REM-REM).
+  let guard = 0;
+  while (full.endsWith(suffix) && guard < 10) {
+    full = full.slice(0, -suffix.length);
+    guard += 1;
+  }
+  return full || truck.immatriculation;
 }
 
 export default function Trucks() {
@@ -172,8 +178,6 @@ export default function Trucks() {
       .toUpperCase()
       .replace(/\s+/g, '');
     const isJumele = formData.sousType === 'tracteur_jumele';
-    const immatriculationFinale =
-      isJumele && remorqueImmat ? `${tracteurImmat}-${remorqueImmat}` : tracteurImmat;
 
     if (!tracteurImmat) {
       toast.error("L'immatriculation du tracteur est obligatoire.");
@@ -184,8 +188,9 @@ export default function Trucks() {
       return;
     }
 
+    /** En jumelé : envoyer uniquement la plaque tracteur ; le backend compose `tracteur-remorque` (évite double concaténation). */
     const truckData = {
-      immatriculation: immatriculationFinale,
+      immatriculation: tracteurImmat,
       remorqueImmatriculation: isJumele ? remorqueImmat : undefined,
       modele: formData.modele,
       type: 'tracteur' as const,
