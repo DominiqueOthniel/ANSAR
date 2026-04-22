@@ -1360,7 +1360,7 @@ export default function Trips() {
                         </Select>
                         {(() => {
                           const stats = calculateTripStats(trip.id, expenses, trip, invoices);
-                          return stats.expensesCount > 0 && (
+                          return stats.linkedExpensesCount > 0 && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -1485,15 +1485,20 @@ export default function Trips() {
 
                 {/* Résumé des dépenses */}
                 <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-5 w-5 text-primary" />
-                      <span className="font-semibold">Total des dépenses: {stats.expenses.toLocaleString('fr-FR')} FCFA</span>
+                      <span className="font-semibold">
+                        Dépenses d’exploitation (hors préfinancement) : {stats.expenses.toLocaleString('fr-FR')} FCFA
+                      </span>
                     </div>
                     <Badge variant="outline" className="bg-primary/10">
                       {stats.expensesCount} dépense{stats.expensesCount > 1 ? 's' : ''}
                     </Badge>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Le préfinancement du trajet est compté une seule fois dans le solde (ligne « Préfinancement » ou dépense du même libellé).
+                  </p>
                 </div>
 
                 {/* Liste des dépenses */}

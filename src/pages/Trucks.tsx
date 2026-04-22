@@ -35,9 +35,23 @@ const TRUCK_SORT_OPTIONS = [
 ] as const;
 
 function labelTruckType(truck: Pick<Truck, 'type' | 'sousType'>): string {
-  if (truck.type === 'remorqueuse') return 'Remorque';
-  if (truck.sousType === 'tracteur_jumele') return 'Tracteur jumelé';
+  if (truck.type === 'remorqueuse') return 'Remorque seule (historique)';
+  if (truck.sousType === 'tracteur_jumele') return 'Tracteur + remorque';
   return 'Tracteur seul';
+}
+
+/**
+ * En base, un jumelé a souvent `immatriculation` = « TRACT-REMORQ » et `remorqueImmatriculation` = REMORQ.
+ * Le formulaire doit n’afficher que la plaque tracteur dans le premier champ.
+ */
+function tracteurImmatForForm(truck: Truck): string {
+  if (truck.type !== 'tracteur') return truck.immatriculation;
+  const rem = (truck.remorqueImmatriculation || '').trim().replace(/\s+/g, '').toUpperCase();
+  const jumele = truck.sousType === 'tracteur_jumele' || !!rem;
+  if (!jumele || !rem) return truck.immatriculation;
+  const full = truck.immatriculation.trim().replace(/\s+/g, '').toUpperCase();
+  const suffix = `-${rem}`;
+  return full.endsWith(suffix) ? full.slice(0, -suffix.length) : truck.immatriculation;
 }
 
 export default function Trucks() {
@@ -115,12 +129,49 @@ export default function Trucks() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.type === 'remorqueuse') {
+      const imm = formData.immatriculation.trim().toUpperCase().replace(/\s+/g, '');
+      if (!imm) {
+        toast.error("L'immatriculation est obligatoire.");
+        return;
+      }
+      const truckData = {
+        immatriculation: imm,
+        remorqueImmatriculation: undefined as string | undefined,
+        modele: formData.modele,
+        type: 'remorqueuse' as const,
+        sousType: 'remorque_seule' as const,
+        statut: formData.statut,
+        dateMiseEnCirculation: formData.dateMiseEnCirculation,
+        photo: formData.photo || undefined,
+        proprietaireId: formData.proprietaireId || undefined,
+        chauffeurId: formData.chauffeurId || undefined,
+      };
+      await withGuard(async () => {
+        try {
+          if (editingTruck) {
+            await updateTruck(editingTruck.id, truckData);
+            toast.success('Camion modifié avec succès');
+          } else {
+            await createTruck(truckData);
+            toast.success('Camion ajouté avec succès');
+          }
+          setIsDialogOpen(false);
+          resetForm();
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
+        }
+      });
+      return;
+    }
+
     const tracteurImmat = formData.immatriculation.trim().toUpperCase().replace(/\s+/g, '');
     const remorqueImmat = formData.remorqueImmatriculation
       .trim()
       .toUpperCase()
       .replace(/\s+/g, '');
-    const isJumele = formData.type === 'tracteur' && formData.sousType === 'tracteur_jumele';
+    const isJumele = formData.sousType === 'tracteur_jumele';
     const immatriculationFinale =
       isJumele && remorqueImmat ? `${tracteurImmat}-${remorqueImmat}` : tracteurImmat;
 
@@ -129,7 +180,7 @@ export default function Trucks() {
       return;
     }
     if (isJumele && !remorqueImmat) {
-      toast.error("Renseigne l'immatriculation de la remorque pour un tracteur jumelé.");
+      toast.error("Renseigne l'immatriculation de la remorque pour un tracteur avec remorque.");
       return;
     }
 
@@ -137,8 +188,8 @@ export default function Trucks() {
       immatriculation: immatriculationFinale,
       remorqueImmatriculation: isJumele ? remorqueImmat : undefined,
       modele: formData.modele,
-      type: formData.type,
-      sousType: formData.type === 'tracteur' ? formData.sousType : 'remorque_seule',
+      type: 'tracteur' as const,
+      sousType: isJumele ? ('tracteur_jumele' as const) : ('tracteur_seul' as const),
       statut: formData.statut,
       dateMiseEnCirculation: formData.dateMiseEnCirculation,
       photo: formData.photo || undefined,
@@ -164,15 +215,17 @@ export default function Trucks() {
 
   const handleEdit = (truck: Truck) => {
     setEditingTruck(truck);
+    const sousTracteur =
+      truck.type === 'tracteur'
+        ? (truck.sousType ?? (truck.remorqueImmatriculation ? 'tracteur_jumele' : 'tracteur_seul'))
+        : 'remorque_seule';
     setFormData({
-      immatriculation: truck.immatriculation,
+      immatriculation:
+        truck.type === 'tracteur' ? tracteurImmatForForm(truck) : truck.immatriculation,
       remorqueImmatriculation: truck.remorqueImmatriculation || '',
       modele: truck.modele,
       type: truck.type,
-      sousType:
-        truck.type === 'tracteur'
-          ? (truck.sousType ?? (truck.remorqueImmatriculation ? 'tracteur_jumele' : 'tracteur_seul'))
-          : 'remorque_seule',
+      sousType: sousTracteur,
       statut: truck.statut,
       dateMiseEnCirculation: truck.dateMiseEnCirculation,
       photo: truck.photo || '',
@@ -497,7 +550,7 @@ export default function Trucks() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <Label htmlFor="immatriculation">
-                    Immatriculation {formData.type === 'tracteur' ? 'tracteur' : 'remorque'}
+                    Immatriculation {formData.type === 'remorqueuse' ? 'remorque (historique)' : 'tracteur'}
                   </Label>
                   <Input
                     id="immatriculation"
@@ -515,28 +568,12 @@ export default function Trucks() {
                     required
                   />
                 </div>
-                <div>
-                  <Label htmlFor="type">Type</Label>
-                  <Select
-                    value={formData.type}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        type: value as TruckType,
-                        sousType: value === 'tracteur' ? 'tracteur_seul' : 'remorque_seule',
-                        remorqueImmatriculation: value === 'tracteur' ? prev.remorqueImmatriculation : '',
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="tracteur">Tracteur</SelectItem>
-                      <SelectItem value="remorqueuse">Remorque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {formData.type === 'remorqueuse' && (
+                  <p className="text-xs text-muted-foreground">
+                    Cette fiche est une <span className="font-medium">remorque seule</span> (historique). Désormais, la flotte est gérée en
+                    <span className="font-medium"> tracteur seul</span> ou <span className="font-medium">tracteur + remorque</span>.
+                  </p>
+                )}
                 {formData.type === 'tracteur' && (
                   <>
                     <div>

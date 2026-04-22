@@ -397,33 +397,36 @@ export const canDeleteTrip = (tripId: string, invoices: Invoice[]): boolean => {
  * Utilise les montants payés (recette) plutôt que le montant contractuel
  */
 export const calculateTripStats = (
-  tripId: string, 
-  expenses: Expense[], 
+  tripId: string,
+  expenses: Expense[],
   trip: Trip,
-  invoices?: Invoice[]
+  invoices?: Invoice[],
 ) => {
-  // Dépenses liées directement au trajet
-  const tripExpenses = expenses
-    .filter(e => e.tripId === tripId)
+  const tripLinked = expenses.filter((e) => e.tripId === tripId);
+  const prefinFromExpenses = tripLinked
+    .filter((e) => e.categorie === 'Préfinancement')
     .reduce((sum, e) => sum + e.montant, 0);
-  
-  // Préfinancement
-  const prefinancement = trip.prefinancement || 0;
-  
-  // Recette = montant total payé (calculé à partir des factures si disponible, sinon utilise trip.recette)
-  const recette = invoices 
-    ? calculatePaidAmountForTrip(tripId, invoices)
-    : trip.recette;
-  
-  // Solde = Recette - Préfinancement - Dépenses
+  /** Montant préfinancé : champ trajet (source de vérité à la création), sinon somme des dépenses « Préfinancement » (données anciennes). */
+  const prefinancement =
+    trip.prefinancement && trip.prefinancement > 0 ? trip.prefinancement : prefinFromExpenses;
+
+  /** Dépenses d’exploitation liées au trajet, sans les lignes « Préfinancement » (déjà reflétées dans `prefinancement`). */
+  const tripExpenses = tripLinked
+    .filter((e) => e.categorie !== 'Préfinancement')
+    .reduce((sum, e) => sum + e.montant, 0);
+
+  const recette = invoices ? calculatePaidAmountForTrip(tripId, invoices) : trip.recette;
+
   const solde = recette - prefinancement - tripExpenses;
-  
+
   return {
     recette,
     prefinancement,
     expenses: tripExpenses,
     solde,
-    expensesCount: expenses.filter(e => e.tripId === tripId).length
+    expensesCount: tripLinked.filter((e) => e.categorie !== 'Préfinancement').length,
+    /** Toutes les lignes liées (y compris préfinancement), pour afficher le détail / bouton œil. */
+    linkedExpensesCount: tripLinked.length,
   };
 };
 
