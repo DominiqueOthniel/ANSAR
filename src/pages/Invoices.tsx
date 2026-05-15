@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useApp, Invoice, InvoiceStatus, Trip } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -3311,7 +3311,97 @@ export default function Invoices() {
                   </div>
                 )}
               </div>
-              
+
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
+                <p className="font-medium text-foreground">Attribution de l’encaissement</p>
+                <p>
+                  <span className="text-muted-foreground">Facturé à : </span>
+                  <span className="font-medium">
+                    {(selectedInvoice.clientTierId &&
+                      thirdParties.find((tp) => tp.id === selectedInvoice.clientTierId)?.nom) ||
+                      selectedInvoice.factureClientLibelle?.trim() ||
+                      '—'}
+                  </span>
+                </p>
+                {selectedInvoice.trajetId ? (
+                  (() => {
+                    const tr = trips.find((t) => t.id === selectedInvoice.trajetId);
+                    if (!tr) {
+                      return (
+                        <p className="text-amber-700 dark:text-amber-400 text-xs">
+                          Trajet lié introuvable dans les données : la ventilation suivra la facture ci-dessus.
+                        </p>
+                      );
+                    }
+                    const parts = (tr.clientParticipants ?? []).filter((p) => p.libelle.trim());
+                    const multi = tripHasMultipleInvoicePayers(tr);
+                    return (
+                      <>
+                        <p>
+                          <span className="text-muted-foreground">Texte « client » sur le trajet : </span>
+                          <span className="font-medium">{tr.client?.trim() || '—'}</span>
+                        </p>
+                        {parts.length === 0 ? (
+                          <div className="pt-2 border-t border-dashed space-y-2 text-xs text-muted-foreground">
+                            <p>
+                              Il n’y a pas encore de <strong>participants client</strong> structurés sur ce trajet,
+                              donc pas de liste déroulante « qui verse » ici. L’encaissement est enregistré pour le
+                              client de la facture (ci-dessus).
+                            </p>
+                            <p>
+                              Pour plusieurs payeurs sur une même facture trajet, ouvrez le trajet et renseignez la
+                              structure multi-clients (participants avec libellé).
+                            </p>
+                            <Link to="/trajets" className="inline-block text-primary font-medium hover:underline">
+                              Ouvrir les trajets
+                            </Link>
+                          </div>
+                        ) : (
+                          <>
+                            <Label htmlFor="paymentPayerParticipant" className="text-foreground block pt-1">
+                              {multi
+                                ? 'Client qui verse cet encaissement *'
+                                : 'Participant trajet (attribution)'}
+                            </Label>
+                            <Select
+                              value={paymentPayerParticipantId || undefined}
+                              onValueChange={setPaymentPayerParticipantId}
+                              disabled={!multi}
+                            >
+                              <SelectTrigger id="paymentPayerParticipant" className="mt-1 h-9">
+                                <SelectValue placeholder="Choisir le client qui verse" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {parts.map((p) => {
+                                  const fiche = p.tierId
+                                    ? thirdParties.find((tp) => tp.id === p.tierId && tp.type === 'client')
+                                    : undefined;
+                                  return (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.libelle.trim()}
+                                      {fiche ? ` — ${fiche.nom}` : p.tierId ? ` — fiche ${p.tierId.slice(0, 8)}…` : ''}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {multi
+                                ? 'Plusieurs clients sur ce trajet : choisissez qui verse cet encaissement (ventilation sur la facture).'
+                                : 'Un seul participant : attribution automatique ; la liste sert de rappel.'}
+                            </p>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  <p className="text-xs text-muted-foreground pt-1 border-t border-dashed">
+                    Facture sans trajet lié : l’encaissement est rattaché au client « facturé à » ci-dessus.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <Label htmlFor="paymentAmount">Montant payé (FCFA) *</Label>
                 <NumberInput
@@ -3327,50 +3417,6 @@ export default function Invoices() {
                   Le montant peut être partiel. Maximum: {(selectedInvoice.montantTTC - (selectedInvoice.montantPaye || 0)).toLocaleString('fr-FR')} FCFA
                 </p>
               </div>
-
-              {selectedInvoice.trajetId &&
-                (() => {
-                  const tr = trips.find((t) => t.id === selectedInvoice.trajetId);
-                  const parts = (tr?.clientParticipants ?? []).filter((p) => p.libelle.trim());
-                  if (parts.length === 0) return null;
-                  const multi = tripHasMultipleInvoicePayers(tr);
-                  return (
-                    <div>
-                      <Label htmlFor="paymentPayerParticipant">
-                        {multi
-                          ? 'Client payeur (cet encaissement) *'
-                          : 'Client payeur (attribution de l’encaissement)'}
-                      </Label>
-                      <Select
-                        value={paymentPayerParticipantId || undefined}
-                        onValueChange={setPaymentPayerParticipantId}
-                        disabled={!multi}
-                      >
-                        <SelectTrigger id="paymentPayerParticipant" className="mt-1">
-                          <SelectValue placeholder="Choisir le client qui verse" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {parts.map((p) => {
-                            const fiche = p.tierId
-                              ? thirdParties.find((tp) => tp.id === p.tierId && tp.type === 'client')
-                              : undefined;
-                            return (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.libelle.trim()}
-                                {fiche ? ` — ${fiche.nom}` : p.tierId ? ` — fiche ${p.tierId.slice(0, 8)}…` : ''}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {multi
-                          ? 'Plusieurs clients sur ce trajet : choisissez qui verse cet encaissement (ventilation par fiche client sur la facture).'
-                          : 'Un seul client structuré sur ce trajet : l’encaissement lui est attribué automatiquement.'}
-                      </p>
-                    </div>
-                  );
-                })()}
 
               {paymentAmount > 0 && (
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
