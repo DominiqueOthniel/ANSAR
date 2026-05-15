@@ -7,8 +7,10 @@ import {
   expensesApi,
   invoicesApi,
   thirdPartiesApi,
+  merchandiseQualitiesApi,
 } from '@/lib/api';
 import type { ParcelExpeditionPayload } from '@/lib/api';
+import type { TripClientParticipant } from '@/lib/trip-client-participants';
 import { refreshCaisseFromApi, isRemoteCaisse } from '@/lib/caisse-local';
 import { refreshBankFromApi } from '@/lib/bank-local';
 
@@ -48,6 +50,8 @@ export interface TripStop {
   notes?: string;
 }
 
+export type { TripClientParticipant } from '@/lib/trip-client-participants';
+
 export interface Trip {
   id: string;
   tracteurId?: string;
@@ -73,6 +77,10 @@ export interface Trip {
   statut: TripStatus;
   /** Arrêts détaillés (chargements / livraisons), optionnel côté API */
   stops?: TripStop[];
+  /** Clients / parts liés au trajet (multi-clients, règlement). */
+  clientParticipants?: TripClientParticipant[];
+  /** `id` d’une entrée de `clientParticipants` : payeur au règlement / défaut facture. */
+  payeurParticipantId?: string;
 }
 
 export interface ParcelExpeditionLot {
@@ -166,7 +174,7 @@ export interface Driver {
   transactions: DriverTransaction[];
 }
 
-export type ThirdPartyType = 'proprietaire' | 'client' | 'fournisseur';
+export type ThirdPartyType = 'proprietaire' | 'client' | 'fournisseur' | 'employe';
 
 export interface ThirdParty {
   id: string;
@@ -178,6 +186,13 @@ export interface ThirdParty {
   notes?: string;
   /** Encours max. commandes clients sans paiement (FCFA), fiches client uniquement. */
   plafondCredit?: number;
+}
+
+/** Libellé enregistré pour le champ marchandise / qualité des trajets. */
+export interface MerchandiseQuality {
+  id: string;
+  libelle: string;
+  createdAt?: string;
 }
 
 // Normalisation des données API (TypeORM renvoie les décimaux en string)
@@ -442,12 +457,22 @@ function normalizeThirdParty(r: Record<string, unknown>): ThirdParty {
   };
 }
 
+function normalizeMerchandiseQuality(r: Record<string, unknown>): MerchandiseQuality {
+  const createdRaw = r.createdAt ?? r.created_at;
+  return {
+    id: String(r.id),
+    libelle: String(r.libelle ?? '').trim(),
+    createdAt:
+      createdRaw != null && String(createdRaw) !== '' ? String(createdRaw) : undefined,
+  };
+}
+
 const initialSubCategories: Record<string, string[]> = {
   'Carburant': ['Diesel', 'Essence', 'AdBlue'],
   'Maintenance': ['Révision', 'Réparation', 'Pièces détachées', 'Vidange'],
   'Péage': ['Autoroute', 'Pont', 'Tunnel'],
   'Assurance': ['Assurance véhicule', 'Assurance responsabilité'],
-  'Salaire': ['Salaire chauffeur', 'Avance salaire', 'Prime'],
+  'Salaire': ['Salaire chauffeur', 'Salaire personnel siège', 'Avance salaire', 'Prime'],
   'Don': [],
 };
 const SUBCATEGORIES_STORAGE_KEY = 'truck_track_subcategories';
@@ -487,6 +512,8 @@ interface AppContextType {
   setDrivers: React.Dispatch<React.SetStateAction<Driver[]>>;
   thirdParties: ThirdParty[];
   setThirdParties: React.Dispatch<React.SetStateAction<ThirdParty[]>>;
+  merchandiseQualities: MerchandiseQuality[];
+  setMerchandiseQualities: React.Dispatch<React.SetStateAction<MerchandiseQuality[]>>;
   subCategories: Record<string, string[]>;
   setSubCategories: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
   isLoading: boolean;
@@ -498,6 +525,7 @@ interface AppContextType {
   refreshExpenses: () => Promise<void>;
   refreshInvoices: () => Promise<void>;
   refreshThirdParties: () => Promise<void>;
+  refreshMerchandiseQualities: () => Promise<void>;
   createTruck: (data: Parameters<typeof trucksApi.create>[0]) => Promise<Truck>;
   updateTruck: (id: string, data: Parameters<typeof trucksApi.update>[1]) => Promise<Truck>;
   deleteTruck: (id: string) => Promise<void>;
@@ -522,6 +550,14 @@ interface AppContextType {
   createThirdParty: (data: Parameters<typeof thirdPartiesApi.create>[0]) => Promise<ThirdParty>;
   updateThirdParty: (id: string, data: Parameters<typeof thirdPartiesApi.update>[1]) => Promise<ThirdParty>;
   deleteThirdParty: (id: string) => Promise<void>;
+  createMerchandiseQuality: (
+    data: Parameters<typeof merchandiseQualitiesApi.create>[0],
+  ) => Promise<MerchandiseQuality>;
+  updateMerchandiseQuality: (
+    id: string,
+    data: Parameters<typeof merchandiseQualitiesApi.update>[1],
+  ) => Promise<MerchandiseQuality>;
+  deleteMerchandiseQuality: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -534,6 +570,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [thirdParties, setThirdParties] = useState<ThirdParty[]>([]);
+  const [merchandiseQualities, setMerchandiseQualities] = useState<MerchandiseQuality[]>([]);
   const [subCategories, setSubCategories] = useState<Record<string, string[]>>(getInitialSubCategories);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -625,6 +662,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const refreshMerchandiseQualities = async () => {
+    try {
+      const data = await merchandiseQualitiesApi.getAll();
+      setMerchandiseQualities(
+        dedup(
+          Array.isArray(data) ? data.map((row) => normalizeMerchandiseQuality(row as Record<string, unknown>)) : [],
+        ),
+      );
+    } catch (e) {
+      console.error('refreshMerchandiseQualities', e);
+      setApiError(e instanceof Error ? e.message : 'Erreur API');
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     setApiError(null);
@@ -640,6 +691,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           refreshExpenses(),
           refreshInvoices(),
           refreshThirdParties(),
+          refreshMerchandiseQualities(),
           ...(isRemoteCaisse()
             ? [refreshCaisseFromApi(), refreshBankFromApi()]
             : []),
@@ -785,6 +837,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     void refreshThirdParties();
   };
 
+  const createMerchandiseQuality = async (
+    data: Parameters<typeof merchandiseQualitiesApi.create>[0],
+  ) => {
+    const r = await merchandiseQualitiesApi.create(data);
+    void refreshMerchandiseQualities();
+    return normalizeMerchandiseQuality(r as Record<string, unknown>);
+  };
+
+  const updateMerchandiseQuality = async (
+    id: string,
+    data: Parameters<typeof merchandiseQualitiesApi.update>[1],
+  ) => {
+    const r = await merchandiseQualitiesApi.update(id, data);
+    void refreshMerchandiseQualities();
+    return normalizeMerchandiseQuality(r as Record<string, unknown>);
+  };
+
+  const deleteMerchandiseQuality = async (id: string) => {
+    await merchandiseQualitiesApi.delete(id);
+    void refreshMerchandiseQualities();
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -802,6 +876,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setDrivers,
         thirdParties,
         setThirdParties,
+        merchandiseQualities,
+        setMerchandiseQualities,
         subCategories,
         setSubCategories,
         isLoading,
@@ -813,6 +889,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         refreshExpenses,
         refreshInvoices,
         refreshThirdParties,
+        refreshMerchandiseQualities,
         createTruck,
         updateTruck,
         deleteTruck,
@@ -834,6 +911,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         createThirdParty,
         updateThirdParty,
         deleteThirdParty,
+        createMerchandiseQuality,
+        updateMerchandiseQuality,
+        deleteMerchandiseQuality,
       }}
     >
       {children}

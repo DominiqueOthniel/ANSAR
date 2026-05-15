@@ -10,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { TripStopDto } from './trip-stop.dto';
+import { TripClientParticipantDto } from './trip-client-participant.dto';
 
 export class CreateTripDto {
   @IsOptional()
@@ -23,8 +24,11 @@ export class CreateTripDto {
   @IsString()
   origine: string;
 
+  /** Résumé itinéraire ; peut être vide si le détail est porté par les arrêts. */
+  @IsOptional()
   @IsString()
-  destination: string;
+  @MaxLength(255)
+  destination?: string;
 
   @IsOptional()
   @IsNumber()
@@ -101,4 +105,15 @@ export class CreateTripDto {
   @ValidateNested({ each: true })
   @Type(() => TripStopDto)
   stops?: TripStopDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TripClientParticipantDto)
+  clientParticipants?: TripClientParticipantDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  payeurParticipantId?: string;
 }

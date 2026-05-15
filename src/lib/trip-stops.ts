@@ -48,7 +48,7 @@ export function buildStopsForPersist(
       lng: origineLng,
       statut: 'prevu',
     }),
-    newTripStop(1, 'livraison', destination.trim(), {
+    newTripStop(1, 'livraison', destination.trim() || 'Livraison (à préciser)', {
       lat: destinationLat,
       lng: destinationLng,
       statut: 'prevu',
@@ -75,7 +75,7 @@ export function initialStopsDraftFromTrip(trip: Trip): TripStop[] {
       lng: trip.origineLng,
       statut: 'prevu',
     }),
-    newTripStop(1, 'livraison', trip.destination, {
+    newTripStop(1, 'livraison', (trip.destination ?? '').trim() || 'Livraison (à préciser)', {
       lat: trip.destinationLat,
       lng: trip.destinationLng,
       statut: 'prevu',

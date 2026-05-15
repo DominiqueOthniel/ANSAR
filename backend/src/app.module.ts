@@ -15,6 +15,7 @@ import { CaisseModule } from './caisse/caisse.module';
 import { CreditsModule } from './credits/credits.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { ParcelExpeditionsModule } from './parcel-expeditions/parcel-expeditions.module';
+import { MerchandiseQualitiesModule } from './merchandise-qualities/merchandise-qualities.module';
 
 function buildTypeOrmOptions(): TypeOrmModuleOptions {
   const synchronize =
@@ -79,6 +80,7 @@ function buildTypeOrmOptions(): TypeOrmModuleOptions {
     CreditsModule,
     AuditLogsModule,
     ParcelExpeditionsModule,
+    MerchandiseQualitiesModule,
   ],
 })
 export class AppModule {}

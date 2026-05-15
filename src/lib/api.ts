@@ -3,6 +3,8 @@
  * Communique avec le backend NestJS (préfixe global `/api` sur le serveur).
  */
 
+import type { TripClientParticipant } from '@/lib/trip-client-participants';
+
 /**
  * URL de base incluant `/api`. Si VITE_API_URL est `https://host` sans `/api`,
  * on l’ajoute — sinon les appels partent vers `/caisse/...` et le serveur répond
@@ -114,7 +116,8 @@ export interface TripPayload {
   tracteurId?: string;
   remorqueuseId?: string;
   origine: string;
-  destination: string;
+  /** Résumé destination ; optionnel si les arrêts portent le détail. */
+  destination?: string;
   origineLat?: number;
   origineLng?: number;
   destinationLat?: number;
@@ -137,6 +140,8 @@ export interface TripPayload {
   retourBordereaux?: string;
   statut: 'planifie' | 'en_cours' | 'termine' | 'annule';
   stops?: TripStopPayload[];
+  clientParticipants?: TripClientParticipant[];
+  payeurParticipantId?: string;
 }
 
 export interface ExpensePayload {
@@ -191,9 +196,13 @@ export interface ThirdPartyPayload {
   telephone?: string;
   email?: string;
   adresse?: string;
-  type: 'proprietaire' | 'client' | 'fournisseur';
+  type: 'proprietaire' | 'client' | 'fournisseur' | 'employe';
   notes?: string;
   plafondCredit?: number | null;
+}
+
+export interface MerchandiseQualityPayload {
+  libelle: string;
 }
 
 export interface BankAccountPayload {
@@ -325,6 +334,17 @@ export const thirdPartiesApi = {
   create: (data: ThirdPartyPayload) => request<any>('/third-parties', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: Partial<ThirdPartyPayload>) => request<any>(`/third-parties/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/third-parties/${id}`, { method: 'DELETE' }),
+};
+
+/** Catalogue marchandise / qualité (trajets). */
+export const merchandiseQualitiesApi = {
+  getAll: () => request<any[]>('/merchandise-qualities'),
+  getOne: (id: string) => request<any>(`/merchandise-qualities/${id}`),
+  create: (data: MerchandiseQualityPayload) =>
+    request<any>('/merchandise-qualities', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<MerchandiseQualityPayload>) =>
+    request<any>(`/merchandise-qualities/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/merchandise-qualities/${id}`, { method: 'DELETE' }),
 };
 
 // --- Admin ---

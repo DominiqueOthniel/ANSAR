@@ -15,7 +15,7 @@ export const PAGE_FACTURES_DESCRIPTION =
 
 export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, lien avec trajets, factures et envois colis.`;
 
-export const PAGE_TIERS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Propriétaires de camions, clients, fournisseurs : l’écosystème autour de vos rotations.`;
+export const PAGE_TIERS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Propriétaires de camions, clients, fournisseurs, et personnel siège (employés) pour lier les salaires hors chauffeurs.`;
 
 export const PAGE_EXPEDITIONS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Expéditions groupées : plusieurs lots / clients sur un même convoi pour consolider des commandes plus petites.`;
 

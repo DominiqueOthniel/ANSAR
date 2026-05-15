@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useApp, Expense, Invoice } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,19 @@ function nextExpenseInvoiceNumero(invoicesList: Invoice[]): string {
   return `FAC-EXP-${year}-${String(count).padStart(3, '0')}`;
 }
 
+function formatSalaireBeneficiaire(
+  expense: Expense,
+  getDriverLabel: (id?: string) => string,
+  tiers: { id: string; nom: string; type: string }[],
+): string {
+  if (expense.categorie !== 'Salaire') return getDriverLabel(expense.chauffeurId);
+  if (expense.chauffeurId) return getDriverLabel(expense.chauffeurId);
+  const emp = expense.fournisseurId
+    ? tiers.find((tp) => tp.id === expense.fournisseurId && tp.type === 'employe')
+    : undefined;
+  return emp ? `Personnel siège : ${emp.nom}` : '—';
+}
+
 export default function Expenses() {
   const { expenses, trucks, drivers, thirdParties, subCategories, setSubCategories, invoices, trips, createExpense, updateExpense, deleteExpense, createInvoice, updateInvoice } = useApp();
   const { canManageAccounting } = useAuth();
@@ -63,6 +77,18 @@ export default function Expenses() {
   const [filterMontantMax, setFilterMontantMax] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [listSort, setListSort] = useState<string>('date_desc');
+
+  const employesSiege = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'employe'),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
+  const isEmployeTierId = (id?: string) =>
+    Boolean(id && thirdParties.some((tp) => tp.id === id && tp.type === 'employe'));
 
   const [formData, setFormData] = useState({
     camionId: '',
@@ -154,24 +180,39 @@ export default function Expenses() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (formData.categorie === 'Salaire' && !formData.chauffeurId) {
-      toast.error('Pour une dépense de salaire, sélectionnez un chauffeur.');
-      return;
+    if (formData.categorie === 'Salaire') {
+      const hasChauffeur = Boolean(formData.chauffeurId);
+      const hasEmploye =
+        Boolean(formData.fournisseurId) && isEmployeTierId(formData.fournisseurId);
+      if (!hasChauffeur && !hasEmploye) {
+        toast.error('Pour une dépense de salaire, sélectionnez un chauffeur ou un employé (personnel siège, fiche Tiers).');
+        return;
+      }
     }
-    
+
     let finalMontant = formData.montant;
     if (formData.quantite !== undefined && formData.prixUnitaire !== undefined && 
         formData.quantite > 0 && formData.prixUnitaire > 0) {
       finalMontant = formData.quantite * formData.prixUnitaire;
     }
 
+    let chauffeurPayload = formData.chauffeurId || undefined;
+    let fournisseurPayload = formData.fournisseurId || undefined;
+    if (formData.categorie === 'Salaire') {
+      if (chauffeurPayload) {
+        fournisseurPayload = undefined;
+      } else {
+        chauffeurPayload = undefined;
+      }
+    }
+
     const payload = {
       ...(formData.camionId ? { camionId: formData.camionId } : {}),
       tripId: formData.tripId || undefined,
-      chauffeurId: formData.chauffeurId || undefined,
+      chauffeurId: chauffeurPayload,
       categorie: formData.categorie,
       sousCategorie: formData.sousCategorie || undefined,
-      fournisseurId: formData.fournisseurId || undefined,
+      fournisseurId: fournisseurPayload,
       montant: finalMontant,
       quantite: formData.quantite,
       prixUnitaire: formData.prixUnitaire,
@@ -473,7 +514,7 @@ export default function Expenses() {
         { header: 'Sous-catégorie', value: (e) => e.sousCategorie || '-' },
         { header: 'Description', value: (e) => e.description },
         { header: 'Camion', value: (e) => getTruckLabel(e.camionId) },
-        { header: 'Chauffeur', value: (e) => getDriverLabel(e.chauffeurId) },
+        { header: 'Chauffeur / bénéficiaire salaire', value: (e) => formatSalaireBeneficiaire(e, getDriverLabel, thirdParties) },
         { header: 'Fournisseur', value: (e) => e.fournisseurId ? (thirdParties.find(tp => tp.id === e.fournisseurId)?.nom || '-') : '-' },
         { header: 'Quantité', value: (e) => e.quantite !== undefined && e.quantite > 0 ? `${e.quantite} ${getUnite(e.categorie)}` : '-' },
         { header: 'Prix unitaire (FCFA)', value: (e) => e.prixUnitaire !== undefined && e.prixUnitaire > 0 ? e.prixUnitaire : '-' },
@@ -523,7 +564,13 @@ export default function Expenses() {
         { header: 'Sous-catégorie', value: (e) => e.sousCategorie || '-' },
         { header: 'Description', value: (e) => e.description },
         { header: 'Camion', value: (e) => `${EMOJI.camion} ${getTruckLabel(e.camionId)}` },
-        { header: 'Chauffeur', value: (e) => e.chauffeurId ? `${EMOJI.personne} ${getDriverLabel(e.chauffeurId)}` : '-' },
+        {
+          header: 'Chauffeur / bénéficiaire salaire',
+          value: (e) => {
+            const s = formatSalaireBeneficiaire(e, getDriverLabel, thirdParties);
+            return s === '—' ? '—' : `${EMOJI.personne} ${s}`;
+          },
+        },
         { header: 'Quantité', value: (e) => e.quantite !== undefined && e.quantite > 0 ? `${e.quantite} ${getUnite(e.categorie)}` : '-' },
         { 
           header: 'Prix unitaire', 
@@ -646,9 +693,21 @@ export default function Expenses() {
                 </div>
                 <div>
                   <Label htmlFor="chauffeur">
-                    {formData.categorie === 'Salaire' ? 'Chauffeur (obligatoire pour salaire)' : 'Chauffeur (optionnel)'}
+                    {formData.categorie === 'Salaire'
+                      ? 'Chauffeur (si le salaire est pour un conducteur)'
+                      : 'Chauffeur (optionnel)'}
                   </Label>
-                  <Select value={formData.chauffeurId || 'none'} onValueChange={(value) => setFormData({ ...formData, chauffeurId: value === 'none' ? '' : value })}>
+                  <Select
+                    value={formData.chauffeurId || 'none'}
+                    onValueChange={(value) => {
+                      const id = value === 'none' ? '' : value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        chauffeurId: id,
+                        fournisseurId: id ? '' : prev.fournisseurId,
+                      }));
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
@@ -701,7 +760,16 @@ export default function Expenses() {
                       });
                       return;
                     }
-                    setFormData({ ...formData, categorie: value, sousCategorie: '' });
+                    setFormData((prev) => {
+                      const next = { ...prev, categorie: value, sousCategorie: '' };
+                      const fp = prev.fournisseurId
+                        ? thirdParties.find((x) => x.id === prev.fournisseurId)
+                        : undefined;
+                      if (fp?.type === 'employe') {
+                        next.fournisseurId = '';
+                      }
+                      return next;
+                    });
                   }}
                 >
                   <SelectTrigger>
@@ -715,7 +783,8 @@ export default function Expenses() {
                 </Select>
                 {formData.categorie === 'Salaire' && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Mode salaire: dépense non rattachée camion/trajet/fournisseur.
+                    Mode salaire : dépense hors camion / trajet. Renseignez un chauffeur <strong>ou</strong> un employé
+                    enregistré sous Tiers (type « Personnel siège »).
                   </p>
                 )}
               </div>
@@ -750,6 +819,42 @@ export default function Expenses() {
               </div>
 
               <div>
+                {formData.categorie === 'Salaire' ? (
+                  <>
+                    <Label htmlFor="employe-siege">Employé / personnel siège</Label>
+                    <Select
+                      value={formData.fournisseurId || 'none'}
+                      onValueChange={(value) => {
+                        const id = value === 'none' ? '' : value;
+                        setFormData((prev) => ({
+                          ...prev,
+                          fournisseurId: id,
+                          chauffeurId: id ? '' : prev.chauffeurId,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger id="employe-siege">
+                        <SelectValue placeholder="Sélectionner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Aucun (ex. uniquement chauffeur)</SelectItem>
+                        {employesSiege.map((tp) => (
+                          <SelectItem key={tp.id} value={tp.id}>
+                            {tp.nom}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Fiches créées dans{' '}
+                      <Link to="/tiers" className="text-primary font-medium underline-offset-2 hover:underline">
+                        Tiers
+                      </Link>{' '}
+                      — type « Personnel siège ». Au moins un : chauffeur <em>ou</em> employé.
+                    </p>
+                  </>
+                ) : (
+                  <>
                 <Label htmlFor="fournisseur">Fournisseur (optionnel)</Label>
                 <Select value={formData.fournisseurId || 'none'} onValueChange={(value) => setFormData({ ...formData, fournisseurId: value === 'none' ? '' : value })}>
                   <SelectTrigger>
@@ -769,6 +874,8 @@ export default function Expenses() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Vous pouvez ajouter des fournisseurs dans la section "Tiers"
                 </p>
+                  </>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -1257,7 +1364,7 @@ export default function Expenses() {
                     <TableCell>{expense.sousCategorie || '-'}</TableCell>
                     <TableCell>{supplier ? supplier.nom : '-'}</TableCell>
                   <TableCell>{getTruckLabel(expense.camionId)}</TableCell>
-                  <TableCell>{getDriverLabel(expense.chauffeurId)}</TableCell>
+                  <TableCell>{formatSalaireBeneficiaire(expense, getDriverLabel, thirdParties)}</TableCell>
                   <TableCell>
                     {expense.tripId ? (() => {
                       const trip = trips.find(t => t.id === expense.tripId);

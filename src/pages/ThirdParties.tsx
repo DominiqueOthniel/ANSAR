@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Edit, Building2, Users, Truck, Search, Filter, X, FileDown, FileText, Loader2, Route, Package, UserCircle2, PanelRight, CreditCard } from 'lucide-react';
+import { Plus, Trash2, Edit, Building2, Users, Truck, Search, Filter, X, FileDown, FileText, Loader2, Route, Package, UserCircle2, PanelRight, CreditCard, Briefcase } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
 import { PAGE_CLIENTS_DESCRIPTION, PAGE_TIERS_DESCRIPTION } from '@/lib/metier-activite';
@@ -34,7 +34,8 @@ const THIRD_SORT_OPTIONS = [
   { value: 'type_desc', label: 'Type (fournisseur → propriétaire)' },
 ] as const;
 
-const typeOrder = (t: string) => (t === 'proprietaire' ? 0 : t === 'client' ? 1 : 2);
+const typeOrder = (t: string) =>
+  t === 'proprietaire' ? 0 : t === 'client' ? 1 : t === 'fournisseur' ? 2 : t === 'employe' ? 3 : 9;
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -48,7 +49,17 @@ export type ThirdPartiesScope = 'all' | 'clients';
 
 export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesScope }) {
   const isClientsScope = scope === 'clients';
-  const { thirdParties, trucks, trips, invoices, parcelExpeditions, createThirdParty, updateThirdParty, deleteThirdParty } = useApp();
+  const {
+    thirdParties,
+    trucks,
+    trips,
+    invoices,
+    expenses,
+    parcelExpeditions,
+    createThirdParty,
+    updateThirdParty,
+    deleteThirdParty,
+  } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
@@ -153,6 +164,16 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       }
     }
 
+    if (thirdParty.type === 'employe') {
+      const depensesLiees = expenses.filter((e) => e.fournisseurId === id);
+      if (depensesLiees.length > 0) {
+        toast.error(
+          `Impossible de supprimer ce personnel : ${depensesLiees.length} dépense(s) y sont liées (salaires ou factures fournisseur). Retirez d’abord le lien sur les dépenses.`,
+        );
+        return;
+      }
+    }
+
     if (confirm(`Êtes-vous sûr de vouloir supprimer ${thirdParty.nom} ?`)) {
       try {
         await deleteThirdParty(id);
@@ -202,6 +223,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         return <Users className="h-4 w-4" />;
       case 'fournisseur':
         return <Building2 className="h-4 w-4" />;
+      case 'employe':
+        return <Briefcase className="h-4 w-4" />;
     }
   };
 
@@ -213,6 +236,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         return 'Client';
       case 'fournisseur':
         return 'Fournisseur';
+      case 'employe':
+        return 'Personnel siège';
     }
   };
 
@@ -224,12 +249,15 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         return 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400';
       case 'fournisseur':
         return 'bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400';
+      case 'employe':
+        return 'bg-violet-100 text-violet-800 dark:bg-violet-950/40 dark:text-violet-300';
     }
   };
 
   const proprietairesCount = thirdParties.filter(tp => tp.type === 'proprietaire').length;
   const clientsCount = thirdParties.filter(tp => tp.type === 'client').length;
   const fournisseursCount = thirdParties.filter(tp => tp.type === 'fournisseur').length;
+  const employesCount = thirdParties.filter((tp) => tp.type === 'employe').length;
 
   const clientTiers = useMemo(
     () => thirdParties.filter((tp) => tp.type === 'client'),
@@ -338,6 +366,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     const totalProprietaires = filteredThirdParties.filter((tp) => tp.type === 'proprietaire').length;
     const totalClients = filteredThirdParties.filter((tp) => tp.type === 'client').length;
     const totalFournisseurs = filteredThirdParties.filter((tp) => tp.type === 'fournisseur').length;
+    const totalEmployes = filteredThirdParties.filter((tp) => tp.type === 'employe').length;
     const exportTitle = isClientsScope ? 'Liste des clients' : 'Liste des Tiers';
     const exportPrefix = isClientsScope ? 'clients' : 'tiers';
     const headerColor = isClientsScope ? '#059669' : '#4f46e5';
@@ -362,6 +391,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             { label: 'Propriétaires', value: totalProprietaires, style: 'neutral', icon: '🏢' },
             { label: 'Clients', value: totalClients, style: 'positive', icon: '👥' },
             { label: 'Fournisseurs', value: totalFournisseurs, style: 'neutral', icon: '🏭' },
+            { label: 'Personnel siège', value: totalEmployes, style: 'neutral', icon: '💼' },
           ],
       columns: [
         { header: 'Nom', value: (tp) => tp.nom },
@@ -370,6 +400,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             'proprietaire': '🏢',
             'client': '👥',
             'fournisseur': '🏭',
+            employe: '💼',
           };
           return `${icons[tp.type] || '📋'} ${getTypeLabel(tp.type)}`;
         }},
@@ -435,6 +466,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   color: 'text-orange-600 dark:text-orange-400',
                 },
                 {
+                  label: 'Personnel siège',
+                  value: employesCount,
+                  icon: <Briefcase className="h-4 w-4" />,
+                  color: 'text-violet-600 dark:text-violet-400',
+                },
+                {
                   label: 'Total',
                   value: thirdParties.length,
                   icon: <Building2 className="h-4 w-4" />,
@@ -492,6 +529,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       <SelectItem value="proprietaire">Propriétaire de camion</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
                       <SelectItem value="fournisseur">Fournisseur d'articles</SelectItem>
+                      <SelectItem value="employe">Personnel siège (salaires, hors chauffeurs)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -688,6 +726,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     <SelectItem value="proprietaire">Propriétaires</SelectItem>
                     <SelectItem value="client">Clients</SelectItem>
                     <SelectItem value="fournisseur">Fournisseurs</SelectItem>
+                    <SelectItem value="employe">Personnel siège</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Truck, Route, DollarSign, TrendingUp, TrendingDown, FileText, Users, Package, AlertCircle, LayoutDashboard, Building2, CreditCard, Wallet, RefreshCw, HardDrive, Upload, Receipt, Layers, UserCircle2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,53 @@ import { useAuth } from '@/contexts/AuthContext';
 import { adminApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { getCaisseSoldeActuel, getTotalBanqueDisponible } from '@/lib/bank-local';
+
+/** Axe Y : montants lisibles (k / M) */
+function formatAxisFcfa(v: number): string {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n === 0) return '0';
+  if (Math.abs(n) >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${m >= 10 ? Math.round(m) : Math.round(m * 10) / 10} M`.replace('.', ',');
+  }
+  if (Math.abs(n) >= 1_000) return `${Math.round(n / 1_000)} k`;
+  return String(n);
+}
+
+function MonthlyTrendTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string; dataKey?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/80 bg-popover/95 px-4 py-3 shadow-lg backdrop-blur-sm min-w-[200px]">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">
+        {label}
+      </p>
+      <ul className="space-y-2">
+        {payload.map((p) => (
+          <li key={String(p.dataKey)} className="flex items-center justify-between gap-6 text-sm">
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full ring-2 ring-background"
+                style={{ backgroundColor: p.color ?? 'hsl(var(--primary))' }}
+              />
+              {p.name}
+            </span>
+            <span className="font-medium tabular-nums text-foreground">
+              {(p.value ?? 0).toLocaleString('fr-FR')} <span className="text-muted-foreground font-normal">FCFA</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -746,64 +793,97 @@ export default function Dashboard() {
         ) : null}
       </div>
 
-      {/* Graphique d'évolution mensuelle */}
+      {/* Graphique d'évolution mensuelle — CA vs dépenses */}
       {monthlyData.some(m => m.recettes > 0 || m.depenses > 0) ? (
-      <Card className="shadow-md hover:shadow-lg transition-shadow">
-        <CardHeader className="bg-gradient-to-br from-background to-muted/20 border-b">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg">{EMOJI.graphique} Évolution Chiffre d&apos;affaires vs Dépenses</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">Tendance sur 3 mois</p>
+      <Card className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm ring-1 ring-black/[0.03] dark:ring-white/[0.06]">
+        <CardHeader className="border-b border-border/60 bg-gradient-to-br from-muted/40 via-background to-background px-6 pb-5 pt-6 dark:from-muted/20">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Performance
+              </p>
+              <CardTitle className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                Chiffre d&apos;affaires vs dépenses
+              </CardTitle>
+              <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+                Encaissements réels (trajets &amp; expéditions) et dépenses enregistrées — tendance sur trois mois glissants.
+              </p>
             </div>
-            <TrendingUp className="h-8 w-8 text-primary opacity-50" />
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/[0.08] text-primary ring-1 ring-primary/15 dark:bg-primary/15"
+              aria-hidden
+            >
+              <TrendingUp className="h-6 w-6" strokeWidth={2} />
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-6">
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={monthlyData}>
-              <defs>
-                <linearGradient id="colorRecettes" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0.1}/>
-                </linearGradient>
-                <linearGradient id="colorDepenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
-              <YAxis stroke="hsl(var(--muted-foreground))" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'hsl(var(--card))', 
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: 'var(--radius)',
-                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+        <CardContent className="px-3 pb-6 pt-8 sm:px-6">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={monthlyData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+              <CartesianGrid
+                strokeDasharray="4 6"
+                vertical={false}
+                stroke="hsl(var(--border))"
+                strokeOpacity={0.85}
+              />
+              <XAxis
+                dataKey="month"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12, fontWeight: 500 }}
+                dy={10}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                width={56}
+                tickFormatter={formatAxisFcfa}
+                domain={[0, 'auto']}
+              />
+              <Tooltip content={<MonthlyTrendTooltip />} cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1, strokeDasharray: '4 4' }} />
+              <Line
+                type="monotone"
+                dataKey="recettes"
+                name="Chiffre d'affaires"
+                stroke="hsl(160 55% 38%)"
+                strokeWidth={2.75}
+                dot={{
+                  r: 4,
+                  strokeWidth: 2,
+                  stroke: 'hsl(var(--background))',
+                  fill: 'hsl(160 55% 38%)',
                 }}
-                formatter={(value: number) => `${value.toLocaleString('fr-FR')} FCFA`}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
               />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="recettes" 
-                stroke="hsl(var(--chart-2))" 
-                fillOpacity={1} 
-                fill="url(#colorRecettes)" 
-                strokeWidth={3}
-                name="Chiffre d&apos;affaires"
-              />
-              <Area 
-                type="monotone" 
-                dataKey="depenses" 
-                stroke="hsl(var(--chart-1))" 
-                fillOpacity={1} 
-                fill="url(#colorDepenses)" 
-                strokeWidth={3}
+              <Line
+                type="monotone"
+                dataKey="depenses"
                 name="Dépenses"
+                stroke="hsl(262 52% 52%)"
+                strokeWidth={2.75}
+                dot={{
+                  r: 4,
+                  strokeWidth: 2,
+                  stroke: 'hsl(var(--background))',
+                  fill: 'hsl(262 52% 52%)',
+                }}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
               />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 border-t border-border/60 pt-5 text-sm">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-10 rounded-full bg-[hsl(160_55%_38%)] shadow-sm" />
+              <span className="font-medium text-foreground">Chiffre d&apos;affaires</span>
+              <span className="text-muted-foreground">encaissements</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-10 rounded-full bg-[hsl(262_52%_52%)] shadow-sm" />
+              <span className="font-medium text-foreground">Dépenses</span>
+              <span className="text-muted-foreground">charges du mois</span>
+            </div>
+          </div>
         </CardContent>
       </Card>
       ) : null}

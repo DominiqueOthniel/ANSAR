@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
-import { Plus, CheckCircle2, Clock, Eye, FileText, Download, Mail, Trash2, DollarSign, AlertCircle, Filter, X, Landmark, Loader2, Package } from 'lucide-react';
+import { Plus, CheckCircle2, Clock, Eye, FileText, Download, Mail, Trash2, DollarSign, AlertCircle, Filter, X, Landmark, Loader2, Package, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -41,6 +41,7 @@ import { buildSingleInvoicePdfInnerHtml } from '@/lib/invoice-single-pdf-html';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { getInvoiceClientDefaultsFromTrip } from '@/lib/trip-client-participants';
 
 const INVOICE_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date création (récent → ancien)' },
@@ -151,8 +152,9 @@ export default function Invoices() {
     if (lastTripIdForInvoiceBaseRef.current !== selectedTripId) {
       lastTripIdForInvoiceBaseRef.current = selectedTripId;
       setTripInvoiceMontantHt(getTripRemainingRecetteToInvoice(trip, invoices));
-      setInvoiceTripClientTierId('');
-      setInvoiceTripClientLibelle(trip.client ?? '');
+      const { clientTierId, factureClientLibelle } = getInvoiceClientDefaultsFromTrip(trip);
+      setInvoiceTripClientTierId(clientTierId);
+      setInvoiceTripClientLibelle(factureClientLibelle);
     }
   }, [isDialogOpen, invoiceMissionKind, selectedTripId, trips, invoices]);
 
@@ -744,11 +746,14 @@ export default function Invoices() {
   }, [filters, listSort]);
 
   const handleExportInvoicesExcel = () => {
-    if (filteredInvoices.length === 0) return;
+    if (sortedInvoices.length === 0) {
+      toast.info('Aucune facture à exporter avec les filtres actuels.');
+      return;
+    }
 
     exportToExcel({
       title: 'Factures filtrées',
-      fileName: 'factures_filtrées.xlsx',
+      fileName: `factures_${new Date().toISOString().split('T')[0]}.xlsx`,
       sheetName: 'Factures',
       filtersDescription,
       columns: [
@@ -1177,6 +1182,16 @@ export default function Invoices() {
           <Button
             variant="outline"
             className="shadow-sm"
+            disabled={sortedInvoices.length === 0}
+            onClick={handleExportInvoicesExcel}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            Export Excel
+          </Button>
+          <Button
+            variant="outline"
+            className="shadow-sm"
+            disabled={sortedInvoices.length === 0}
             onClick={handleExportInvoicesPDF}
           >
             <FileText className="mr-2 h-4 w-4" />

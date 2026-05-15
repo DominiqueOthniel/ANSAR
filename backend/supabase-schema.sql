@@ -10,10 +10,14 @@ CREATE TABLE IF NOT EXISTS third_parties (
   telephone VARCHAR,
   email VARCHAR,
   adresse TEXT,
-  type VARCHAR(20) NOT NULL CHECK (type IN ('proprietaire', 'client', 'fournisseur')),
+  type VARCHAR(20) NOT NULL CHECK (type IN ('proprietaire', 'client', 'fournisseur', 'employe')),
   notes TEXT,
   "plafondCredit" DECIMAL(15, 2)
 );
+
+-- Bases créées avant le type « employe » (personnel siège / salaires)
+ALTER TABLE third_parties DROP CONSTRAINT IF EXISTS third_parties_type_check;
+ALTER TABLE third_parties ADD CONSTRAINT third_parties_type_check CHECK (type IN ('proprietaire', 'client', 'fournisseur', 'employe'));
 
 -- 2. drivers (aucune FK)
 CREATE TABLE IF NOT EXISTS drivers (
@@ -80,7 +84,9 @@ CREATE TABLE IF NOT EXISTS trips (
   "quantiteChargee" DECIMAL(12, 2),
   "retourBordereaux" VARCHAR(32),
   statut VARCHAR(20) NOT NULL CHECK (statut IN ('planifie', 'en_cours', 'termine', 'annule')),
-  stops JSONB
+  stops JSONB,
+  "clientParticipants" JSONB,
+  "payeurParticipantId" VARCHAR(36)
 );
 
 CREATE INDEX IF NOT EXISTS idx_trips_tracteur ON trips("tracteurId");
@@ -93,6 +99,18 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS "referenceAtc" VARCHAR(64);
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS destinataire VARCHAR(255);
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS "quantiteChargee" DECIMAL(12, 2);
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS "retourBordereaux" VARCHAR(32);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS "clientParticipants" JSONB;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS "payeurParticipantId" VARCHAR(36);
+
+-- 5bis. Catalogue marchandise / qualité (suggestions trajets, saisie libre côté métier)
+CREATE TABLE IF NOT EXISTS merchandise_qualities (
+  id UUID PRIMARY KEY,
+  libelle VARCHAR(255) NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merchandise_qualities_libelle_lower
+  ON merchandise_qualities (LOWER(TRIM(BOTH FROM libelle)));
 
 -- 6. expenses (FK → trucks, third_parties) — camion / chauffeur optionnels (dépenses siège, générales…)
 CREATE TABLE IF NOT EXISTS expenses (

@@ -18,8 +18,8 @@ export class CreateThirdPartyDto {
   adresse?: string;
 
   @IsString()
-  @IsIn(['proprietaire', 'client', 'fournisseur'])
-  type: 'proprietaire' | 'client' | 'fournisseur';
+  @IsIn(['proprietaire', 'client', 'fournisseur', 'employe'])
+  type: 'proprietaire' | 'client' | 'fournisseur' | 'employe';
 
   @IsOptional()
   @IsString()

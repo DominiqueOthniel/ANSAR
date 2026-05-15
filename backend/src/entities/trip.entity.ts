@@ -26,6 +26,14 @@ export interface TripStopPersisted {
   notes?: string;
 }
 
+/** Client / structure rattaché au trajet (parts, facturation, règlement). */
+export interface TripClientParticipantPersisted {
+  id: string;
+  tierId?: string;
+  libelle: string;
+  montantAttribue?: number;
+}
+
 @Entity('trips')
 export class Trip {
   @PrimaryColumn('uuid')
@@ -101,6 +109,14 @@ export class Trip {
   /** simple-json : compatible PostgreSQL + SQLite (dev) */
   @Column({ type: 'simple-json', nullable: true })
   stops?: TripStopPersisted[] | null;
+
+  /** Clients / parts liés au trajet (JSON). */
+  @Column({ type: 'simple-json', nullable: true })
+  clientParticipants?: TripClientParticipantPersisted[] | null;
+
+  /** `id` d’une entrée de `clientParticipants` : client désigné pour le règlement / facture par défaut. */
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  payeurParticipantId?: string | null;
 
   @ManyToOne(() => Truck, { nullable: true })
   @JoinColumn({ name: 'tracteurId' })

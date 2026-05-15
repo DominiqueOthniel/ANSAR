@@ -76,6 +76,13 @@ const TIERS_SEED: ThirdPartyPayload[] = [
     plafondCredit: 3_500_000,
   },
   { nom: 'Pièces Mfoundi', telephone: '+237 222 99 88 77', type: 'fournisseur', adresse: 'Yaoundé Mfoundi' },
+  {
+    nom: 'Secrétariat général — Mme Atangana',
+    telephone: '+237 600 11 22 33',
+    type: 'employe',
+    notes: 'Personnel siège (ex. salaires hors chauffeurs)',
+  },
+  { nom: 'Comptable junior', type: 'employe', notes: 'Démonstration type employé' },
 ];
 
 // --- CHAUFFEURS (15) ---

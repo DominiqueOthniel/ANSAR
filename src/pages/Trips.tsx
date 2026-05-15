@@ -11,8 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy } from 'lucide-react';
+import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemainingRecetteToInvoice, sumMontantTTCForTripInvoices } from '@/lib/sync-utils';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
@@ -31,7 +32,28 @@ import {
   labelTripStopType,
   labelTripStopStatut,
 } from '@/lib/trip-stops';
-import { CEMENT_MARCHANDISE_SUGGESTIONS } from '@/lib/cement-marchandise-suggestions';
+import {
+  newTripClientParticipant,
+  remapParticipantsForDuplicate,
+  formatTripClientsSummary,
+} from '@/lib/trip-client-participants';
+import type { TripClientParticipant } from '@/lib/trip-client-participants';
+
+/** Affichage itinéraire quand la destination résumé est vide. */
+function itineraireResume(origine: string, destination: string | undefined): string {
+  const o = (origine ?? '').trim() || '—';
+  const d = (destination ?? '').trim();
+  return d ? `${o} → ${d}` : `${o} → —`;
+}
+
+function marchandiseCatalogHasLibelle(
+  list: { libelle: string }[],
+  value: string,
+): boolean {
+  const t = value.trim().toLowerCase();
+  if (!t) return false;
+  return list.some((m) => m.libelle.trim().toLowerCase() === t);
+}
 
 const TRIP_STATUT_ORDER: Record<TripStatus, number> = {
   planifie: 0,
@@ -111,10 +133,14 @@ export default function Trips() {
     invoices,
     expenses,
     thirdParties,
+    merchandiseQualities,
     createTrip,
     updateTrip,
     deleteTrip,
     createExpense,
+    createMerchandiseQuality,
+    updateMerchandiseQuality,
+    deleteMerchandiseQuality,
   } = useApp();
   const navigate = useNavigate();
   const { canManageFleet, canManageAccounting } = useAuth();
@@ -128,7 +154,57 @@ export default function Trips() {
   const [isStopsDialogOpen, setIsStopsDialogOpen] = useState(false);
   const [stopsDialogTrip, setStopsDialogTrip] = useState<Trip | null>(null);
   const [stopsDraft, setStopsDraft] = useState<TripStop[]>([]);
+  const [merchandiseCatalogOpen, setMerchandiseCatalogOpen] = useState(false);
+  const [editingMerchandiseId, setEditingMerchandiseId] = useState<string | null>(null);
+  const [merchEditDraft, setMerchEditDraft] = useState('');
   const { isSubmitting, withGuard } = useSubmitGuard();
+
+  const sortedMerchandiseCatalog = useMemo(
+    () => stableSort([...merchandiseQualities], (a, b) => frCollator.compare(a.libelle, b.libelle)),
+    [merchandiseQualities],
+  );
+
+  const handleMemorizeMarchandise = async () => {
+    const lib = formData.marchandise.trim();
+    if (!lib || marchandiseCatalogHasLibelle(merchandiseQualities, lib)) return;
+    try {
+      await createMerchandiseQuality({ libelle: lib });
+      toast.success('Libellé enregistré dans votre catalogue.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur lors de l’enregistrement.');
+    }
+  };
+
+  const handleDeleteMerch = async (id: string, libelle: string) => {
+    if (!window.confirm(`Retirer « ${libelle} » du catalogue ?`)) return;
+    try {
+      await deleteMerchandiseQuality(id);
+      if (editingMerchandiseId === id) {
+        setEditingMerchandiseId(null);
+        setMerchEditDraft('');
+      }
+      toast.success('Entrée supprimée du catalogue.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur lors de la suppression.');
+    }
+  };
+
+  const saveMerchEdit = async () => {
+    if (!editingMerchandiseId) return;
+    const lib = merchEditDraft.trim();
+    if (!lib) {
+      toast.error('Le libellé ne peut pas être vide.');
+      return;
+    }
+    try {
+      await updateMerchandiseQuality(editingMerchandiseId, { libelle: lib });
+      setEditingMerchandiseId(null);
+      setMerchEditDraft('');
+      toast.success('Catalogue mis à jour.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur lors de la mise à jour.');
+    }
+  };
   
   // États pour les filtres
   const [filterOrigin, setFilterOrigin] = useState<string>('all');
@@ -162,7 +238,16 @@ export default function Trips() {
     retourBordereaux: '',
     statut: 'planifie' as TripStatus,
     stops: [] as TripStop[],
+    clientParticipants: [] as TripClientParticipant[],
+    payeurParticipantId: '',
   });
+
+  const canMemorizeMarchandise = useMemo(
+    () =>
+      formData.marchandise.trim().length > 0 &&
+      !marchandiseCatalogHasLibelle(merchandiseQualities, formData.marchandise),
+    [formData.marchandise, merchandiseQualities],
+  );
 
   const truckIdsInMission = useMemo(() => {
     const ids = new Set<string>();
@@ -227,6 +312,8 @@ export default function Trips() {
       retourBordereaux: '',
       statut: 'planifie' as TripStatus,
       stops: [],
+      clientParticipants: [],
+      payeurParticipantId: '',
     });
     setEditingTripId(null);
   };
@@ -258,6 +345,10 @@ export default function Trips() {
       retourBordereaux: trip.retourBordereaux ?? '',
       statut: trip.statut,
       stops: initialStopsDraftFromTrip(trip),
+      clientParticipants: trip.clientParticipants?.length
+        ? trip.clientParticipants.map((p) => ({ ...p }))
+        : [],
+      payeurParticipantId: trip.payeurParticipantId ?? '',
     });
     setIsDialogOpen(true);
   };
@@ -274,6 +365,8 @@ export default function Trips() {
         statut: 'prevu',
       }),
     );
+    const { clientParticipants: dupParts, payeurParticipantId: dupPayeur } =
+      remapParticipantsForDuplicate(trip.clientParticipants, trip.payeurParticipantId);
     setFormData({
       tracteurId: trip.tracteurId ?? '',
       remorqueuseId: trip.remorqueuseId ?? '',
@@ -297,6 +390,8 @@ export default function Trips() {
       retourBordereaux: trip.retourBordereaux ?? '',
       statut: 'planifie',
       stops: draftStops,
+      clientParticipants: dupParts,
+      payeurParticipantId: dupPayeur,
     });
     setIsDialogOpen(true);
     toast.info('Modèle dupliqué : vérifiez dates, véhicule et recette avant enregistrement.');
@@ -310,8 +405,8 @@ export default function Trips() {
       return;
     }
 
-    if (!formData.origine || !formData.destination) {
-      toast.error('Veuillez remplir l\'origine et la destination');
+    if (!formData.origine.trim()) {
+      toast.error("Veuillez renseigner l'origine du trajet");
       return;
     }
 
@@ -330,12 +425,54 @@ export default function Trips() {
         const stopsPayload = buildStopsForPersist(
           formData.stops,
           formData.origine,
-          formData.destination,
+          formData.destination.trim(),
           formData.origineLat,
           formData.origineLng,
           formData.destinationLat,
           formData.destinationLng,
         );
+
+        const participantsLint = formData.clientParticipants.filter((p) => p.libelle.trim());
+        if (participantsLint.length >= 2 && !formData.payeurParticipantId.trim()) {
+          toast.error(
+            'Avec plusieurs clients sur le trajet, sélectionnez le « payeur au règlement ».',
+          );
+          return;
+        }
+        const sumsParts = participantsLint.filter(
+          (p) => p.montantAttribue != null && !Number.isNaN(Number(p.montantAttribue)),
+        );
+        if (
+          sumsParts.length > 0 &&
+          sumsParts.length === participantsLint.length &&
+          formData.recette > 0
+        ) {
+          const sum = sumsParts.reduce((s, p) => s + Number(p.montantAttribue), 0);
+          if (sum > formData.recette + 0.01) {
+            toast.error(
+              `La somme des parts clients (${sum.toLocaleString('fr-FR')} FCFA) dépasse la recette (${formData.recette.toLocaleString('fr-FR')} FCFA).`,
+            );
+            return;
+          }
+        }
+        const cpPayload =
+          participantsLint.length > 0
+            ? participantsLint.map((p) => ({
+                id: p.id,
+                tierId: p.tierId || undefined,
+                libelle: p.libelle.trim(),
+                montantAttribue:
+                  p.montantAttribue != null && Number(p.montantAttribue) > 0
+                    ? Number(p.montantAttribue)
+                    : undefined,
+              }))
+            : [];
+        const payeurPayload =
+          participantsLint.length >= 2
+            ? formData.payeurParticipantId.trim() || undefined
+            : participantsLint.length === 1
+              ? participantsLint[0].id
+              : undefined;
 
         if (editingTripId) {
           const sumT = sumMontantTTCForTripInvoices(editingTripId, invoices);
@@ -347,7 +484,7 @@ export default function Trips() {
           }
           await updateTrip(editingTripId, {
             origine: formData.origine,
-            destination: formData.destination,
+            destination: formData.destination.trim(),
             origineLat: formData.origineLat,
             origineLng: formData.origineLng,
             destinationLat: formData.destinationLat,
@@ -370,6 +507,8 @@ export default function Trips() {
                 : undefined,
             retourBordereaux: formData.retourBordereaux?.trim() || undefined,
             stops: stopsPayload,
+            clientParticipants: cpPayload,
+            payeurParticipantId: payeurPayload,
           });
           toast.success('Trajet mis à jour');
           setIsDialogOpen(false);
@@ -379,7 +518,7 @@ export default function Trips() {
 
         const createdTrip = await createTrip({
           origine: formData.origine,
-          destination: formData.destination,
+          destination: formData.destination.trim(),
           origineLat: formData.origineLat,
           origineLng: formData.origineLng,
           destinationLat: formData.destinationLat,
@@ -403,6 +542,8 @@ export default function Trips() {
           retourBordereaux: formData.retourBordereaux?.trim() || undefined,
           statut: 'planifie',
           stops: stopsPayload,
+          clientParticipants: cpPayload.length ? cpPayload : undefined,
+          payeurParticipantId: payeurPayload,
         });
         if (formData.prefinancement > 0) {
           try {
@@ -414,7 +555,7 @@ export default function Trips() {
               sousCategorie: 'Trajet',
               montant: formData.prefinancement,
               date: formData.dateDepart,
-              description: `Préfinancement trajet ${formData.origine} → ${formData.destination}`,
+              description: `Préfinancement trajet ${itineraireResume(formData.origine, formData.destination)}`,
             });
           } catch (prefiErr) {
             console.error('createTrip prefinancement expense', prefiErr);
@@ -487,7 +628,7 @@ export default function Trips() {
     }
 
     const trip = trips.find(t => t.id === tripId);
-    if (trip && confirm(`Êtes-vous sûr de vouloir supprimer le trajet ${trip.origine} → ${trip.destination} ?`)) {
+    if (trip && confirm(`Êtes-vous sûr de vouloir supprimer le trajet ${itineraireResume(trip.origine, trip.destination)} ?`)) {
       try {
         await deleteTrip(tripId);
         toast.success('Trajet supprimé');
@@ -655,9 +796,12 @@ export default function Trips() {
         if (searchTerm) {
           const search = searchTerm.toLowerCase();
           const matchesClient = trip.client?.toLowerCase().includes(search);
+          const partLine = formatTripClientsSummary(trip).toLowerCase();
+          const matchesParticipants =
+            partLine !== '—' && partLine.includes(search);
           const matchesMarchandise = trip.marchandise?.toLowerCase().includes(search);
           const matchesDescription = trip.description?.toLowerCase().includes(search);
-          const matchesItineraire = `${trip.origine} → ${trip.destination}`.toLowerCase().includes(search);
+          const matchesItineraire = itineraireResume(trip.origine, trip.destination).toLowerCase().includes(search);
           const matchesChauffeur = getDriverLabel(trip.chauffeurId).toLowerCase().includes(search);
           const matchesRefAtc = trip.referenceAtc?.toLowerCase().includes(search);
           const matchesDest = trip.destinataire?.toLowerCase().includes(search);
@@ -673,6 +817,7 @@ export default function Trips() {
 
           if (
             !matchesClient &&
+            !matchesParticipants &&
             !matchesMarchandise &&
             !matchesDescription &&
             !matchesItineraire &&
@@ -708,11 +853,17 @@ export default function Trips() {
         return stableSort(list, (a, b) => a.recette - b.recette);
       case 'itineraire_asc':
         return stableSort(list, (a, b) =>
-          frCollator.compare(`${a.origine} → ${a.destination}`, `${b.origine} → ${b.destination}`),
+          frCollator.compare(
+            itineraireResume(a.origine, a.destination),
+            itineraireResume(b.origine, b.destination),
+          ),
         );
       case 'itineraire_desc':
         return stableSort(list, (a, b) =>
-          frCollator.compare(`${b.origine} → ${b.destination}`, `${a.origine} → ${a.destination}`),
+          frCollator.compare(
+            itineraireResume(b.origine, b.destination),
+            itineraireResume(a.origine, a.destination),
+          ),
         );
       case 'client_asc':
         return stableSort(list, (a, b) => frCollator.compare(a.client || '', b.client || ''));
@@ -880,10 +1031,10 @@ export default function Trips() {
       sheetName: 'Trajets',
       filtersDescription,
       columns: [
-        { header: 'Itinéraire', value: (t) => `${t.origine} → ${t.destination}` },
+        { header: 'Itinéraire', value: (t) => itineraireResume(t.origine, t.destination) },
         { header: 'Arrêts', value: (t) => stopsSummaryLine(t) || '(résumé seul)' },
         { header: 'Distance (km)', value: (t) => getTripDistanceKm(t) ?? '' },
-        { header: 'Client', value: (t) => t.client || '-' },
+        { header: 'Client', value: (t) => formatTripClientsSummary(t) },
         { header: 'Réf. ATC', value: (t) => t.referenceAtc || '' },
         { header: 'Destinataire', value: (t) => t.destinataire || '' },
         { header: 'Qualité / marchandise', value: (t) => t.marchandise || '' },
@@ -930,7 +1081,7 @@ export default function Trips() {
         { label: 'Chiffre d’affaires', value: `+${totalRecettes.toLocaleString('fr-FR')} FCFA`, style: 'positive', icon: EMOJI.argent },
       ],
       columns: [
-        { header: 'Itinéraire', value: (t) => `${EMOJI.adresse} ${t.origine} → ${t.destination}` },
+        { header: 'Itinéraire', value: (t) => `${EMOJI.adresse} ${itineraireResume(t.origine, t.destination)}` },
         {
           header: 'Arrêts',
           value: (t) => (stopsSummaryLine(t) ? `${EMOJI.liste} ${stopsSummaryLine(t)}` : '—'),
@@ -942,7 +1093,7 @@ export default function Trips() {
             return km != null ? `${km} km` : '-';
           },
         },
-        { header: 'Client', value: (t) => t.client || '-' },
+        { header: 'Client', value: (t) => formatTripClientsSummary(t) },
         { header: 'ATC', value: (t) => t.referenceAtc || '—' },
         { header: 'Destinataire', value: (t) => t.destinataire || '—' },
         { header: 'Qualité', value: (t) => t.marchandise || '—' },
@@ -1174,9 +1325,9 @@ export default function Trips() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="destination">Destination (résumé) *</Label>
+                  <Label htmlFor="destination">Destination (résumé)</Label>
                   <p className="text-xs text-muted-foreground mb-1">
-                    Ex. zone ou « À préciser » ; le détail peut aller dans les arrêts ci-dessous.
+                    Optionnel : zone ou « À préciser » ; le détail peut aller dans les arrêts ci-dessous.
                   </p>
                   <div className="flex gap-2">
                   <Input
@@ -1184,7 +1335,6 @@ export default function Trips() {
                     value={formData.destination}
                     onChange={(e) => setFormData(prev => ({ ...prev, destination: e.target.value }))}
                     placeholder="Entrer ou sélectionner"
-                    required
                   />
                     <Button
                       type="button"
@@ -1320,7 +1470,7 @@ export default function Trips() {
               </div>
 
               {/* Afficher la distance issue de la carte (itinéraire routier) */}
-              {formData.origine && formData.destination && formData.origine !== formData.destination && (
+              {formData.origine.trim() && formData.destination.trim() && formData.origine.trim() !== formData.destination.trim() && (
                 <div className="bg-muted/50 p-3 rounded-lg border">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Distance du trajet (carte) :</span>
@@ -1404,19 +1554,55 @@ export default function Trips() {
                 </div>
 
                 <div>
-                  <Label htmlFor="marchandise">Marchandise / qualité (optionnel)</Label>
-                  <datalist id="cement-marchandise-suggestions">
-                    {CEMENT_MARCHANDISE_SUGGESTIONS.map((q) => (
-                      <option key={q} value={q} />
-                    ))}
-                  </datalist>
-                  <Input
-                    id="marchandise"
-                    list="cement-marchandise-suggestions"
-                    value={formData.marchandise}
-                    onChange={(e) => setFormData({ ...formData, marchandise: e.target.value })}
-                    placeholder="Ex. Cimaf 42.5R"
-                  />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <Label htmlFor="marchandise" className="shrink-0">
+                        Marchandise / qualité (optionnel)
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto py-1 text-xs text-muted-foreground"
+                        onClick={() => {
+                          setMerchandiseCatalogOpen(true);
+                          setEditingMerchandiseId(null);
+                          setMerchEditDraft('');
+                        }}
+                      >
+                        Gérer le catalogue…
+                      </Button>
+                    </div>
+                    <datalist id="trip-marchandise-catalog-datalist">
+                      {sortedMerchandiseCatalog.map((m) => (
+                        <option key={m.id} value={m.libelle} />
+                      ))}
+                    </datalist>
+                    <Input
+                      id="marchandise"
+                      list="trip-marchandise-catalog-datalist"
+                      value={formData.marchandise}
+                      onChange={(e) => setFormData({ ...formData, marchandise: e.target.value })}
+                      placeholder="Saisie libre ou choix dans votre catalogue"
+                      autoComplete="off"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canMemorizeMarchandise}
+                        onClick={() => void handleMemorizeMarchandise()}
+                      >
+                        <ListPlus className="h-3.5 w-3.5 mr-1 shrink-0" />
+                        Mémoriser dans le catalogue
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Enregistrez vos désignations habituelles pour les retrouver dans la liste ; le trajet accepte
+                      toujours une saisie libre.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -1696,7 +1882,7 @@ export default function Trips() {
                 sortedTrips.map((trip) => (
                   <TableRow key={trip.id} className="hover:bg-muted/50 transition-colors duration-200">
                     <TableCell className="font-medium">
-                      <div>{trip.origine} → {trip.destination}</div>
+                      <div>{itineraireResume(trip.origine, trip.destination)}</div>
                       {stopsSummaryLine(trip) ? (
                         <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
                           <ListOrdered className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -1733,7 +1919,7 @@ export default function Trips() {
                       ) : null}
                       {trip.description && <div className="text-xs text-muted-foreground mt-1">{trip.description}</div>}
                     </TableCell>
-                    <TableCell>{trip.client || '-'}</TableCell>
+                    <TableCell>{formatTripClientsSummary(trip)}</TableCell>
                     <TableCell>{getDriverLabel(trip.chauffeurId)}</TableCell>
                     <TableCell>{getStatusBadge(trip.statut)}</TableCell>
                     <TableCell>{new Date(trip.dateDepart).toLocaleDateString('fr-FR')}</TableCell>
@@ -1929,7 +2115,7 @@ export default function Trips() {
           {stopsDialogTrip && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                {stopsDialogTrip.origine} → {stopsDialogTrip.destination} —{' '}
+                {itineraireResume(stopsDialogTrip.origine, stopsDialogTrip.destination)} —{' '}
                 <span className="font-medium text-foreground">
                   {formatTripStatusFr(stopsDialogTrip.statut)}
                 </span>
@@ -2108,7 +2294,9 @@ export default function Trips() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Itinéraire:</span>
-                      <p className="font-semibold">{selectedTripForExpenses.origine} → {selectedTripForExpenses.destination}</p>
+                      <p className="font-semibold">
+                        {itineraireResume(selectedTripForExpenses.origine, selectedTripForExpenses.destination)}
+                      </p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Statut:</span>
@@ -2191,6 +2379,105 @@ export default function Trips() {
               </div>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={merchandiseCatalogOpen}
+        onOpenChange={(open) => {
+          setMerchandiseCatalogOpen(open);
+          if (!open) {
+            setEditingMerchandiseId(null);
+            setMerchEditDraft('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Marchandises / qualités enregistrées</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Libellés proposés dans le formulaire trajet. La suppression n’altère pas les trajets déjà enregistrés.
+          </p>
+          {sortedMerchandiseCatalog.length === 0 ? (
+            <p className="text-sm py-4 text-center text-muted-foreground">
+              Aucune entrée pour l’instant. Saisissez un texte dans le champ trajet puis « Mémoriser dans le catalogue ».
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Libellé</TableHead>
+                  <TableHead className="w-[120px] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedMerchandiseCatalog.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell>
+                      {editingMerchandiseId === m.id ? (
+                        <Input
+                          value={merchEditDraft}
+                          onChange={(e) => setMerchEditDraft(e.target.value)}
+                          className="h-9"
+                          maxLength={255}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="font-medium">{m.libelle}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right space-x-1">
+                      {editingMerchandiseId === m.id ? (
+                        <>
+                          <Button type="button" size="sm" variant="default" onClick={() => void saveMerchEdit()}>
+                            OK
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingMerchandiseId(null);
+                              setMerchEditDraft('');
+                            }}
+                          >
+                            Annuler
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="Modifier"
+                            onClick={() => {
+                              setEditingMerchandiseId(m.id);
+                              setMerchEditDraft(m.libelle);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive"
+                            aria-label="Supprimer"
+                            onClick={() => void handleDeleteMerch(m.id, m.libelle)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </DialogContent>
       </Dialog>
     </div>

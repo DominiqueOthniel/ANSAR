@@ -19,6 +19,7 @@ const PURGE_DELETE_ORDER = [
   'trucks',
   'drivers',
   'third_parties',
+  'merchandise_qualities',
   'caisse_config',
 ] as const;
 
@@ -78,6 +79,7 @@ export class AppController {
           trucks,
           drivers,
           third_parties,
+          merchandise_qualities,
           caisse_config
         RESTART IDENTITY CASCADE
       `);
@@ -117,6 +119,7 @@ export class AppController {
   async backup(@Res() res: Response): Promise<void> {
     const [
       thirdParties,
+      merchandiseQualities,
       drivers,
       driverTransactions,
       trucks,
@@ -128,6 +131,7 @@ export class AppController {
       parcelExpeditions,
     ] = await Promise.all([
       this.dataSource.query('SELECT * FROM third_parties'),
+      this.dataSource.query('SELECT * FROM merchandise_qualities ORDER BY libelle ASC'),
       this.dataSource.query('SELECT * FROM drivers'),
       this.dataSource.query('SELECT * FROM driver_transactions ORDER BY date ASC'),
       this.dataSource.query('SELECT * FROM trucks'),
@@ -144,6 +148,7 @@ export class AppController {
       exportedAt: new Date().toISOString(),
       data: {
         thirdParties,
+        merchandiseQualities,
         drivers,
         driverTransactions,
         trucks,
@@ -190,6 +195,7 @@ export class AppController {
           trucks,
           drivers,
           third_parties,
+          merchandise_qualities,
           caisse_config
         RESTART IDENTITY CASCADE
       `);
@@ -208,6 +214,7 @@ export class AppController {
       };
 
       await insert('third_parties', data.thirdParties);
+      await insert('merchandise_qualities', data.merchandiseQualities ?? []);
       await insert('drivers', data.drivers);
       await insert('driver_transactions', data.driverTransactions);
       await insert('trucks', data.trucks);
@@ -224,6 +231,7 @@ export class AppController {
         message: 'Restauration réussie',
         counts: {
           thirdParties: data.thirdParties?.length ?? 0,
+          merchandiseQualities: data.merchandiseQualities?.length ?? 0,
           drivers: data.drivers?.length ?? 0,
           trucks: data.trucks?.length ?? 0,
           trips: data.trips?.length ?? 0,

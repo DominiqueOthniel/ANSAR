@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 
-export type ThirdPartyType = 'proprietaire' | 'client' | 'fournisseur';
+export type ThirdPartyType = 'proprietaire' | 'client' | 'fournisseur' | 'employe';
 
 @Entity('third_parties')
 export class ThirdParty {
