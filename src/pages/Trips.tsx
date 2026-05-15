@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus } from 'lucide-react';
@@ -1032,7 +1032,7 @@ export default function Trips() {
       filtersDescription,
       columns: [
         { header: 'Itinéraire', value: (t) => itineraireResume(t.origine, t.destination) },
-        { header: 'Arrêts', value: (t) => stopsSummaryLine(t) || '(résumé seul)' },
+        { header: 'Chaîne d’arrêts', value: (t) => stopsSummaryLine(t) || '(résumé seul)' },
         { header: 'Distance (km)', value: (t) => getTripDistanceKm(t) ?? '' },
         { header: 'Client', value: (t) => formatTripClientsSummary(t) },
         { header: 'Réf. ATC', value: (t) => t.referenceAtc || '' },
@@ -1083,7 +1083,7 @@ export default function Trips() {
       columns: [
         { header: 'Itinéraire', value: (t) => `${EMOJI.adresse} ${itineraireResume(t.origine, t.destination)}` },
         {
-          header: 'Arrêts',
+          header: 'Chaîne d’arrêts',
           value: (t) => (stopsSummaryLine(t) ? `${EMOJI.liste} ${stopsSummaryLine(t)}` : '—'),
         },
         {
@@ -1352,9 +1352,16 @@ export default function Trips() {
               <div className="rounded-lg border border-dashed bg-muted/20 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-medium">Arrêts (chargements / livraisons)</p>
+                    <p className="text-sm font-medium">Arrêts — chargements fournisseurs, puis livraisons</p>
                     <p className="text-xs text-muted-foreground">
-                      Optionnel : sans ligne ici, un chargement à l’origine et une livraison à la destination du résumé sont enregistrés automatiquement.
+                      Chaque arrêt « chargement » est un ramassage chez un fournisseur (lieu réel ; rapprochez du nom
+                      enregistré sous{' '}
+                      <Link to="/tiers" className="text-primary underline-offset-2 hover:underline">
+                        Tiers
+                      </Link>{' '}
+                      pour vous retrouver). Enchaînez les sites dans l’ordre du camion, puis les livraisons clients.
+                      Sans ligne détaillée, un chargement à l’origine et une livraison au résumé destination sont
+                      enregistrés automatiquement.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1393,9 +1400,9 @@ export default function Trips() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="chargement">Chargement</SelectItem>
-                              <SelectItem value="livraison">Livraison</SelectItem>
-                              <SelectItem value="autre">Autre</SelectItem>
+                              <SelectItem value="chargement">{labelTripStopType('chargement')}</SelectItem>
+                              <SelectItem value="livraison">{labelTripStopType('livraison')}</SelectItem>
+                              <SelectItem value="autre">{labelTripStopType('autre')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -1411,11 +1418,23 @@ export default function Trips() {
                                 ),
                               }))
                             }
-                            placeholder="Ex. Dangote, Yopougon…"
+                            placeholder={
+                              stop.type === 'chargement'
+                                ? 'Ex. carrière X, dépôt ciment, usine…'
+                                : stop.type === 'livraison'
+                                  ? 'Ex. chantier, client, magasin…'
+                                  : 'Lieu de passage'
+                            }
                           />
                         </div>
                         <div className="md:col-span-3">
-                          <Label className="text-xs">Réf. client (optionnel)</Label>
+                          <Label className="text-xs">
+                            {stop.type === 'chargement'
+                              ? 'Fournisseur / BL (optionnel)'
+                              : stop.type === 'livraison'
+                                ? 'Client / BL livraison (optionnel)'
+                                : 'Référence (optionnel)'}
+                          </Label>
                           <Input
                             value={stop.clientRef ?? ''}
                             onChange={(e) =>
@@ -1426,7 +1445,11 @@ export default function Trips() {
                                 ),
                               }))
                             }
-                            placeholder="Client / BL…"
+                            placeholder={
+                              stop.type === 'chargement'
+                                ? 'Nom fournisseur, bon de chargement…'
+                                : 'Destinataire, bon de livraison…'
+                            }
                           />
                         </div>
                         <div className="md:col-span-2 flex gap-1 justify-end">
@@ -2059,7 +2082,7 @@ export default function Trips() {
                             variant="outline"
                             onClick={() => openStopsDialog(trip)}
                             className="h-8 w-8 p-0"
-                            title="Arrêts (chargements / livraisons)"
+                            title="Chaîne d’arrêts : chargements fournisseurs, livraisons clients"
                           >
                             <ListOrdered className="h-4 w-4" />
                           </Button>
@@ -2110,7 +2133,12 @@ export default function Trips() {
       >
         <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Arrêts du trajet</DialogTitle>
+            <DialogTitle>Chaîne d’arrêts du trajet</DialogTitle>
+            <DialogDescription>
+              Les chargements se font chez des fournisseurs différents : un arrêt « chargement » par site de
+              ramassage, dans l’ordre réel du camion, puis les livraisons. Écosystème simple à suivre : mêmes noms que
+              dans Tiers quand c’est possible.
+            </DialogDescription>
           </DialogHeader>
           {stopsDialogTrip && (
             <div className="space-y-4">
@@ -2163,6 +2191,13 @@ export default function Trips() {
                             prev.map((s, i) => (i === index ? { ...s, lieu: e.target.value } : s)),
                           )
                         }
+                        placeholder={
+                          stop.type === 'chargement'
+                            ? 'Site fournisseur (usine, carrière, dépôt…)'
+                            : stop.type === 'livraison'
+                              ? 'Point de livraison (chantier, client…)'
+                              : 'Lieu'
+                        }
                       />
                     </div>
                     <div className="md:col-span-2">
@@ -2188,7 +2223,13 @@ export default function Trips() {
                       </Select>
                     </div>
                     <div className="md:col-span-2">
-                      <Label className="text-xs">Réf. client</Label>
+                      <Label className="text-xs">
+                        {stop.type === 'chargement'
+                          ? 'Fournisseur / BL'
+                          : stop.type === 'livraison'
+                            ? 'Client / BL'
+                            : 'Réf.'}
+                      </Label>
                       <Input
                         value={stop.clientRef ?? ''}
                         onChange={(e) =>
@@ -2197,6 +2238,9 @@ export default function Trips() {
                               i === index ? { ...s, clientRef: e.target.value || undefined } : s,
                             ),
                           )
+                        }
+                        placeholder={
+                          stop.type === 'chargement' ? 'Nom fournisseur, BL…' : 'Destinataire, BL…'
                         }
                       />
                     </div>

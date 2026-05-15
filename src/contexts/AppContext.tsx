@@ -11,6 +11,7 @@ import {
 } from '@/lib/api';
 import type { ParcelExpeditionPayload } from '@/lib/api';
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
+import { normalizeInvoicePaymentSlices, type InvoicePaymentEncaissement } from '@/lib/invoice-payment-slices';
 import { refreshCaisseFromApi, isRemoteCaisse } from '@/lib/caisse-local';
 import { refreshBankFromApi } from '@/lib/bank-local';
 
@@ -51,6 +52,7 @@ export interface TripStop {
 }
 
 export type { TripClientParticipant } from '@/lib/trip-client-participants';
+export type { InvoicePaymentEncaissement } from '@/lib/invoice-payment-slices';
 
 export interface Trip {
   id: string;
@@ -75,7 +77,7 @@ export interface Trip {
   quantiteChargee?: number;
   retourBordereaux?: string;
   statut: TripStatus;
-  /** Arrêts détaillés (chargements / livraisons), optionnel côté API */
+  /** Arrêts : chargements chez les fournisseurs, livraisons chez les clients (optionnel côté API). */
   stops?: TripStop[];
   /** Clients / parts liés au trajet (multi-clients, règlement). */
   clientParticipants?: TripClientParticipant[];
@@ -153,6 +155,8 @@ export interface Invoice {
   /** Fiche client (facture partielle trajet, multi-clients). */
   clientTierId?: string;
   factureClientLibelle?: string;
+  /** Ventilation des encaissements par payeur (même facture, plusieurs clients). */
+  paiementsEncaissements?: InvoicePaymentEncaissement[];
 }
 
 export interface DriverTransaction {
@@ -416,6 +420,10 @@ function normalizeInvoice(r: Record<string, unknown>): Invoice {
       r.factureClientLibelle != null && String(r.factureClientLibelle) !== ''
         ? String(r.factureClientLibelle)
         : undefined,
+    paiementsEncaissements: (() => {
+      const slices = normalizeInvoicePaymentSlices(r.paiementsEncaissements);
+      return slices.length > 0 ? slices : undefined;
+    })(),
   };
 }
 

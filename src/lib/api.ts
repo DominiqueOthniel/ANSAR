@@ -179,6 +179,12 @@ export interface InvoicePayload {
   clientTierId?: string;
   /** Libellé affiché (client sans fiche ou complément). */
   factureClientLibelle?: string;
+  /** Ventilation des encaissements par payeur (somme = montantPaye). */
+  paiementsEncaissements?: Array<{
+    montant: number;
+    clientTierId?: string;
+    payeurLibelle?: string;
+  }>;
 }
 
 export interface DriverPayload {

@@ -285,14 +285,28 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const clientDetailInsights = useMemo(() => {
     if (!detailClient || detailClient.type !== 'client') return null;
     const nom = detailClient.nom;
+    const tripInvolvesClient = (t: (typeof trips)[0]) =>
+      matchClientReference(t.client, nom) ||
+      (t.clientParticipants ?? []).some((p) => p.tierId === detailClient.id);
+
     const relatedTrips = trips
-      .filter((t) => matchClientReference(t.client, nom))
+      .filter((t) => tripInvolvesClient(t))
       .sort((a, b) => new Date(b.dateDepart).getTime() - new Date(a.dateDepart).getTime());
     const tripIds = new Set(relatedTrips.map((t) => t.id));
     const tripInvoices = invoices.filter((inv) => {
       if (!inv.trajetId || !tripIds.has(inv.trajetId)) return false;
-      if (inv.clientTierId) return inv.clientTierId === detailClient.id;
-      if (inv.factureClientLibelle?.trim()) return matchClientReference(inv.factureClientLibelle, nom);
+      if (inv.clientTierId === detailClient.id) return true;
+      if (
+        (inv.paiementsEncaissements ?? []).some(
+          (s) =>
+            s.clientTierId === detailClient.id ||
+            (s.payeurLibelle?.trim() && matchClientReference(s.payeurLibelle, nom)),
+        )
+      )
+        return true;
+      if (!inv.clientTierId && inv.factureClientLibelle?.trim()) {
+        return matchClientReference(inv.factureClientLibelle, nom);
+      }
       const tr = trips.find((t) => t.id === inv.trajetId);
       return matchClientReference(tr?.client, nom);
     });
@@ -528,7 +542,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     <SelectContent>
                       <SelectItem value="proprietaire">Propriétaire de camion</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
-                      <SelectItem value="fournisseur">Fournisseur d'articles</SelectItem>
+                      <SelectItem value="fournisseur">Fournisseur (chargements, achats site)</SelectItem>
                       <SelectItem value="employe">Personnel siège (salaires, hors chauffeurs)</SelectItem>
                     </SelectContent>
                   </Select>

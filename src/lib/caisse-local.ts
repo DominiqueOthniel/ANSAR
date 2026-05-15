@@ -131,15 +131,19 @@ export async function appendEntreeFromInvoicePayment(params: {
   factureNumero: string;
   factureId: string;
   modeLibelle?: string;
+  /** Ex. client payeur ventilé (facture trajet multi-clients). */
+  payeurNote?: string;
 }): Promise<void> {
   if (params.montant <= 0) return;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const base = `Encaissement facture ${params.factureNumero}${params.modeLibelle ? ` (${params.modeLibelle})` : ''}`;
+  const description = params.payeurNote ? `${base} — payeur : ${params.payeurNote}` : base;
   const tx: CaisseTransaction = {
     id,
     type: 'entree',
     montant: params.montant,
     date: params.date,
-    description: `Encaissement facture ${params.factureNumero}${params.modeLibelle ? ` (${params.modeLibelle})` : ''}`,
+    description,
     reference: `facture:${params.factureId}`,
     categorie: 'Encaissements clients',
   };

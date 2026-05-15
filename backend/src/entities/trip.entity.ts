@@ -106,7 +106,7 @@ export class Trip {
   @Column({ type: 'varchar', length: 20 })
   statut: TripStatus;
 
-  /** simple-json : compatible PostgreSQL + SQLite (dev) */
+  /** Chaîne d’arrêts : chargements chez les fournisseurs, livraisons chez les clients (simple-json). */
   @Column({ type: 'simple-json', nullable: true })
   stops?: TripStopPersisted[] | null;
 

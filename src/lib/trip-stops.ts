@@ -60,7 +60,9 @@ export function stopsSummaryLine(trip: Trip): string {
   const rows = trip.stops?.filter((s) => s.lieu.trim()) ?? [];
   if (rows.length === 0) return '';
   const label = `${rows.length} arrêt${rows.length > 1 ? 's' : ''}`;
-  const chain = rows.map((s) => s.lieu).join(' → ');
+  const prefix = (t: TripStopType) =>
+    t === 'chargement' ? 'charg. ' : t === 'livraison' ? 'livr. ' : '';
+  const chain = rows.map((s) => `${prefix(s.type)}${s.lieu.trim()}`).join(' → ');
   return `${label} : ${chain}`;
 }
 
@@ -84,9 +86,9 @@ export function initialStopsDraftFromTrip(trip: Trip): TripStop[] {
 }
 
 const TYPE_LABELS: Record<TripStopType, string> = {
-  chargement: 'Chargement',
-  livraison: 'Livraison',
-  autre: 'Autre',
+  chargement: 'Chargement (fournisseur)',
+  livraison: 'Livraison (client)',
+  autre: 'Autre arrêt',
 };
 
 const STATUT_LABELS: Record<TripStopStatut, string> = {

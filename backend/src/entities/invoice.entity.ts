@@ -2,6 +2,12 @@ import { Entity, PrimaryColumn, Column } from 'typeorm';
 
 export type InvoiceStatus = 'en_attente' | 'payee';
 
+export interface InvoicePaymentEncaissementPersisted {
+  montant: number;
+  clientTierId?: string;
+  payeurLibelle?: string;
+}
+
 @Entity('invoices')
 export class Invoice {
   @PrimaryColumn('uuid')
@@ -61,4 +67,8 @@ export class Invoice {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   factureClientLibelle?: string;
+
+  /** Encaissements partiels ventilés par payeur (multi-clients sur une même facture trajet). */
+  @Column({ type: 'simple-json', nullable: true })
+  paiementsEncaissements?: InvoicePaymentEncaissementPersisted[] | null;
 }

@@ -1,4 +1,6 @@
-import { IsString, IsOptional, IsNumber, IsIn, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsNumber, IsIn, IsUUID, IsArray, ValidateNested } from 'class-validator';
+import { InvoicePaymentEncaissementDto } from './invoice-payment-encaissement.dto';
 
 export class CreateInvoiceDto {
   @IsString()
@@ -68,4 +70,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsString()
   factureClientLibelle?: string;
+
+  /** Ventilation des encaissements par payeur (somme des montants = montantPaye si renseigné). */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InvoicePaymentEncaissementDto)
+  paiementsEncaissements?: InvoicePaymentEncaissementDto[];
 }

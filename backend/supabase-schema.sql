@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "clientTierId" UUID REFERENCES third_parties(id);
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "factureClientLibelle" VARCHAR(255);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "paiementsEncaissements" JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_trajet ON invoices("trajetId");
 CREATE INDEX IF NOT EXISTS idx_invoices_expense ON invoices("expenseId");

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { Invoice } from '../entities/invoice.entity';
+import { Invoice, InvoicePaymentEncaissementPersisted } from '../entities/invoice.entity';
 import { Trip } from '../entities/trip.entity';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
@@ -45,6 +45,43 @@ export class InvoicesService {
     }
   }
 
+  /** Ventilation des encaissements : somme des lignes = montant payé (tolérance 0,02 FCFA). */
+  private normalizePaiementsEncaissements(
+    montantPaye: number,
+    raw: unknown,
+  ): InvoicePaymentEncaissementPersisted[] | null {
+    if (raw === undefined || raw === null) return null;
+    if (!Array.isArray(raw)) {
+      throw new BadRequestException('Le champ paiementsEncaissements doit être un tableau.');
+    }
+    if (raw.length === 0) return null;
+    const rows: InvoicePaymentEncaissementPersisted[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as Record<string, unknown>;
+      const m = Number(o.montant);
+      if (!Number.isFinite(m) || m <= 0) {
+        throw new BadRequestException('Chaque ligne de paiement doit avoir un montant positif.');
+      }
+      const tid =
+        o.clientTierId != null && String(o.clientTierId).trim() !== ''
+          ? String(o.clientTierId).trim()
+          : undefined;
+      const lib =
+        o.payeurLibelle != null && String(o.payeurLibelle).trim() !== ''
+          ? String(o.payeurLibelle).trim()
+          : undefined;
+      rows.push({ montant: m, clientTierId: tid, payeurLibelle: lib });
+    }
+    const sum = rows.reduce((s, r) => s + r.montant, 0);
+    if (Math.abs(sum - montantPaye) > 0.02) {
+      throw new BadRequestException(
+        `Somme des encaissements ventilés (${sum.toFixed(0)} FCFA) ≠ montant payé (${montantPaye.toFixed(0)} FCFA).`,
+      );
+    }
+    return rows;
+  }
+
   async create(dto: CreateInvoiceDto): Promise<Invoice> {
     const ttc = Number(dto.montantTTC);
     const paye = dto.montantPaye != null ? Number(dto.montantPaye) : 0;
@@ -57,9 +94,15 @@ export class InvoicesService {
     if (dto.trajetId) {
       await this.assertTripInvoicesTTCWithinRecette(dto.trajetId, ttc);
     }
+    const { paiementsEncaissements: rawSlices, ...rest } = dto;
+    const slices =
+      rawSlices !== undefined && rawSlices !== null
+        ? this.normalizePaiementsEncaissements(paye, rawSlices)
+        : null;
     const invoice = this.invoiceRepository.create({
       id: uuidv4(),
-      ...dto,
+      ...rest,
+      paiementsEncaissements: slices,
     });
     return this.invoiceRepository.save(invoice);
   }
@@ -96,7 +139,16 @@ export class InvoicesService {
     if (trajetId) {
       await this.assertTripInvoicesTTCWithinRecette(trajetId, ttc, id);
     }
-    await this.invoiceRepository.update(id, dto as Partial<Invoice>);
+    const payeFinal =
+      dto.montantPaye !== undefined ? Number(dto.montantPaye) : Number(before.montantPaye ?? 0);
+    const patch = { ...dto } as Partial<Invoice>;
+    if (dto.paiementsEncaissements !== undefined) {
+      patch.paiementsEncaissements = this.normalizePaiementsEncaissements(
+        payeFinal,
+        dto.paiementsEncaissements,
+      );
+    }
+    await this.invoiceRepository.update(id, patch);
     return this.findOne(id);
   }
 

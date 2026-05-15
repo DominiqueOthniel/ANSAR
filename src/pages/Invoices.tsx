@@ -42,6 +42,11 @@ import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getInvoiceClientDefaultsFromTrip } from '@/lib/trip-client-participants';
+import {
+  mergeTripInvoicePaymentSlices,
+  tripHasMultipleInvoicePayers,
+  sumInvoicePaymentSlices,
+} from '@/lib/invoice-payment-slices';
 
 const INVOICE_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date création (récent → ancien)' },
@@ -78,6 +83,8 @@ export default function Invoices() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  /** Participant trajet (ligne client) ayant versé l’encaissement en cours — si ≥ 2 clients sur le trajet. */
+  const [paymentPayerParticipantId, setPaymentPayerParticipantId] = useState('');
   /** Compte qui reçoit le virement (dialog paiement) */
   const [paymentCompteBanqueId, setPaymentCompteBanqueId] = useState<string>('');
   const [selectedTripId, setSelectedTripId] = useState('');
@@ -349,6 +356,14 @@ export default function Invoices() {
     
     setSelectedInvoice(invoice);
     setPaymentAmount(0); // Montant du nouveau paiement à ajouter (pré-rempli à 0)
+    setPaymentPayerParticipantId('');
+    const trip = invoice.trajetId ? trips.find((t) => t.id === invoice.trajetId) : undefined;
+    if (trip && tripHasMultipleInvoicePayers(trip)) {
+      const parts = (trip.clientParticipants ?? []).filter((p) => p.libelle.trim());
+      const payeurId = trip.payeurParticipantId;
+      const def = payeurId ? parts.find((p) => p.id === payeurId) : parts[0];
+      if (def) setPaymentPayerParticipantId(def.id);
+    }
     const accs = getBankAccounts();
     setPaymentCompteBanqueId(accs[0]?.id ?? '');
     setIsPaymentDialogOpen(true);
@@ -387,6 +402,31 @@ export default function Invoices() {
       }
     }
 
+    const tripForPay = selectedInvoice.trajetId
+      ? trips.find((t) => t.id === selectedInvoice.trajetId)
+      : undefined;
+    if (paymentAmount > 0 && tripHasMultipleInvoicePayers(tripForPay) && !paymentPayerParticipantId.trim()) {
+      toast.error('Sélectionnez le client qui a effectué ce paiement.');
+      return;
+    }
+
+    let payeurDescription = '';
+    let paiementsEncaissementsPayload:
+      | { montant: number; clientTierId?: string; payeurLibelle?: string }[]
+      | undefined = undefined;
+    if (paymentAmount > 0) {
+      const merged = mergeTripInvoicePaymentSlices({
+        invoice: selectedInvoice,
+        trip: tripForPay,
+        additionalAmount: paymentAmount,
+        payerParticipantId: paymentPayerParticipantId.trim() || undefined,
+        thirdParties: thirdParties.map((tp) => ({ id: tp.id, nom: tp.nom })),
+      });
+      payeurDescription = merged.payerDescription;
+      paiementsEncaissementsPayload =
+        merged.paiementsEncaissements.length > 0 ? merged.paiementsEncaissements : undefined;
+    }
+
     const nouveauTotalPaye = dejaPaye + paymentAmount;
     const datePaiementJour = new Date().toISOString().split('T')[0];
     const isExpenseInvoice = Boolean(selectedInvoice.expenseId);
@@ -411,6 +451,9 @@ export default function Invoices() {
           statut: nouveauTotalPaye >= selectedInvoice.montantTTC ? 'payee' : 'en_attente',
           datePaiement: nouveauTotalPaye > 0 ? (selectedInvoice.datePaiement || datePaiementJour) : undefined,
           modePaiement: selectedInvoice.modePaiement || undefined,
+          ...(paiementsEncaissementsPayload
+            ? { paiementsEncaissements: paiementsEncaissementsPayload }
+            : {}),
         });
 
         if (paymentAmount > 0 && isPaiementVersBanque(mode) && paymentCompteBanqueId) {
@@ -438,6 +481,10 @@ export default function Invoices() {
                 date: datePaiementJour,
                 factureNumero: selectedInvoice.numero,
                 factureId: selectedInvoice.id,
+                description:
+                  payeurDescription && !isExpenseInvoice
+                    ? `Encaissement facture ${selectedInvoice.numero} — payeur : ${payeurDescription}`
+                    : undefined,
               });
               toast.success(
                 factureSoldée
@@ -458,6 +505,7 @@ export default function Invoices() {
               factureNumero: selectedInvoice.numero,
               factureId: selectedInvoice.id,
               modeLibelle: mode,
+              payeurNote: payeurDescription || undefined,
             });
             const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
             toast.success(
@@ -479,6 +527,7 @@ export default function Invoices() {
         setIsPaymentDialogOpen(false);
         setSelectedInvoice(null);
         setPaymentAmount(0);
+        setPaymentPayerParticipantId('');
         setPaymentCompteBanqueId('');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors du paiement');
@@ -3109,6 +3158,51 @@ export default function Invoices() {
                     </div>
                   </div>
 
+                  {selectedInvoice.paiementsEncaissements &&
+                    selectedInvoice.paiementsEncaissements.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-3">Ventilation des encaissements</h4>
+                        <div className="invoice-print-panel border rounded-lg overflow-hidden text-sm">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Payeur</TableHead>
+                                <TableHead className="text-right">Montant</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedInvoice.paiementsEncaissements.map((row, idx) => {
+                                const nomFiche = row.clientTierId
+                                  ? thirdParties.find((tp) => tp.id === row.clientTierId)?.nom
+                                  : undefined;
+                                const label =
+                                  row.payeurLibelle ||
+                                  nomFiche ||
+                                  (row.clientTierId ? `Fiche ${row.clientTierId.slice(0, 8)}…` : '—');
+                                return (
+                                  <TableRow key={`${idx}-${row.montant}`}>
+                                    <TableCell>{label}</TableCell>
+                                    <TableCell className="text-right font-medium tabular-nums">
+                                      {row.montant.toLocaleString('fr-FR')} FCFA
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                          <div className="px-4 py-2 border-t bg-muted/20 text-xs text-muted-foreground flex justify-between">
+                            <span>Total ventilé</span>
+                            <span className="font-medium text-foreground tabular-nums">
+                              {sumInvoicePaymentSlices(selectedInvoice.paiementsEncaissements).toLocaleString(
+                                'fr-FR',
+                              )}{' '}
+                              FCFA
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                   {/* Informations de paiement */}
                   <div>
                     <h4 className="font-semibold mb-3">Informations de paiement</h4>
@@ -3172,7 +3266,10 @@ export default function Invoices() {
         open={isPaymentDialogOpen}
         onOpenChange={(open) => {
           setIsPaymentDialogOpen(open);
-          if (!open) setPaymentCompteBanqueId('');
+          if (!open) {
+            setPaymentCompteBanqueId('');
+            setPaymentPayerParticipantId('');
+          }
         }}
       >
         <DialogContent>
@@ -3221,6 +3318,43 @@ export default function Invoices() {
                   Le montant peut être partiel. Maximum: {(selectedInvoice.montantTTC - (selectedInvoice.montantPaye || 0)).toLocaleString('fr-FR')} FCFA
                 </p>
               </div>
+
+              {selectedInvoice.trajetId &&
+                (() => {
+                  const tr = trips.find((t) => t.id === selectedInvoice.trajetId);
+                  if (!tripHasMultipleInvoicePayers(tr)) return null;
+                  const parts = (tr?.clientParticipants ?? []).filter((p) => p.libelle.trim());
+                  return (
+                    <div>
+                      <Label htmlFor="paymentPayerParticipant">Client payeur (cet encaissement) *</Label>
+                      <Select
+                        value={paymentPayerParticipantId || undefined}
+                        onValueChange={setPaymentPayerParticipantId}
+                      >
+                        <SelectTrigger id="paymentPayerParticipant" className="mt-1">
+                          <SelectValue placeholder="Choisir le client qui verse" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {parts.map((p) => {
+                            const fiche = p.tierId
+                              ? thirdParties.find((tp) => tp.id === p.tierId && tp.type === 'client')
+                              : undefined;
+                            return (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.libelle.trim()}
+                                {fiche ? ` — ${fiche.nom}` : p.tierId ? ` — fiche ${p.tierId.slice(0, 8)}…` : ''}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Plusieurs clients sur ce trajet : chaque versement est enregistré avec son payeur (suivi par
+                        fiche client et ventilation sur la facture).
+                      </p>
+                    </div>
+                  );
+                })()}
 
               {paymentAmount > 0 && (
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
