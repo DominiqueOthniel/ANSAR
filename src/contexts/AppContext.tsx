@@ -679,6 +679,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         ),
       );
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const looksLikeMissingRoute =
+        /\b404\b/i.test(msg) ||
+        /not\s*found/i.test(msg) ||
+        (/cannot\s+get/i.test(msg) && /merchandise-qualities/i.test(msg));
+      if (looksLikeMissingRoute) {
+        setMerchandiseQualities([]);
+        console.warn(
+          '[merchandise-qualities] Route absente sur l’API (déploiement backend à mettre à jour). Catalogue local vide.',
+        );
+        return;
+      }
       console.error('refreshMerchandiseQualities', e);
       setApiError(e instanceof Error ? e.message : 'Erreur API');
     }
