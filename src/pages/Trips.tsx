@@ -165,12 +165,6 @@ export default function Trips() {
     [thirdParties],
   );
 
-  const clientStructureTierId = useMemo(() => {
-    const nom = (formData.client ?? '').trim();
-    if (!nom) return '';
-    return tiersClientsFiches.find((c) => c.nom === nom)?.id ?? '';
-  }, [formData.client, tiersClientsFiches]);
-
   const sortedMerchandiseCatalog = useMemo(
     () => stableSort([...merchandiseQualities], (a, b) => frCollator.compare(a.libelle, b.libelle)),
     [merchandiseQualities],
@@ -253,6 +247,12 @@ export default function Trips() {
     clientParticipants: [] as TripClientParticipant[],
     payeurParticipantId: '',
   });
+
+  const clientStructureTierId = useMemo(() => {
+    const nom = (formData.client ?? '').trim();
+    if (!nom) return '';
+    return tiersClientsFiches.find((c) => c.nom === nom)?.id ?? '';
+  }, [formData.client, tiersClientsFiches]);
 
   const canMemorizeMarchandise = useMemo(
     () =>
