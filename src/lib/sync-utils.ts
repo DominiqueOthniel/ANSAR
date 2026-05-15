@@ -441,7 +441,11 @@ export const calculateTripStats = (
     .filter((e) => e.categorie !== 'Préfinancement')
     .reduce((sum, e) => sum + e.montant, 0);
 
-  const recette = invoices ? calculatePaidAmountForTrip(tripId, invoices) : trip.recette;
+  const invList = invoices ?? [];
+  const paidFromInvoices = calculatePaidAmountForTrip(tripId, invList);
+  const hasInvoiceForTrip = invList.some((inv) => inv.trajetId === tripId);
+  /** Encaissements (factures) si au moins une facture est liée à ce trajet ; sinon montant trajet. */
+  const recette = hasInvoiceForTrip ? paidFromInvoices : trip.recette;
 
   const solde = recette - prefinancement - tripExpenses;
 
@@ -527,11 +531,21 @@ export const calculatePendingInvoicesAmount = (invoices: Invoice[]): number => {
  * Obtient les trajets disponibles pour facturation (sans facture existante)
  * Permet de créer une facture pour n'importe quel trajet à tout moment
  */
+/** Somme des montants TTC des factures déjà émises pour ce trajet. */
+export const sumMontantTTCForTripInvoices = (tripId: string, invoices: Invoice[]): number => {
+  return invoices
+    .filter((inv) => inv.trajetId === tripId)
+    .reduce((s, inv) => s + inv.montantTTC, 0);
+};
+
+/** Recette trajet non encore couverte par des factures (plusieurs factures / clients possibles). */
+export const getTripRemainingRecetteToInvoice = (trip: Trip, invoices: Invoice[]): number => {
+  return Math.max(0, trip.recette - sumMontantTTCForTripInvoices(trip.id, invoices));
+};
+
 export const getAvailableTripsForInvoicing = (trips: Trip[], invoices: Invoice[]): Trip[] => {
-  const invoicedTripIds = new Set(invoices.map(inv => inv.trajetId).filter((id): id is string => !!id));
-  return trips.filter(trip => 
-    trip.recette > 0 &&
-    !invoicedTripIds.has(trip.id)
+  return trips.filter(
+    (trip) => trip.recette > 0 && getTripRemainingRecetteToInvoice(trip, invoices) > 0.01,
   );
 };
 

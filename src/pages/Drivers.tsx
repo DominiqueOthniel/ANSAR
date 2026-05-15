@@ -12,6 +12,7 @@ import { Plus, TrendingUp, TrendingDown, Trash2, Users, UserCheck, DollarSign, R
 import { toast } from 'sonner';
 import { canDeleteDriver, isDriverOnMission, calculateDriverStats, calculateDriverStatsFromTripsAndExpenses, getDriverTripCounts, formatTripStatusFr } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_CHAUFFEURS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -701,7 +702,7 @@ export default function Drivers() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Chauffeurs"
-        description="Gérez vos chauffeurs et leur situation financière"
+        description={PAGE_CHAUFFEURS_DESCRIPTION}
         icon={Users}
         gradient="from-purple-500/20 via-pink-500/10 to-transparent"
         stats={[

@@ -7,7 +7,7 @@ Ce document présente les mesures de sécurité proposées pour protéger les do
 ## 🔒 Mesures de Sécurité Proposées
 
 ### 1. **Chiffrement des Données Sensibles**
-- ✅ Chiffrement AES-256 des données sensibles (coordonnées GPS, informations bancaires, CNI)
+- ✅ Chiffrement AES-256 des données sensibles (informations bancaires, CNI)
 - ✅ Clé de chiffrement dérivée d'un mot de passe maître
 - ✅ Données stockées de manière sécurisée dans le navigateur
 
@@ -84,7 +84,6 @@ Ce document présente les mesures de sécurité proposées pour protéger les do
 ## 📊 Données Protégées
 
 ### Niveau 1 - Très Sensibles (Chiffrement obligatoire)
-- Coordonnées GPS des trajets
 - Informations bancaires (comptes, crédits)
 - Numéros de CNI
 - Données de caisse

@@ -1,10 +1,31 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpException, HttpStatus, Logger, Post, Res } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Response } from 'express';
 
+/** Ordre DELETE pour SQLite / sql.js (enfants → parents). */
+const PURGE_DELETE_ORDER = [
+  'audit_logs',
+  'credit_remboursements',
+  'credits',
+  'caisse_transactions',
+  'invoices',
+  'expenses',
+  'parcel_expeditions',
+  'trips',
+  'driver_transactions',
+  'bank_transactions',
+  'bank_accounts',
+  'trucks',
+  'drivers',
+  'third_parties',
+  'caisse_config',
+] as const;
+
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -26,21 +47,70 @@ export class AppController {
 
   @Delete('admin/purge')
   async purge(): Promise<{ message: string }> {
-    await this.dataSource.query(`
-      TRUNCATE TABLE
-        invoices,
-        expenses,
-        trips,
-        parcel_expeditions,
-        driver_transactions,
-        bank_transactions,
-        bank_accounts,
-        trucks,
-        drivers,
-        third_parties
-      RESTART IDENTITY CASCADE
-    `);
+    const dbType = this.dataSource.options.type;
+    if (dbType === 'postgres') {
+      await this.purgePostgres();
+    } else if (dbType === 'sqljs' || dbType === 'sqlite' || dbType === 'better-sqlite3') {
+      await this.purgeSqliteLike();
+    } else {
+      this.logger.warn(`Purge: type SGBD non géré explicitement (${String(dbType)}), tentative PostgreSQL.`);
+      await this.purgePostgres();
+    }
     return { message: 'Base de données purgée avec succès' };
+  }
+
+  /** TRUNCATE complet (toutes les tables métier + audit + caisse + crédits). */
+  private async purgePostgres(): Promise<void> {
+    try {
+      await this.dataSource.query(`
+        TRUNCATE TABLE
+          audit_logs,
+          credit_remboursements,
+          credits,
+          caisse_transactions,
+          invoices,
+          expenses,
+          trips,
+          parcel_expeditions,
+          driver_transactions,
+          bank_transactions,
+          bank_accounts,
+          trucks,
+          drivers,
+          third_parties,
+          caisse_config
+        RESTART IDENTITY CASCADE
+      `);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
+      this.logger.error(`Purge PostgreSQL : ${msg}`, e instanceof Error ? e.stack : undefined);
+      throw new HttpException(`Purge PostgreSQL : ${msg}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /** sql.js / SQLite : pas de TRUNCATE … CASCADE — DELETE dans l’ordre des dépendances. */
+  private async purgeSqliteLike(): Promise<void> {
+    try {
+      await this.dataSource.query('PRAGMA foreign_keys = OFF');
+      try {
+        for (const table of PURGE_DELETE_ORDER) {
+          try {
+            await this.dataSource.query(`DELETE FROM "${table}"`);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/no such table/i.test(msg)) {
+              throw e;
+            }
+          }
+        }
+      } finally {
+        await this.dataSource.query('PRAGMA foreign_keys = ON');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
+      this.logger.error(`Purge SQLite : ${msg}`, e instanceof Error ? e.stack : undefined);
+      throw new HttpException(`Purge SQLite : ${msg}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Get('admin/backup')
@@ -106,9 +176,21 @@ export class AppController {
       // Vider les tables dans l'ordre des dépendances
       await queryRunner.query(`
         TRUNCATE TABLE
-          invoices, expenses, trips, parcel_expeditions,
-          driver_transactions, bank_transactions, bank_accounts,
-          trucks, drivers, third_parties
+          audit_logs,
+          credit_remboursements,
+          credits,
+          caisse_transactions,
+          invoices,
+          expenses,
+          trips,
+          parcel_expeditions,
+          driver_transactions,
+          bank_transactions,
+          bank_accounts,
+          trucks,
+          drivers,
+          third_parties,
+          caisse_config
         RESTART IDENTITY CASCADE
       `);
 

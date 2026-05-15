@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_EXPEDITIONS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   useApp,
@@ -695,7 +696,7 @@ export default function ParcelShipping() {
     <div className="space-y-6 p-1">
       <PageHeader
         title="Expéditions"
-        description="Expéditions groupées depuis Douala : pour chaque ligne, clients, unité, quantité, prix unitaire et montant (FCFA), avec observations — idéal pour le suivi commercial du colis."
+        description={PAGE_EXPEDITIONS_DESCRIPTION}
         icon={Package}
         gradient="from-sky-500/20 via-cyan-500/10 to-transparent"
         actions={
@@ -922,8 +923,10 @@ export default function ParcelShipping() {
                           Ligne
                         </Button>
                       </div>
-                      <div className="rounded-md border overflow-x-auto">
-                        <Table className="min-w-[920px]">
+                      <Table
+                        className="min-w-[920px]"
+                        containerClassName="max-h-[min(45vh,22rem)]"
+                      >
                           <TableHeader>
                             <TableRow>
                               <TableHead className="min-w-[140px]">Client(s) *</TableHead>
@@ -1013,7 +1016,6 @@ export default function ParcelShipping() {
                             ))}
                           </TableBody>
                         </Table>
-                      </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
                         <span className="text-muted-foreground">
                           Montant = quantité × prix unitaire (arrondi FCFA).
@@ -1310,7 +1312,6 @@ export default function ParcelShipping() {
               )}
             </AlertDescription>
           </Alert>
-          <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[1020px]">
               <TableHeader>
                 <TableRow>
@@ -1401,7 +1402,6 @@ export default function ParcelShipping() {
                 )}
               </TableBody>
             </Table>
-          </div>
         </CardContent>
       </Card>
 
@@ -1506,8 +1506,10 @@ export default function ParcelShipping() {
                     <CardTitle className="text-sm">Détail des produits / lignes</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table className="min-w-[920px]">
+                    <Table
+                      className="min-w-[920px]"
+                      containerClassName="max-h-none shadow-none"
+                    >
                         <TableHeader>
                           <TableRow>
                             <TableHead>Recipient / client</TableHead>
@@ -1531,7 +1533,6 @@ export default function ParcelShipping() {
                           ))}
                         </TableBody>
                       </Table>
-                    </div>
                   </CardContent>
                 </Card>
 

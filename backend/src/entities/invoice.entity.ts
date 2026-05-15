@@ -54,4 +54,11 @@ export class Invoice {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  /** Fiche client lorsque la facture couvre une part de trajet (multi-clients). */
+  @Column({ type: 'uuid', nullable: true })
+  clientTierId?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  factureClientLibelle?: string;
 }

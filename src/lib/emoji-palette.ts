@@ -52,8 +52,4 @@ export const EMOJI = {
   peage: '🛣️',
   assurance: '🛡️',
   autre: '📦',
-
-  // GPS / Tracking
-  simulation: '🎮',
-  gps: '🛰️',
 } as const;

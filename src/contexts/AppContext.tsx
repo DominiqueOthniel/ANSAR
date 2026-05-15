@@ -33,6 +33,21 @@ export interface Truck {
 
 export type TripStatus = 'planifie' | 'en_cours' | 'termine' | 'annule';
 
+export type TripStopType = 'chargement' | 'livraison' | 'autre';
+export type TripStopStatut = 'prevu' | 'fait' | 'annule';
+
+export interface TripStop {
+  id: string;
+  ordre: number;
+  type: TripStopType;
+  lieu: string;
+  clientRef?: string;
+  lat?: number;
+  lng?: number;
+  statut: TripStopStatut;
+  notes?: string;
+}
+
 export interface Trip {
   id: string;
   tracteurId?: string;
@@ -51,7 +66,13 @@ export interface Trip {
   client?: string;
   marchandise?: string;
   description?: string;
+  referenceAtc?: string;
+  destinataire?: string;
+  quantiteChargee?: number;
+  retourBordereaux?: string;
   statut: TripStatus;
+  /** Arrêts détaillés (chargements / livraisons), optionnel côté API */
+  stops?: TripStop[];
 }
 
 export interface ParcelExpeditionLot {
@@ -121,6 +142,9 @@ export interface Invoice {
   datePaiement?: string;
   modePaiement?: string;
   notes?: string;
+  /** Fiche client (facture partielle trajet, multi-clients). */
+  clientTierId?: string;
+  factureClientLibelle?: string;
 }
 
 export interface DriverTransaction {
@@ -152,6 +176,8 @@ export interface ThirdParty {
   adresse?: string;
   type: ThirdPartyType;
   notes?: string;
+  /** Encours max. commandes clients sans paiement (FCFA), fiches client uniquement. */
+  plafondCredit?: number;
 }
 
 // Normalisation des données API (TypeORM renvoie les décimaux en string)
@@ -223,6 +249,46 @@ function normalizeParcelLot(row: Record<string, unknown>): ParcelExpeditionLot {
   };
 }
 
+function normalizeTripStops(raw: unknown): TripStop[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: TripStop[] = [];
+  let i = 0;
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const lieu = String(r.lieu ?? '').trim();
+    if (!lieu) continue;
+    const id =
+      r.id != null && String(r.id).length > 0
+        ? String(r.id)
+        : `stop-${i}-${Date.now()}`;
+    const typeStr = String(r.type ?? 'autre');
+    const type: TripStopType =
+      typeStr === 'chargement' || typeStr === 'livraison' || typeStr === 'autre'
+        ? typeStr
+        : 'autre';
+    const statutStr = String(r.statut ?? 'prevu');
+    const statut: TripStopStatut =
+      statutStr === 'prevu' || statutStr === 'fait' || statutStr === 'annule'
+        ? statutStr
+        : 'prevu';
+    out.push({
+      id,
+      ordre: typeof r.ordre === 'number' ? r.ordre : parseNum(r.ordre) || i,
+      type,
+      lieu,
+      clientRef: r.clientRef != null ? String(r.clientRef) : undefined,
+      lat: r.lat != null ? parseNum(r.lat) : undefined,
+      lng: r.lng != null ? parseNum(r.lng) : undefined,
+      statut,
+      notes: r.notes != null ? String(r.notes) : undefined,
+    });
+    i += 1;
+  }
+  if (out.length === 0) return undefined;
+  return out.map((s, idx) => ({ ...s, ordre: idx }));
+}
+
 function normalizeTrip(r: Record<string, unknown>): Trip {
   return {
     id: String(r.id),
@@ -242,7 +308,15 @@ function normalizeTrip(r: Record<string, unknown>): Trip {
     client: r.client ? String(r.client) : undefined,
     marchandise: r.marchandise ? String(r.marchandise) : undefined,
     description: r.description ? String(r.description) : undefined,
+    referenceAtc: r.referenceAtc ? String(r.referenceAtc) : undefined,
+    destinataire: r.destinataire ? String(r.destinataire) : undefined,
+    quantiteChargee:
+      r.quantiteChargee != null && String(r.quantiteChargee) !== ''
+        ? parseNum(r.quantiteChargee)
+        : undefined,
+    retourBordereaux: r.retourBordereaux ? String(r.retourBordereaux) : undefined,
     statut: r.statut as TripStatus,
+    stops: normalizeTripStops(r.stops),
   };
 }
 
@@ -321,6 +395,12 @@ function normalizeInvoice(r: Record<string, unknown>): Invoice {
     datePaiement: r.datePaiement ? String(r.datePaiement) : undefined,
     modePaiement: r.modePaiement ? String(r.modePaiement) : undefined,
     notes: r.notes ? String(r.notes) : undefined,
+    clientTierId:
+      r.clientTierId != null && String(r.clientTierId) !== '' ? String(r.clientTierId) : undefined,
+    factureClientLibelle:
+      r.factureClientLibelle != null && String(r.factureClientLibelle) !== ''
+        ? String(r.factureClientLibelle)
+        : undefined,
   };
 }
 
@@ -355,6 +435,10 @@ function normalizeThirdParty(r: Record<string, unknown>): ThirdParty {
     adresse: r.adresse ? String(r.adresse) : undefined,
     type: r.type as ThirdPartyType,
     notes: r.notes ? String(r.notes) : undefined,
+    plafondCredit:
+      r.plafondCredit != null && String(r.plafondCredit) !== ''
+        ? parseNum(r.plafondCredit)
+        : undefined,
   };
 }
 

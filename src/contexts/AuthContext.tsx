@@ -82,7 +82,7 @@ interface AuthContextType {
   canManageAccounting: boolean;
   /** Trésorerie : caisse */
   canManageTreasury: boolean;
-  /** Crédits / emprunts */
+  /** Suivi créances (commandes sans paiement, emprunts) */
   canManageCredits: boolean;
 }
 
@@ -186,13 +186,13 @@ export const LOGIN_USER_OPTIONS = [
     login: 'gestionnaire',
     label: 'Gestionnaire',
     description:
-      'Flotte : camions, trajets, expéditions, chauffeurs, tiers. GPS. Pas dépenses, facturation, comptes bancaires, caisse ni crédits.',
+      'Flotte : camions, trajets, expéditions, chauffeurs, clients et tiers. Pas dépenses, facturation, comptes bancaires, caisse ni suivi créances.',
   },
   {
     login: 'comptable',
     label: 'Comptable',
     description:
-      'Comptabilité : dépenses, factures, comptes bancaires, caisse et crédits. Consultation du reste de l’application (lecture seule hors ces modules).',
+      'Comptabilité : dépenses, factures, comptes bancaires, caisse et suivi créances (commandes clients sans paiement, emprunts). Consultation du reste de l’application (lecture seule hors ces modules).',
   },
   {
     login: 'admin',

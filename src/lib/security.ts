@@ -4,7 +4,6 @@
 
 // Types de données sensibles
 export type SensitiveDataType = 
-  | 'gps'           // Coordonnées GPS
   | 'bank'          // Informations bancaires
   | 'cni'           // Numéros de CNI
   | 'phone'         // Numéros de téléphone

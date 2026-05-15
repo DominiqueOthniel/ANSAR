@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsIn, IsUUID } from 'class-validator';
 
 export class CreateInvoiceDto {
   @IsString()
@@ -60,4 +60,12 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  clientTierId?: string;
+
+  @IsOptional()
+  @IsString()
+  factureClientLibelle?: string;
 }

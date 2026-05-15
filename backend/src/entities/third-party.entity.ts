@@ -24,4 +24,8 @@ export class ThirdParty {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  /** Plafond d’encours (prêts accordés, FCFA) pour les fiches client ; optionnel. */
+  @Column({ name: 'plafondCredit', type: 'decimal', precision: 15, scale: 2, nullable: true })
+  plafondCredit?: string | null;
 }

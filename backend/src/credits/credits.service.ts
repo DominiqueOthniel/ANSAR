@@ -2,7 +2,7 @@
  * Crédits : domaine isolé (tables credits / credit_remboursements uniquement).
  * Aucun lien avec caisse, banque ou factures — ne pas y déclencher d’écritures trésorerie.
  */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -52,6 +52,8 @@ export class CreditsService {
       dateEcheance: dto.dateEcheance?.split('T')[0],
       statut: 'en_cours',
       notes: dto.notes,
+      clientTierId:
+        dto.type === 'pret_accorde' && dto.clientTierId ? dto.clientTierId : undefined,
       remboursements: [],
     });
     const created = await this.creditRepo.save(c);
@@ -82,6 +84,16 @@ export class CreditsService {
       patch.dateEcheance = dto.dateEcheance?.split('T')[0];
     if (dto.statut !== undefined) patch.statut = dto.statut;
     if (dto.notes !== undefined) patch.notes = dto.notes;
+    if (dto.clientTierId !== undefined) {
+      patch.clientTierId =
+        dto.clientTierId === null || dto.clientTierId === ''
+          ? undefined
+          : dto.clientTierId;
+    }
+    const effectiveType = patch.type ?? before.type;
+    if (effectiveType === 'emprunt') {
+      patch.clientTierId = undefined;
+    }
     await this.creditRepo.update(id, patch);
     const after = await this.findOne(id);
     await this.auditLogsService.log({
@@ -116,6 +128,16 @@ export class CreditsService {
     actor?: AuditActor,
   ): Promise<Credit> {
     const credit = await this.findOne(creditId);
+    const total = Number(credit.montantTotal);
+    const taux = credit.tauxInteret != null ? Number(credit.tauxInteret) : 0;
+    const montantCible = total + (total * taux) / 100;
+    const deja = Number(credit.montantRembourse);
+    const reste = Math.max(0, montantCible - deja);
+    if (dto.montant > reste + 0.01) {
+      throw new BadRequestException(
+        `Montant refusé : le reste dû est de ${reste.toLocaleString('fr-FR')} FCFA (total dû ${montantCible.toLocaleString('fr-FR')} − déjà remboursé ${deja.toLocaleString('fr-FR')}).`,
+      );
+    }
     const remb = this.rembRepo.create({
       id: uuidv4(),
       creditId,
@@ -127,9 +149,8 @@ export class CreditsService {
     const totalRemb =
       Number(credit.montantRembourse) + dto.montant;
     let statut = credit.statut;
-    if (totalRemb >= Number(credit.montantTotal)) statut = 'solde';
-    else if (credit.statut === 'solde' && totalRemb < Number(credit.montantTotal))
-      statut = 'en_cours';
+    if (totalRemb >= montantCible - 0.01) statut = 'solde';
+    else if (credit.statut === 'solde' && totalRemb < montantCible - 0.01) statut = 'en_cours';
     await this.creditRepo.update(creditId, {
       montantRembourse: String(totalRemb),
       statut,

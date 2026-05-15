@@ -12,6 +12,7 @@ import { useRef } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_CAISSE_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -547,7 +548,7 @@ export default function Caisse() {
     <div className="space-y-6 p-1">
       <PageHeader
         title="Caisse"
-        description="Entrées et sorties de caisse. Pour une entrée, cochez « Financement » si le montant ne doit pas compter comme encaissement d’activité (le tableau de bord reste basé sur les factures et dépenses)."
+        description={PAGE_CAISSE_DESCRIPTION}
         icon={Wallet}
         gradient="from-green-500/20 via-emerald-500/10 to-transparent"
         actions={
@@ -963,7 +964,6 @@ export default function Caisse() {
           </div>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-          <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[560px]">
               <TableHeader>
                 <TableRow>
@@ -1039,7 +1039,6 @@ export default function Caisse() {
                 )}
               </TableBody>
             </Table>
-          </div>
         </CardContent>
       </Card>
     </div>

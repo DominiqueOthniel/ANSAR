@@ -98,6 +98,18 @@ export interface TruckPayload {
   chauffeurId?: string;
 }
 
+export interface TripStopPayload {
+  id?: string;
+  ordre: number;
+  type: 'chargement' | 'livraison' | 'autre';
+  lieu: string;
+  clientRef?: string;
+  lat?: number;
+  lng?: number;
+  statut: 'prevu' | 'fait' | 'annule';
+  notes?: string;
+}
+
 export interface TripPayload {
   tracteurId?: string;
   remorqueuseId?: string;
@@ -115,7 +127,16 @@ export interface TripPayload {
   client?: string;
   marchandise?: string;
   description?: string;
+  /** Réf. commande / ATC. */
+  referenceAtc?: string;
+  /** Destinataire livraison (souvent distinct du client sur le trajet). */
+  destinataire?: string;
+  /** Quantité chargée / livrée (unité libre : sacs, tonnes…). */
+  quantiteChargee?: number;
+  /** Retour bordereaux (ex. ok, en attente). */
+  retourBordereaux?: string;
   statut: 'planifie' | 'en_cours' | 'termine' | 'annule';
+  stops?: TripStopPayload[];
 }
 
 export interface ExpensePayload {
@@ -149,6 +170,10 @@ export interface InvoicePayload {
   datePaiement?: string;
   modePaiement?: string;
   notes?: string;
+  /** Fiche client pour une part de facturation sur trajet (multi-clients). */
+  clientTierId?: string;
+  /** Libellé affiché (client sans fiche ou complément). */
+  factureClientLibelle?: string;
 }
 
 export interface DriverPayload {
@@ -168,6 +193,7 @@ export interface ThirdPartyPayload {
   adresse?: string;
   type: 'proprietaire' | 'client' | 'fournisseur';
   notes?: string;
+  plafondCredit?: number | null;
 }
 
 export interface BankAccountPayload {
@@ -383,6 +409,8 @@ export interface CreditPayload {
   dateDebut: string;
   dateEcheance?: string;
   notes?: string;
+  /** Fiche client (UUID tiers type client), lignes « commande sans paiement » uniquement. */
+  clientTierId?: string | null;
 }
 
 export interface RemboursementPayload {

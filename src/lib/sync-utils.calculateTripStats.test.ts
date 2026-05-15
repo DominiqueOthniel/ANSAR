@@ -82,4 +82,24 @@ describe('calculateTripStats — préfinancement et dépenses', () => {
     expect(stats.recette).toBe(500_000);
     expect(stats.solde).toBe(500_000 - 100_000);
   });
+
+  it('liste de factures sans lien sur ce trajet : recette = montant trajet (pas 0)', () => {
+    const trip = baseTrip({ recette: 265_000 });
+    const expenses: Expense[] = [];
+    const invoices: Invoice[] = [
+      {
+        id: 'inv-autre',
+        numero: 'F-99',
+        trajetId: 'autre-trip',
+        statut: 'payee',
+        montantHT: 1,
+        montantTTC: 1,
+        montantPaye: 1,
+        dateCreation: '2025-01-05',
+      },
+    ];
+    const stats = calculateTripStats('trip-1', expenses, trip, invoices);
+    expect(stats.recette).toBe(265_000);
+    expect(stats.solde).toBe(265_000);
+  });
 });

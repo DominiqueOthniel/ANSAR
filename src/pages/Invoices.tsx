@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useApp, Invoice, InvoiceStatus, Trip } from '@/contexts/AppContext';
@@ -17,11 +17,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   getAvailableTripsForInvoicing,
   getAvailableParcelExpeditionsForInvoicing,
+  getTripRemainingRecetteToInvoice,
+  sumMontantTTCForTripInvoices,
   sumParcelExpeditionLotsCa,
   generateInvoiceNumber as genInvoiceNum,
   formatTripStatusFr,
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_FACTURES_DESCRIPTION } from '@/lib/metier-activite';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import {
@@ -89,33 +92,69 @@ export default function Invoices() {
   const [expenseTva, setExpenseTva] = useState<number>(0);
   const [expenseTps, setExpenseTps] = useState<number>(0);
   const [expenseRemise, setExpenseRemise] = useState<number>(0);
+  /** Montant HT de la facture en cours (trajet) — plusieurs factures possibles, plafond = reste TTC. */
+  const [tripInvoiceMontantHt, setTripInvoiceMontantHt] = useState(0);
+  const [invoiceTripClientTierId, setInvoiceTripClientTierId] = useState('');
+  const [invoiceTripClientLibelle, setInvoiceTripClientLibelle] = useState('');
+  const lastTripIdForInvoiceBaseRef = useRef('');
 
   const { isSubmitting: isCreatingTripInvoice, withGuard: withTripInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isCreatingExpenseInvoice, withGuard: withExpenseInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isConfirmingPayment, withGuard: withPaymentGuard } = useSubmitGuard();
 
-  // Pré-ouverture du dialog de création (ex. depuis Expéditions → Créer facture).
+  // Pré-ouverture du dialog de création (ex. depuis Expéditions ou Trajets).
   useEffect(() => {
     if (isLoading) return;
     const shouldOpen = searchParams.get('create') === '1';
-    const parcelExpeditionId = searchParams.get('parcelExpeditionId')?.trim() || '';
-    if (!shouldOpen || !parcelExpeditionId) return;
+    if (!shouldOpen) return;
 
-    const exists = parcelExpeditions.some((e) => e.id === parcelExpeditionId);
-    if (!exists) {
-      toast.error("L'expédition demandée est introuvable. Actualisez la liste puis réessayez.");
+    const parcelExpeditionId = searchParams.get('parcelExpeditionId')?.trim() || '';
+    const trajetId = searchParams.get('trajetId')?.trim() || '';
+
+    if (parcelExpeditionId) {
+      const exists = parcelExpeditions.some((e) => e.id === parcelExpeditionId);
+      if (!exists) {
+        toast.error("L'expédition demandée est introuvable. Actualisez la liste puis réessayez.");
+        setSearchParams({}, { replace: true });
+        return;
+      }
+      setInvoiceMissionKind('parcel');
+      setSelectedTripId('');
+      setSelectedParcelExpeditionId(parcelExpeditionId);
+      setIsDialogOpen(true);
       setSearchParams({}, { replace: true });
       return;
     }
 
-    setInvoiceMissionKind('parcel');
-    setSelectedTripId('');
-    setSelectedParcelExpeditionId(parcelExpeditionId);
-    setIsDialogOpen(true);
+    if (trajetId) {
+      const exists = trips.some((t) => t.id === trajetId);
+      if (!exists) {
+        toast.error('Le trajet demandé est introuvable. Actualisez la liste puis réessayez.');
+        setSearchParams({}, { replace: true });
+        return;
+      }
+      setInvoiceMissionKind('trip');
+      setSelectedParcelExpeditionId('');
+      setSelectedTripId(trajetId);
+      setIsDialogOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [isLoading, searchParams, setSearchParams, parcelExpeditions, trips]);
 
-    // Nettoyer l’URL pour éviter de rouvrir le dialog à chaque refresh.
-    setSearchParams({}, { replace: true });
-  }, [isLoading, searchParams, setSearchParams, parcelExpeditions]);
+  useEffect(() => {
+    if (!isDialogOpen || invoiceMissionKind !== 'trip' || !selectedTripId) {
+      if (!isDialogOpen) lastTripIdForInvoiceBaseRef.current = '';
+      return;
+    }
+    const trip = trips.find((t) => t.id === selectedTripId);
+    if (!trip) return;
+    if (lastTripIdForInvoiceBaseRef.current !== selectedTripId) {
+      lastTripIdForInvoiceBaseRef.current = selectedTripId;
+      setTripInvoiceMontantHt(getTripRemainingRecetteToInvoice(trip, invoices));
+      setInvoiceTripClientTierId('');
+      setInvoiceTripClientLibelle(trip.client ?? '');
+    }
+  }, [isDialogOpen, invoiceMissionKind, selectedTripId, trips, invoices]);
 
   // États pour les filtres
   const [filters, setFilters] = useState({
@@ -162,7 +201,23 @@ export default function Invoices() {
       }
       const trip = trips.find((t) => t.id === selectedTripId);
       if (!trip) return;
-      montantHTInitial = trip.recette;
+      montantHTInitial = tripInvoiceMontantHt;
+      if (montantHTInitial <= 0) {
+        toast.error('Le montant HT à facturer doit être supérieur à 0 FCFA');
+        return;
+      }
+      const remainingTtc = getTripRemainingRecetteToInvoice(trip, invoices);
+      const montantRemisePre = montantHTInitial * (remise / 100);
+      const montantHTApresRemisePre = montantHTInitial - montantRemisePre;
+      const montantTVAPre = montantHTApresRemisePre * (tva / 100);
+      const montantTPSPre = montantHTApresRemisePre * (tps / 100);
+      const montantTTCPre = montantHTApresRemisePre + montantTVAPre + montantTPSPre;
+      if (montantTTCPre > remainingTtc + 0.01) {
+        toast.error(
+          `Le montant TTC (${montantTTCPre.toLocaleString('fr-FR')} FCFA) dépasse le reste facturable sur ce trajet (${remainingTtc.toLocaleString('fr-FR')} FCFA). Réduisez le montant HT ou les taxes.`,
+        );
+        return;
+      }
     } else {
       if (!selectedParcelExpeditionId) {
         toast.error('Veuillez sélectionner une expédition');
@@ -185,6 +240,17 @@ export default function Invoices() {
 
     await withTripInvoiceGuard(async () => {
       try {
+        const trip =
+          invoiceMissionKind === 'trip' ? trips.find((t) => t.id === selectedTripId) : undefined;
+        const tierNom =
+          invoiceMissionKind === 'trip' &&
+          invoiceTripClientTierId &&
+          thirdParties.find((tp) => tp.id === invoiceTripClientTierId && tp.type === 'client')?.nom;
+        const resolvedLibelle =
+          invoiceMissionKind === 'trip'
+            ? (invoiceTripClientLibelle || '').trim() || tierNom || trip?.client || undefined
+            : undefined;
+
         await createInvoice({
           numero: generateInvoiceNumber(),
           trajetId: invoiceMissionKind === 'trip' ? selectedTripId : undefined,
@@ -201,6 +267,8 @@ export default function Invoices() {
           dateCreation: new Date().toISOString().split('T')[0],
           modePaiement: modePaiement || undefined,
           notes: notes || undefined,
+          clientTierId: invoiceMissionKind === 'trip' ? invoiceTripClientTierId || undefined : undefined,
+          factureClientLibelle: resolvedLibelle,
         });
         toast.success('Facture créée avec succès');
         setIsDialogOpen(false);
@@ -212,6 +280,10 @@ export default function Invoices() {
         setTva(0);
         setTps(0);
         setRemise(0);
+        setTripInvoiceMontantHt(0);
+        setInvoiceTripClientTierId('');
+        setInvoiceTripClientLibelle('');
+        lastTripIdForInvoiceBaseRef.current = '';
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors de la création');
       }
@@ -283,16 +355,20 @@ export default function Invoices() {
   const handleConfirmPayment = async () => {
     if (!selectedInvoice) return;
 
-    const dejaPaye = selectedInvoice.montantPaye || 0;
-    const resteAPayer = selectedInvoice.montantTTC - dejaPaye;
+    const dejaPaye = Number(selectedInvoice.montantPaye ?? 0);
+    const ttc = Number(selectedInvoice.montantTTC);
+    const resteAPayer = Math.max(0, ttc - dejaPaye);
+    const tol = 0.01;
 
     if (paymentAmount < 0) {
       toast.error('Le montant payé ne peut pas être négatif');
       return;
     }
 
-    if (paymentAmount > resteAPayer) {
-      toast.error(`Le montant ne peut pas dépasser le reste à payer (${resteAPayer.toLocaleString('fr-FR')} FCFA)`);
+    if (paymentAmount > resteAPayer + tol) {
+      toast.error(
+        `Montant refusé : le reste à payer est de ${resteAPayer.toLocaleString('fr-FR')} FCFA (TTC ${ttc.toLocaleString('fr-FR')} − déjà payé ${dejaPaye.toLocaleString('fr-FR')}).`,
+      );
       return;
     }
 
@@ -571,7 +647,13 @@ export default function Invoices() {
         return clients || ex?.reference || '';
       }
       const trip = trips.find((t) => t.id === inv.trajetId);
-      return trip?.client || '';
+      if (inv.trajetId && trip) {
+        const tier = inv.clientTierId
+          ? thirdParties.find((tp) => tp.id === inv.clientTierId)
+          : null;
+        return inv.factureClientLibelle || tier?.nom || trip.client || '';
+      }
+      return '';
     };
     const reste = (inv: Invoice) => Math.max(0, inv.montantTTC - (inv.montantPaye ?? 0));
     const list = [...filteredInvoices];
@@ -1061,7 +1143,7 @@ export default function Invoices() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Factures"
-        description="Créez, suivez et gérez toutes vos factures clients"
+        description={PAGE_FACTURES_DESCRIPTION}
         icon={FileText}
         gradient="from-indigo-500/20 via-blue-500/10 to-transparent"
         stats={[
@@ -1157,8 +1239,11 @@ export default function Invoices() {
                 <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
                   <Label htmlFor="trip">Sélectionner un trajet *</Label>
                   <Select value={selectedTripId} onValueChange={setSelectedTripId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un trajet">
+                    <SelectTrigger className="min-w-0">
+                      <SelectValue
+                        className="min-w-0 flex-1 truncate text-left"
+                        placeholder="Sélectionner un trajet"
+                      >
                         {selectedTripId && (() => {
                           const selectedTrip = getTrip(selectedTripId);
                           if (!selectedTrip) return selectedTripId;
@@ -1172,9 +1257,9 @@ export default function Invoices() {
                         <div className="p-4 text-sm text-muted-foreground text-center">
                           <p className="mb-2">{EMOJI.alerte} Aucun trajet disponible pour facturation</p>
                           <p className="text-xs">
-                            Pour créer une facture, le trajet doit :<br/>
-                            • Avoir une recette &gt; 0 FCFA<br/>
-                            • Ne pas avoir de facture existante
+                            Pour créer une facture, le trajet doit avoir une recette &gt; 0 FCFA et un{' '}
+                            <strong>reste à facturer</strong> (la somme des TTC des factures du trajet ne doit pas
+                            dépasser la recette).
                           </p>
                         </div>
                       ) : (
@@ -1190,7 +1275,9 @@ export default function Invoices() {
                           // Extraire les 6 derniers caractères de l'ID pour un affichage plus court
                           const shortId = trip.id.slice(-6);
                           const dateDepart = tripDetails ? new Date(tripDetails.dateDepart).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
-                          
+                          const resteFact = getTripRemainingRecetteToInvoice(trip, invoices);
+                          const dejaTtc = sumMontantTTCForTripInvoices(trip.id, invoices);
+
                           return (
                             <SelectItem key={trip.id} value={trip.id} className="py-2">
                               <div className="flex flex-col gap-1">
@@ -1202,7 +1289,12 @@ export default function Invoices() {
                                   {dateDepart && <span>{EMOJI.date} {dateDepart}</span>}
                                   {driver && <span>{EMOJI.personne} {driver.prenom} {driver.nom}</span>}
                                   {tripDetails?.client && <span>🏢 {tripDetails.client}</span>}
-                                  <span className="font-semibold text-primary">{trip.recette.toLocaleString('fr-FR')} FCFA</span>
+                                  <span className="font-semibold text-primary">Recette {trip.recette.toLocaleString('fr-FR')} FCFA</span>
+                                  {dejaTtc > 0.01 && (
+                                    <span className="text-orange-600 dark:text-orange-400">
+                                      Déjà fact. {dejaTtc.toLocaleString('fr-FR')} · Reste {resteFact.toLocaleString('fr-FR')}
+                                    </span>
+                                  )}
                                   <span>({statusLabels[trip.statut]})</span>
                                 </div>
                               </div>
@@ -1219,8 +1311,35 @@ export default function Invoices() {
                 <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
                   <Label htmlFor="parcel-ex">Sélectionner une expédition *</Label>
                   <Select value={selectedParcelExpeditionId} onValueChange={setSelectedParcelExpeditionId}>
-                    <SelectTrigger id="parcel-ex">
-                      <SelectValue placeholder="Réf. · destination · CA" />
+                    <SelectTrigger
+                      id="parcel-ex"
+                      className="h-auto min-h-10 items-start gap-2 py-2 text-left [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:items-start"
+                    >
+                      <SelectValue placeholder="Réf. · destination · CA">
+                        {selectedParcelExpeditionId &&
+                          (() => {
+                            const ex = parcelExpeditions.find((e) => e.id === selectedParcelExpeditionId);
+                            if (!ex) return selectedParcelExpeditionId;
+                            const ca = sumParcelExpeditionLotsCa(ex);
+                            const shortId = ex.id.slice(-6);
+                            return (
+                              <div className="flex min-w-0 flex-1 flex-col gap-1 pr-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-bold text-primary">
+                                    {ex.reference}
+                                  </span>
+                                  <span className="min-w-0 truncate font-semibold">
+                                    {ex.origine} → {ex.destination}
+                                  </span>
+                                </div>
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {new Date(ex.dateDepart).toLocaleDateString('fr-FR')} · CA lignes{' '}
+                                  {ca.toLocaleString('fr-FR')} FCFA · ID …{shortId}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {availableParcelExpeditions.length === 0 ? (
@@ -1390,6 +1509,41 @@ export default function Invoices() {
                           </div>
                         )}
 
+                        {selectedTrip.referenceAtc && (
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-xs font-semibold text-muted-foreground">Réf. ATC</span>
+                              <p className="text-sm font-medium mt-1 font-mono">{selectedTrip.referenceAtc}</p>
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrip.destinataire && (
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-xs font-semibold text-muted-foreground">Destinataire livraison</span>
+                              <p className="text-sm font-medium mt-1">{selectedTrip.destinataire}</p>
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrip.quantiteChargee != null && selectedTrip.quantiteChargee > 0 && (
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-xs font-semibold text-muted-foreground">Quantité</span>
+                              <p className="text-sm font-medium mt-1">
+                                {selectedTrip.quantiteChargee.toLocaleString('fr-FR')}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrip.retourBordereaux && (
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-xs font-semibold text-muted-foreground">Retour bordereaux</span>
+                              <p className="text-sm font-medium mt-1">{selectedTrip.retourBordereaux}</p>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Recette */}
                         <div className="md:col-span-2 bg-green-50 dark:bg-green-950/20 rounded-lg p-3 border-2 border-green-200 dark:border-green-800">
                           <span className="text-xs font-semibold text-green-700 dark:text-green-400">{EMOJI.argent} Recette</span>
@@ -1483,7 +1637,12 @@ export default function Invoices() {
                 {(invoiceMissionKind === 'trip' ? selectedTripId : selectedParcelExpeditionId) && (() => {
                   const montantHTInitial =
                     invoiceMissionKind === 'trip'
-                      ? (getTrip(selectedTripId)?.recette ?? 0)
+                      ? (() => {
+                          const tr = getTrip(selectedTripId);
+                          if (!tr) return 0;
+                          const rem = getTripRemainingRecetteToInvoice(tr, invoices);
+                          return tripInvoiceMontantHt > 0 ? tripInvoiceMontantHt : rem;
+                        })()
                       : (() => {
                           const ex = getParcelExpedition(selectedParcelExpeditionId);
                           return ex ? sumParcelExpeditionLotsCa(ex) : 0;
@@ -1497,6 +1656,79 @@ export default function Invoices() {
 
                   return (
                     <div className="space-y-4 border-t pt-4">
+                      {invoiceMissionKind === 'trip' && selectedTripId && (() => {
+                        const st = getTrip(selectedTripId);
+                        if (!st) return null;
+                        const remTtc = getTripRemainingRecetteToInvoice(st, invoices);
+                        const deja = sumMontantTTCForTripInvoices(st.id, invoices);
+                        return (
+                          <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 space-y-3">
+                            <p className="text-sm font-semibold">Plusieurs structures facturées sur une mission</p>
+                            <p className="text-xs text-muted-foreground">
+                              Une même rotation peut servir plusieurs comptes : chaque facture a son montant et son client ;
+                              la somme des TTC ne peut pas dépasser la recette du trajet.
+                            </p>
+                            <div className="grid gap-2 text-xs sm:grid-cols-3 text-muted-foreground">
+                              <span>
+                                Recette trajet :{' '}
+                                <b className="text-foreground">{st.recette.toLocaleString('fr-FR')} FCFA</b>
+                              </span>
+                              <span>
+                                Déjà facturé (TTC) :{' '}
+                                <b className="text-foreground">{deja.toLocaleString('fr-FR')} FCFA</b>
+                              </span>
+                              <span>
+                                Reste à facturer :{' '}
+                                <b className="text-primary">{remTtc.toLocaleString('fr-FR')} FCFA</b>
+                              </span>
+                            </div>
+                            <div>
+                              <Label htmlFor="trip-inv-ht">Montant HT pour cette facture *</Label>
+                              <NumberInput
+                                id="trip-inv-ht"
+                                className="mt-1"
+                                value={tripInvoiceMontantHt}
+                                onChange={(v) => setTripInvoiceMontantHt(v || 0)}
+                                min={0}
+                                max={remTtc > 0 ? remTtc : undefined}
+                              />
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <Label>Fiche client (optionnel)</Label>
+                                <Select
+                                  value={invoiceTripClientTierId || 'none'}
+                                  onValueChange={(v) => setInvoiceTripClientTierId(v === 'none' ? '' : v)}
+                                >
+                                  <SelectTrigger className="mt-1">
+                                    <SelectValue placeholder="Rattacher une fiche client" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">Sans fiche (libellé ci-contre)</SelectItem>
+                                    {thirdParties
+                                      .filter((tp) => tp.type === 'client')
+                                      .map((tp) => (
+                                        <SelectItem key={tp.id} value={tp.id}>
+                                          {tp.nom}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label htmlFor="trip-inv-lib">Libellé client sur la facture</Label>
+                                <Input
+                                  id="trip-inv-lib"
+                                  className="mt-1"
+                                  placeholder="Ex. filiale, groupement…"
+                                  value={invoiceTripClientLibelle}
+                                  onChange={(e) => setInvoiceTripClientLibelle(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {/* Remise */}
                       <div>
                         <Label className="text-base font-semibold mb-3 block">Remise (optionnel)</Label>
@@ -1646,8 +1878,42 @@ export default function Invoices() {
                 <div>
                   <Label htmlFor="expense">Sélectionner une dépense *</Label>
                   <Select value={selectedExpenseId} onValueChange={setSelectedExpenseId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une dépense" />
+                    <SelectTrigger
+                      className="h-auto min-h-10 items-start gap-2 py-2 text-left [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:items-start"
+                    >
+                      <SelectValue placeholder="Sélectionner une dépense">
+                        {selectedExpenseId &&
+                          (() => {
+                            const expense = expenses.find((e) => e.id === selectedExpenseId);
+                            if (!expense) return selectedExpenseId;
+                            const truck = trucks.find((t) => t.id === expense.camionId);
+                            const supplier = expense.fournisseurId
+                              ? thirdParties.find((tp) => tp.id === expense.fournisseurId)
+                              : null;
+                            return (
+                              <div className="flex min-w-0 flex-1 flex-col gap-1 pr-1">
+                                <div className="min-w-0 truncate font-semibold">
+                                  {expense.categorie}
+                                  {expense.sousCategorie ? (
+                                    <span className="font-normal text-muted-foreground">
+                                      {' '}
+                                      — {expense.sousCategorie}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {truck ? `${EMOJI.camion} ${truck.immatriculation} · ` : ''}
+                                  {supplier ? `${supplier.nom} · ` : ''}
+                                  <span className="font-semibold text-primary">
+                                    {expense.montant.toLocaleString('fr-FR')} FCFA
+                                  </span>
+                                  {' · '}
+                                  {new Date(expense.date).toLocaleDateString('fr-FR')}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {availableExpenses.length === 0 ? (
@@ -2242,8 +2508,19 @@ export default function Invoices() {
                         ) : trip ? (
                           <div>
                             <div>{getTripLabel(invoice.trajetId)}</div>
+                            {(invoice.factureClientLibelle || invoice.clientTierId) && (
+                              <div className="text-xs font-medium text-primary mt-0.5">
+                                Facturé à :{' '}
+                                {invoice.factureClientLibelle ||
+                                  (invoice.clientTierId
+                                    ? thirdParties.find((tp) => tp.id === invoice.clientTierId)?.nom
+                                    : '')}
+                              </div>
+                            )}
                             {trip.client && (
-                              <div className="text-xs text-muted-foreground">Client: {trip.client}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Réf. trajet : {trip.client}
+                              </div>
                             )}
                             {trip.marchandise && (
                               <div className="text-xs text-muted-foreground">📦 Marchandise: {trip.marchandise}</div>
@@ -2678,8 +2955,7 @@ export default function Invoices() {
                       </div>
                       <div>
                         <h4 className="font-semibold mb-2">Lignes (CA facturé)</h4>
-                        <div className="rounded-md border overflow-x-auto">
-                          <Table>
+                          <Table containerClassName="max-h-none shadow-none">
                             <TableHeader>
                               <TableRow>
                                 <TableHead>Client / ligne</TableHead>
@@ -2703,7 +2979,6 @@ export default function Invoices() {
                               ))}
                             </TableBody>
                           </Table>
-                        </div>
                       </div>
                     </div>
                   ) : trip ? (
@@ -3071,6 +3346,8 @@ export default function Invoices() {
                     isConfirmingPayment ||
                     paymentAmount <= 0 ||
                     paiementBanqueDepenseInsuffisant ||
+                    paymentAmount >
+                      Math.max(0, selectedInvoice.montantTTC - (selectedInvoice.montantPaye ?? 0)) + 0.01 ||
                     (paymentAmount > 0 &&
                       isPaiementVersBanque(selectedInvoice.modePaiement) &&
                       (getBankAccounts().length === 0 || !paymentCompteBanqueId))

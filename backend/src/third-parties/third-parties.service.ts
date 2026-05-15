@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DeepPartial, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { ThirdParty } from '../entities/third-party.entity';
 import { CreateThirdPartyDto } from './dto/create-third-party.dto';
@@ -14,10 +14,15 @@ export class ThirdPartiesService {
   ) {}
 
   async create(dto: CreateThirdPartyDto): Promise<ThirdParty> {
-    const thirdParty = this.thirdPartyRepository.create({
+    const { plafondCredit, ...rest } = dto;
+    const payload: DeepPartial<ThirdParty> = {
       id: uuidv4(),
-      ...dto,
-    });
+      ...rest,
+    };
+    if (plafondCredit != null) {
+      payload.plafondCredit = String(plafondCredit);
+    }
+    const thirdParty = this.thirdPartyRepository.create(payload);
     return this.thirdPartyRepository.save(thirdParty);
   }
 
@@ -35,7 +40,18 @@ export class ThirdPartiesService {
 
   async update(id: string, dto: UpdateThirdPartyDto): Promise<ThirdParty> {
     await this.findOne(id);
-    await this.thirdPartyRepository.update(id, dto as Partial<ThirdParty>);
+    const { plafondCredit, ...rest } = dto;
+    const patch: Partial<ThirdParty> = { ...rest };
+    if ('plafondCredit' in dto) {
+      if (plafondCredit === null) {
+        (patch as { plafondCredit?: string | null }).plafondCredit = null;
+      } else if (plafondCredit !== undefined) {
+        patch.plafondCredit = String(plafondCredit);
+      }
+    }
+    if (Object.keys(patch).length) {
+      await this.thirdPartyRepository.update(id, patch);
+    }
     return this.findOne(id);
   }
 

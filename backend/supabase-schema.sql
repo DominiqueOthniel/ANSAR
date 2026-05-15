@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS third_parties (
   email VARCHAR,
   adresse TEXT,
   type VARCHAR(20) NOT NULL CHECK (type IN ('proprietaire', 'client', 'fournisseur')),
-  notes TEXT
+  notes TEXT,
+  "plafondCredit" DECIMAL(15, 2)
 );
 
 -- 2. drivers (aucune FK)
@@ -74,12 +75,24 @@ CREATE TABLE IF NOT EXISTS trips (
   client VARCHAR,
   marchandise VARCHAR,
   description TEXT,
-  statut VARCHAR(20) NOT NULL CHECK (statut IN ('planifie', 'en_cours', 'termine', 'annule'))
+  "referenceAtc" VARCHAR(64),
+  destinataire VARCHAR(255),
+  "quantiteChargee" DECIMAL(12, 2),
+  "retourBordereaux" VARCHAR(32),
+  statut VARCHAR(20) NOT NULL CHECK (statut IN ('planifie', 'en_cours', 'termine', 'annule')),
+  stops JSONB
 );
 
 CREATE INDEX IF NOT EXISTS idx_trips_tracteur ON trips("tracteurId");
 CREATE INDEX IF NOT EXISTS idx_trips_remorqueuse ON trips("remorqueuseId");
 CREATE INDEX IF NOT EXISTS idx_trips_chauffeur ON trips("chauffeurId");
+
+-- Bases déjà créées sans la colonne : ajout sûr
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS stops JSONB;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS "referenceAtc" VARCHAR(64);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS destinataire VARCHAR(255);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS "quantiteChargee" DECIMAL(12, 2);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS "retourBordereaux" VARCHAR(32);
 
 -- 6. expenses (FK → trucks, third_parties) — camion / chauffeur optionnels (dépenses siège, générales…)
 CREATE TABLE IF NOT EXISTS expenses (
@@ -120,6 +133,9 @@ CREATE TABLE IF NOT EXISTS invoices (
   "modePaiement" VARCHAR,
   notes TEXT
 );
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "clientTierId" UUID REFERENCES third_parties(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "factureClientLibelle" VARCHAR(255);
 
 CREATE INDEX IF NOT EXISTS idx_invoices_trajet ON invoices("trajetId");
 CREATE INDEX IF NOT EXISTS idx_invoices_expense ON invoices("expenseId");
@@ -201,8 +217,11 @@ CREATE TABLE IF NOT EXISTS credits (
   "dateDebut" DATE NOT NULL,
   "dateEcheance" DATE,
   statut VARCHAR(20) NOT NULL CHECK (statut IN ('en_cours', 'solde', 'en_retard')),
-  notes TEXT
+  notes TEXT,
+  "clientTierId" UUID REFERENCES third_parties(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_credits_client_tier ON credits("clientTierId") WHERE "clientTierId" IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS credit_remboursements (
   id UUID PRIMARY KEY,

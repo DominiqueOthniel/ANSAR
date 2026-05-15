@@ -39,6 +39,10 @@ export class Credit {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
+  /** Fiche client (tiers) rattachée au prêt accordé — pour plafonds et reporting (optionnel). */
+  @Column({ name: 'clientTierId', type: 'uuid', nullable: true })
+  clientTierId?: string;
+
   @OneToMany(() => CreditRemboursement, (r) => r.credit, { cascade: true })
   remboursements: CreditRemboursement[];
 }

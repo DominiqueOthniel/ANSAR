@@ -68,7 +68,7 @@ export class ParcelExpedition {
   @Column({ type: 'varchar', length: 20 })
   statut: ParcelExpeditionStatus;
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'simple-json' })
   lots: ParcelExpeditionLotJson[];
 
   @Column({ type: 'text', nullable: true })

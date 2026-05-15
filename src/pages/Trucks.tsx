@@ -9,8 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Filter, Eye, Truck as TruckIcon, Link2, Search, X, Route, DollarSign, FileDown, FileText, Satellite, MapPin, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash2, Filter, Eye, Truck as TruckIcon, Link2, Search, X, Route, DollarSign, FileDown, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isTruckInUse,
@@ -19,10 +18,10 @@ import {
   countTracteursJumeles,
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_TRUCKS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
-import { truckHasActiveGps } from '@/lib/gps-config-local';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 
@@ -66,7 +65,6 @@ function tracteurImmatForForm(truck: Truck): string {
 }
 
 export default function Trucks() {
-  const navigate = useNavigate();
   const { trucks, trips, parcelExpeditions, expenses, invoices, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -480,7 +478,7 @@ export default function Trucks() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion de la Flotte"
-        description="Gérez vos camions, tracteurs seuls ou jumelés, et remorques"
+        description={PAGE_TRUCKS_DESCRIPTION}
         icon={TruckIcon}
         gradient="from-orange-500/20 via-red-500/10 to-transparent"
         stats={[
@@ -517,30 +515,6 @@ export default function Trucks() {
         ]}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => navigate('/gps-test')} 
-              className="shadow-md hover:shadow-lg transition-all duration-300 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-950/50"
-            >
-              <Satellite className="mr-2 h-4 w-4" />
-              Tester GPS
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => navigate('/gps')} 
-              className="shadow-md hover:shadow-lg transition-all duration-300 bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800 hover:bg-teal-100 dark:hover:bg-teal-950/50"
-            >
-              <Satellite className="mr-2 h-4 w-4" />
-              Configuration GPS
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => navigate('/suivi')} 
-              className="shadow-md hover:shadow-lg transition-all duration-300 bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-950/50"
-            >
-              <MapPin className="mr-2 h-4 w-4" />
-              Suivi GPS
-            </Button>
             <Button variant="outline" onClick={handleExportExcel} className="shadow-md hover:shadow-lg transition-all duration-300">
               <FileDown className="mr-2 h-4 w-4" />
               Excel
@@ -1041,7 +1015,6 @@ export default function Trucks() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-          <div className="overflow-x-auto">
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
@@ -1142,20 +1115,6 @@ export default function Trucks() {
                   <TableCell>{new Date(truck.dateMiseEnCirculation).toLocaleDateString('fr-FR')}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {(() => {
-                        const hasGPS = truckHasActiveGps(truck.id);
-                        return hasGPS ? (
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => navigate('/suivi', { state: { truckId: truck.id } })} 
-                            className="hover:shadow-md transition-all duration-200 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
-                            title="Voir la localisation GPS"
-                          >
-                            <MapPin className="h-4 w-4" />
-                          </Button>
-                        ) : null;
-                      })()}
                       {truck.photo && (
                         <Button size="sm" variant="outline" onClick={() => setViewingTruck(truck)} className="hover:shadow-md transition-all duration-200">
                           <Eye className="h-4 w-4" />
@@ -1178,7 +1137,6 @@ export default function Trucks() {
               )}
             </TableBody>
           </Table>
-          </div>
         </CardContent>
       </Card>
 

@@ -14,6 +14,7 @@ import { Plus, Edit, Trash2, Filter, DollarSign, TrendingDown, Receipt, FileText
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_DEPENSES_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -553,7 +554,7 @@ export default function Expenses() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Dépenses"
-        description="Suivez et contrôlez toutes vos dépenses d'exploitation"
+        description={PAGE_DEPENSES_DESCRIPTION}
         icon={Receipt}
         gradient="from-red-500/20 via-orange-500/10 to-transparent"
         stats={[
@@ -1228,7 +1229,6 @@ export default function Expenses() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-          <div className="overflow-x-auto">
           <Table className="min-w-[1000px]">
             <TableHeader>
               <TableRow>
@@ -1314,7 +1314,6 @@ export default function Expenses() {
               })}
             </TableBody>
           </Table>
-          </div>
         </CardContent>
       </Card>
 

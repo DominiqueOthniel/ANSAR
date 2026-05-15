@@ -1,3 +1,4 @@
+import './env-bootstrap';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
@@ -19,8 +20,12 @@ async function bootstrap() {
   const trimOrigin = (u: string) => u.trim().replace(/\/+$/, '');
   const allowedOrigins = [
     'http://localhost:3001',
+    'http://localhost:3002',
+    'http://localhost:3003',
     'http://localhost:5173',
     'http://127.0.0.1:3001',
+    'http://127.0.0.1:3002',
+    'http://127.0.0.1:3003',
     'http://127.0.0.1:5173',
   ];
   if (process.env.FRONTEND_URL?.trim()) {

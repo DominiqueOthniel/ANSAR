@@ -10,6 +10,22 @@ import { Driver } from './driver.entity';
 
 export type TripStatus = 'planifie' | 'en_cours' | 'termine' | 'annule';
 
+export type TripStopType = 'chargement' | 'livraison' | 'autre';
+export type TripStopStatut = 'prevu' | 'fait' | 'annule';
+
+/** Élément du tableau JSON `stops` (chargements / livraisons variables) */
+export interface TripStopPersisted {
+  id: string;
+  ordre: number;
+  type: TripStopType;
+  lieu: string;
+  clientRef?: string;
+  lat?: number;
+  lng?: number;
+  statut: TripStopStatut;
+  notes?: string;
+}
+
 @Entity('trips')
 export class Trip {
   @PrimaryColumn('uuid')
@@ -63,8 +79,28 @@ export class Trip {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  /** Référence commande / ATC. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  referenceAtc?: string;
+
+  /** Destinataire effectif de la livraison (distinct du client facturé si besoin). */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  destinataire?: string;
+
+  /** Quantité chargée / livrée (sacs, tonnes… — unité libre côté métier). */
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
+  quantiteChargee?: number;
+
+  /** Statut retour bordereaux (ex. ok, en attente). */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  retourBordereaux?: string;
+
   @Column({ type: 'varchar', length: 20 })
   statut: TripStatus;
+
+  /** simple-json : compatible PostgreSQL + SQLite (dev) */
+  @Column({ type: 'simple-json', nullable: true })
+  stops?: TripStopPersisted[] | null;
 
   @ManyToOne(() => Truck, { nullable: true })
   @JoinColumn({ name: 'tracteurId' })

@@ -13,6 +13,24 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: [
+          "Inter",
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+      },
+      transitionTimingFunction: {
+        ios: "cubic-bezier(0.32, 0.72, 0, 1)",
+        "ios-smooth": "cubic-bezier(0.25, 0.1, 0.25, 1)",
+        "ios-out": "cubic-bezier(0.33, 1, 0.68, 1)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -91,10 +109,26 @@ export default {
             height: "0",
           },
         },
+        /** Entrée écran façon iOS (léger lift + scale) */
+        "ios-page-in": {
+          "0%": { opacity: "0", transform: "translate3d(0, 14px, 0) scale(0.987)" },
+          "100%": { opacity: "1", transform: "translate3d(0, 0, 0) scale(1)" },
+        },
+        "ios-overlay-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "ios-pop": {
+          "0%": { opacity: "0", transform: "scale(0.94)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "ios-page-in": "ios-page-in 0.42s cubic-bezier(0.32, 0.72, 0, 1) both",
+        "ios-overlay-in": "ios-overlay-in 0.32s cubic-bezier(0.25, 0.1, 0.25, 1) both",
+        "ios-pop": "ios-pop 0.38s cubic-bezier(0.32, 0.72, 0, 1) both",
       },
     },
   },

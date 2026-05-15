@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateCreditDto {
   @IsString()
@@ -30,4 +30,9 @@ export class CreateCreditDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Rattachement explicite à une fiche client (prêt accordé). */
+  @IsOptional()
+  @IsUUID('4')
+  clientTierId?: string;
 }

@@ -14,9 +14,7 @@ import Expenses from "./pages/Expenses";
 import Invoices from "./pages/Invoices";
 import Drivers from "./pages/Drivers";
 import ThirdParties from "./pages/ThirdParties";
-import GPSTest from "./pages/GPSTest";
-import GPS from "./pages/GPS";
-import Tracking from "./pages/Tracking";
+import Clients from "./pages/Clients";
 import ParcelShipping from "./pages/ParcelShipping";
 import Caisse from "./pages/Caisse";
 import Credits from "./pages/Credits";
@@ -47,10 +45,8 @@ const App = () => (
             <Route path="/depenses" element={<ProtectedRoute><Layout><Expenses /></Layout></ProtectedRoute>} />
             <Route path="/factures" element={<ProtectedRoute><Layout><Invoices /></Layout></ProtectedRoute>} />
               <Route path="/chauffeurs" element={<ProtectedRoute><Layout><Drivers /></Layout></ProtectedRoute>} />
+              <Route path="/clients" element={<ProtectedRoute><Layout><Clients /></Layout></ProtectedRoute>} />
               <Route path="/tiers" element={<ProtectedRoute><Layout><ThirdParties /></Layout></ProtectedRoute>} />
-              <Route path="/gps-test" element={<ProtectedRoute><Layout><GPSTest /></Layout></ProtectedRoute>} />
-              <Route path="/gps" element={<ProtectedRoute><Layout><GPS /></Layout></ProtectedRoute>} />
-              <Route path="/suivi" element={<ProtectedRoute><Layout><Tracking /></Layout></ProtectedRoute>} />
               <Route path="/envoi-colis" element={<ProtectedRoute><Layout><ParcelShipping /></Layout></ProtectedRoute>} />
               <Route path="/banque" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
               <Route path="/caisse" element={<ProtectedRoute><Layout><Caisse /></Layout></ProtectedRoute>} />

@@ -10,7 +10,6 @@ import {
   Menu,
   X,
   Building2,
-  MapPin,
   Loader2,
   AlertCircle,
   LogOut,
@@ -18,10 +17,10 @@ import {
   Wallet,
   CreditCard,
   ChevronRight,
-  Satellite,
   ChevronsLeft,
   ChevronsRight,
   History,
+  UserCircle2,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
@@ -42,6 +41,7 @@ function readSidebarHidden(): boolean {
 
 const navigation = [
   { name: 'Dashboard',  href: '/',          icon: LayoutDashboard, color: 'from-violet-500 to-indigo-500' },
+  { name: 'Clients',    href: '/clients',    icon: UserCircle2,     color: 'from-emerald-500 to-teal-500' },
   { name: 'Historique', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
   { name: 'Camions',    href: '/camions',    icon: Truck,           color: 'from-purple-500 to-pink-500' },
   { name: 'Trajets',    href: '/trajets',    icon: Route,           color: 'from-emerald-500 to-teal-500' },
@@ -52,9 +52,6 @@ const navigation = [
   { name: 'Expéditions', href: '/envoi-colis', icon: Package,       color: 'from-sky-500 to-cyan-500' },
   { name: 'Caisse',     href: '/caisse',     icon: Wallet,          color: 'from-green-500 to-emerald-500' },
   { name: 'Suivi créances', href: '/credits', icon: CreditCard,      color: 'from-rose-500 to-pink-500' },
-  { name: 'Suivi GPS',  href: '/suivi',      icon: MapPin,          color: 'from-sky-500 to-blue-500' },
-  { name: 'GPS',        href: '/gps',        icon: Satellite,       color: 'from-blue-500 to-cyan-500' },
-  { name: 'Test GPS',   href: '/gps-test',   icon: Satellite,       color: 'from-cyan-500 to-teal-500' },
 ];
 
 function NavItem({
@@ -72,7 +69,7 @@ function NavItem({
       to={item.href}
       onClick={onClick}
       className={cn(
-        'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 select-none',
+        'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-[background-color,color,transform,box-shadow] duration-300 ease-ios active:scale-[0.98] motion-reduce:active:scale-100 select-none',
         isActive
           ? 'bg-white/10 text-white font-semibold shadow-sm'
           : 'text-sidebar-foreground/60 hover:bg-white/5 hover:text-sidebar-foreground/90'
@@ -85,7 +82,7 @@ function NavItem({
 
       {/* Icône */}
       <div className={cn(
-        'p-2 rounded-lg flex-shrink-0 transition-all duration-200',
+        'p-2 rounded-lg flex-shrink-0 transition-[background,transform,box-shadow] duration-300 ease-ios group-active:scale-95',
         isActive
           ? `bg-gradient-to-br ${item.color} shadow-md`
           : 'bg-white/5 group-hover:bg-white/10'
@@ -174,14 +171,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* ===== OVERLAY MOBILE ===== */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 lg:hidden bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-40 lg:hidden bg-black/60 backdrop-blur-sm animate-ios-overlay-in motion-reduce:animate-none"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* ===== SIDEBAR MOBILE ===== */}
       <div className={cn(
-        'fixed inset-y-0 left-0 z-50 w-72 lg:hidden transition-transform duration-300 ease-in-out',
+        'fixed inset-y-0 left-0 z-50 w-72 lg:hidden transition-transform duration-500 ease-ios will-change-transform',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       )}>
         <SidebarContent
@@ -199,7 +196,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* ===== SIDEBAR DESKTOP ===== */}
       <div
         className={cn(
-          'hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:z-30 transition-transform duration-300 ease-in-out',
+          'hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:z-30 transition-transform duration-500 ease-ios will-change-transform',
           desktopSidebarHidden && '-translate-x-full pointer-events-none',
         )}
         aria-hidden={desktopSidebarHidden}
@@ -216,13 +213,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       </div>
 
       {/* ===== MAIN CONTENT ===== */}
-      <div className={cn('relative z-10 transition-[padding] duration-300 ease-in-out', desktopSidebarHidden ? 'lg:pl-0' : 'lg:pl-64')}>
+      <div className={cn('relative z-10 transition-[padding] duration-500 ease-ios', desktopSidebarHidden ? 'lg:pl-0' : 'lg:pl-64')}>
         {/* Topbar */}
-        <header className="sticky top-0 z-40 flex h-14 items-center gap-2 sm:gap-3 border-b border-border/60 bg-card/90 backdrop-blur-md px-4 sm:px-6 shadow-sm">
+        <header className="sticky top-0 z-40 flex h-14 items-center gap-2 sm:gap-3 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 px-4 sm:px-6 shadow-[0_1px_0_0_hsl(var(--border)/0.5)] transition-[box-shadow,background-color] duration-300 ease-ios">
           {/* Bouton menu mobile */}
           <button
             type="button"
-            className="lg:hidden flex items-center justify-center h-9 w-9 rounded-xl bg-muted/60 hover:bg-muted text-foreground transition-colors"
+            className="lg:hidden flex items-center justify-center h-9 w-9 rounded-xl bg-muted/60 hover:bg-muted text-foreground transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100"
             onClick={() => setSidebarOpen(true)}
             aria-label="Ouvrir le menu"
           >
@@ -232,7 +229,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           {/* Masquer / afficher la sidebar (desktop) */}
           <button
             type="button"
-            className="hidden lg:flex items-center justify-center h-9 w-9 rounded-xl bg-muted/60 hover:bg-muted text-foreground transition-colors shrink-0"
+            className="hidden lg:flex items-center justify-center h-9 w-9 rounded-xl bg-muted/60 hover:bg-muted text-foreground transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100 shrink-0"
             onClick={toggleDesktopSidebar}
             aria-label={desktopSidebarHidden ? 'Afficher le menu latéral' : 'Masquer le menu latéral'}
             title={desktopSidebarHidden ? 'Afficher le menu' : 'Masquer le menu'}
@@ -244,7 +241,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <AppLogo variant="header" className="hidden sm:inline-flex" />
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 hidden sm:inline" />
-            <h1 className="text-sm font-semibold text-foreground truncate">{currentPage}</h1>
+            <h1 className="text-[15px] font-semibold tracking-tight text-foreground truncate">{currentPage}</h1>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -253,19 +250,24 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               {user?.login} · {roleLabel}
             </div>
             <button
-          onClick={logout}
-          title="Déconnexion"
-          aria-label="Déconnexion"
-          className="flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
-        >
-          <LogOut className="h-4 w-4" />
+              onClick={logout}
+              title="Déconnexion"
+              aria-label="Déconnexion"
+              className="flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100"
+            >
+              <LogOut className="h-4 w-4" />
             </button>
           </div>
         </header>
 
         {/* Contenu principal */}
         <main className="py-5 px-4 sm:px-6 lg:px-7 min-h-[calc(100vh-3.5rem)]">
-          {children}
+          <div
+            key={location.pathname}
+            className="animate-ios-page-in motion-reduce:animate-none transform-gpu"
+          >
+            {children}
+          </div>
         </main>
       </div>
     </div>

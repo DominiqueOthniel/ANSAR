@@ -58,7 +58,7 @@ export default function Login() {
       </div>
 
       {/* Carte de connexion */}
-      <div className="relative w-full max-w-md mx-4 animate-fade-in-scale">
+      <div className="relative w-full max-w-md mx-4 animate-ios-pop motion-reduce:animate-none">
 
         {/* Halo derrière la carte */}
         <div className="absolute inset-0 bg-gradient-to-br from-violet-500/30 to-indigo-500/30 rounded-3xl blur-2xl scale-105 opacity-70" />
@@ -79,7 +79,7 @@ export default function Login() {
             <h1 className="text-3xl font-bold text-white mb-1">
               Truck<span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">Track</span>
             </h1>
-            <p className="text-white/50 text-sm">Gestion de flotte · Cameroun</p>
+            <p className="text-white/50 text-sm">Gestion de flotte</p>
           </div>
 
           {/* Formulaire */}

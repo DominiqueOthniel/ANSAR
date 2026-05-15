@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, Trip, TripStatus } from '@/contexts/AppContext';
+import { useApp, Trip, TripStatus, TripStop, TripStopType, TripStopStatut } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,16 +12,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2 } from 'lucide-react';
+import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { canDeleteTrip, generateInvoiceNumber as genInvoiceNum, calculateTripStats, formatTripStatusFr } from '@/lib/sync-utils';
+import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemainingRecetteToInvoice, sumMontantTTCForTripInvoices } from '@/lib/sync-utils';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import PageHeader from '@/components/PageHeader';
+import { PAGE_TRAJETS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
+import {
+  buildStopsForPersist,
+  stopsSummaryLine,
+  newTripStop,
+  initialStopsDraftFromTrip,
+  labelTripStopType,
+  labelTripStopStatut,
+} from '@/lib/trip-stops';
+import { CEMENT_MARCHANDISE_SUGGESTIONS } from '@/lib/cement-marchandise-suggestions';
 
 const TRIP_STATUT_ORDER: Record<TripStatus, number> = {
   planifie: 0,
@@ -103,17 +114,21 @@ export default function Trips() {
     createTrip,
     updateTrip,
     deleteTrip,
-    createInvoice,
     createExpense,
   } = useApp();
+  const navigate = useNavigate();
   const { canManageFleet, canManageAccounting } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  /** Si défini, le formulaire du dialogue est en mode édition pour ce trajet. */
+  const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestinationPickerOpen, setIsDestinationPickerOpen] = useState(false);
   const [isExpensesDialogOpen, setIsExpensesDialogOpen] = useState(false);
   const [selectedTripForExpenses, setSelectedTripForExpenses] = useState<Trip | null>(null);
+  const [isStopsDialogOpen, setIsStopsDialogOpen] = useState(false);
+  const [stopsDialogTrip, setStopsDialogTrip] = useState<Trip | null>(null);
+  const [stopsDraft, setStopsDraft] = useState<TripStop[]>([]);
   const { isSubmitting, withGuard } = useSubmitGuard();
-  const { isSubmitting: isInvoiceSubmitting, withGuard: withInvoiceGuard } = useSubmitGuard();
   
   // États pour les filtres
   const [filterOrigin, setFilterOrigin] = useState<string>('all');
@@ -141,54 +156,52 @@ export default function Trips() {
     client: '',
     marchandise: '',
     description: '',
+    referenceAtc: '',
+    destinataire: '',
+    quantiteChargee: undefined as number | undefined,
+    retourBordereaux: '',
     statut: 'planifie' as TripStatus,
+    stops: [] as TripStop[],
   });
 
-  // Obtenir les camions déjà en mission (trajets en cours ou planifiés)
-  const getTrucksInMission = () => {
-    const activeTrips = trips.filter(t => t.statut === 'en_cours' || t.statut === 'planifie');
-    const truckIdsInMission = new Set<string>();
-    
-    activeTrips.forEach(trip => {
-      if (trip.tracteurId) truckIdsInMission.add(trip.tracteurId);
-      if (trip.remorqueuseId) truckIdsInMission.add(trip.remorqueuseId);
-    });
-    
-    return truckIdsInMission;
-  };
+  const truckIdsInMission = useMemo(() => {
+    const ids = new Set<string>();
+    trips
+      .filter(
+        (t) =>
+          (t.statut === 'en_cours' || t.statut === 'planifie') &&
+          (!editingTripId || t.id !== editingTripId),
+      )
+      .forEach((trip) => {
+        if (trip.tracteurId) ids.add(trip.tracteurId);
+        if (trip.remorqueuseId) ids.add(trip.remorqueuseId);
+      });
+    return ids;
+  }, [trips, editingTripId]);
 
-  const trucksInMission = getTrucksInMission();
-
-  // Filtrer les tracteurs disponibles (actifs ET pas en mission)
-  const tracteurs = trucks.filter(t => 
-    t.type === 'tracteur' && 
-    t.statut === 'actif' && 
-    !trucksInMission.has(t.id)
+  const tracteurs = trucks.filter(
+    (t) => t.type === 'tracteur' && t.statut === 'actif' && !truckIdsInMission.has(t.id),
   );
 
-  // Filtrer les remorqueuses disponibles (actives ET pas en mission)
-  const remorqueuses = trucks.filter(t => 
-    t.type === 'remorqueuse' && 
-    t.statut === 'actif' && 
-    !trucksInMission.has(t.id)
+  const remorqueuses = trucks.filter(
+    (t) => t.type === 'remorqueuse' && t.statut === 'actif' && !truckIdsInMission.has(t.id),
   );
 
-  // Obtenir les chauffeurs déjà en mission (trajets en cours ou planifiés)
-  const getDriversInMission = () => {
-    const activeTrips = trips.filter(t => t.statut === 'en_cours' || t.statut === 'planifie');
-    const driverIdsInMission = new Set<string>();
-    
-    activeTrips.forEach(trip => {
-      if (trip.chauffeurId) driverIdsInMission.add(trip.chauffeurId);
-    });
-    
-    return driverIdsInMission;
-  };
+  const driverIdsInMission = useMemo(() => {
+    const ids = new Set<string>();
+    trips
+      .filter(
+        (t) =>
+          (t.statut === 'en_cours' || t.statut === 'planifie') &&
+          (!editingTripId || t.id !== editingTripId),
+      )
+      .forEach((trip) => {
+        if (trip.chauffeurId) ids.add(trip.chauffeurId);
+      });
+    return ids;
+  }, [trips, editingTripId]);
 
-  const driversInMission = getDriversInMission();
-
-  // Filtrer les chauffeurs disponibles (pas en mission)
-  const availableDrivers = drivers.filter(d => !driversInMission.has(d.id));
+  const availableDrivers = drivers.filter((d) => !driverIdsInMission.has(d.id));
 
   const resetForm = () => {
     setFormData({
@@ -208,8 +221,85 @@ export default function Trips() {
       client: '',
       marchandise: '',
       description: '',
+      referenceAtc: '',
+      destinataire: '',
+      quantiteChargee: undefined,
+      retourBordereaux: '',
       statut: 'planifie' as TripStatus,
+      stops: [],
     });
+    setEditingTripId(null);
+  };
+
+  const normDate = (d: string) => (d && d.includes('T') ? d.split('T')[0] : d) || '';
+
+  const openEditTrip = (trip: Trip) => {
+    setEditingTripId(trip.id);
+    setFormData({
+      tracteurId: trip.tracteurId ?? '',
+      remorqueuseId: trip.remorqueuseId ?? '',
+      origine: trip.origine,
+      destination: trip.destination,
+      origineLat: trip.origineLat,
+      origineLng: trip.origineLng,
+      destinationLat: trip.destinationLat,
+      destinationLng: trip.destinationLng,
+      chauffeurId: trip.chauffeurId,
+      dateDepart: normDate(trip.dateDepart),
+      dateArrivee: trip.dateArrivee ? normDate(trip.dateArrivee) : '',
+      recette: trip.recette,
+      prefinancement: trip.prefinancement ?? 0,
+      client: trip.client ?? '',
+      marchandise: trip.marchandise ?? '',
+      description: trip.description ?? '',
+      referenceAtc: trip.referenceAtc ?? '',
+      destinataire: trip.destinataire ?? '',
+      quantiteChargee: trip.quantiteChargee,
+      retourBordereaux: trip.retourBordereaux ?? '',
+      statut: trip.statut,
+      stops: initialStopsDraftFromTrip(trip),
+    });
+    setIsDialogOpen(true);
+  };
+
+  const duplicateTripAsDraft = (trip: Trip) => {
+    setEditingTripId(null);
+    const today = new Date().toISOString().split('T')[0];
+    const draftStops = initialStopsDraftFromTrip(trip).map((s, i) =>
+      newTripStop(i, s.type, s.lieu, {
+        lat: s.lat,
+        lng: s.lng,
+        clientRef: s.clientRef,
+        notes: s.notes,
+        statut: 'prevu',
+      }),
+    );
+    setFormData({
+      tracteurId: trip.tracteurId ?? '',
+      remorqueuseId: trip.remorqueuseId ?? '',
+      origine: trip.origine,
+      destination: trip.destination,
+      origineLat: trip.origineLat,
+      origineLng: trip.origineLng,
+      destinationLat: trip.destinationLat,
+      destinationLng: trip.destinationLng,
+      chauffeurId: trip.chauffeurId,
+      dateDepart: today,
+      dateArrivee: '',
+      recette: trip.recette,
+      prefinancement: 0,
+      client: trip.client ?? '',
+      marchandise: trip.marchandise ?? '',
+      description: trip.description ? `Copie · ${trip.description}` : '',
+      referenceAtc: trip.referenceAtc ?? '',
+      destinataire: trip.destinataire ?? '',
+      quantiteChargee: trip.quantiteChargee,
+      retourBordereaux: trip.retourBordereaux ?? '',
+      statut: 'planifie',
+      stops: draftStops,
+    });
+    setIsDialogOpen(true);
+    toast.info('Modèle dupliqué : vérifiez dates, véhicule et recette avant enregistrement.');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -237,6 +327,56 @@ export default function Trips() {
 
     await withGuard(async () => {
       try {
+        const stopsPayload = buildStopsForPersist(
+          formData.stops,
+          formData.origine,
+          formData.destination,
+          formData.origineLat,
+          formData.origineLng,
+          formData.destinationLat,
+          formData.destinationLng,
+        );
+
+        if (editingTripId) {
+          const sumT = sumMontantTTCForTripInvoices(editingTripId, invoices);
+          if (formData.recette + 0.01 < sumT) {
+            toast.error(
+              `Recette minimale ${sumT.toLocaleString('fr-FR')} FCFA (déjà facturé en TTC sur ce trajet).`,
+            );
+            return;
+          }
+          await updateTrip(editingTripId, {
+            origine: formData.origine,
+            destination: formData.destination,
+            origineLat: formData.origineLat,
+            origineLng: formData.origineLng,
+            destinationLat: formData.destinationLat,
+            destinationLng: formData.destinationLng,
+            chauffeurId: formData.chauffeurId,
+            dateDepart: formData.dateDepart,
+            dateArrivee: formData.dateArrivee || undefined,
+            recette: formData.recette,
+            prefinancement: formData.prefinancement > 0 ? formData.prefinancement : undefined,
+            tracteurId: formData.tracteurId || undefined,
+            remorqueuseId: formData.remorqueuseId || undefined,
+            client: formData.client || undefined,
+            marchandise: formData.marchandise || undefined,
+            description: formData.description || undefined,
+            referenceAtc: formData.referenceAtc?.trim() || undefined,
+            destinataire: formData.destinataire?.trim() || undefined,
+            quantiteChargee:
+              formData.quantiteChargee != null && formData.quantiteChargee > 0
+                ? formData.quantiteChargee
+                : undefined,
+            retourBordereaux: formData.retourBordereaux?.trim() || undefined,
+            stops: stopsPayload,
+          });
+          toast.success('Trajet mis à jour');
+          setIsDialogOpen(false);
+          resetForm();
+          return;
+        }
+
         const createdTrip = await createTrip({
           origine: formData.origine,
           destination: formData.destination,
@@ -254,7 +394,15 @@ export default function Trips() {
           client: formData.client || undefined,
           marchandise: formData.marchandise || undefined,
           description: formData.description || undefined,
+          referenceAtc: formData.referenceAtc?.trim() || undefined,
+          destinataire: formData.destinataire?.trim() || undefined,
+          quantiteChargee:
+            formData.quantiteChargee != null && formData.quantiteChargee > 0
+              ? formData.quantiteChargee
+              : undefined,
+          retourBordereaux: formData.retourBordereaux?.trim() || undefined,
           statut: 'planifie',
+          stops: stopsPayload,
         });
         if (formData.prefinancement > 0) {
           try {
@@ -279,7 +427,7 @@ export default function Trips() {
         setIsDialogOpen(false);
         resetForm();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'ajout');
+        toast.error(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement');
       }
     });
   };
@@ -349,43 +497,115 @@ export default function Trips() {
     }
   };
 
-  const handleCreateInvoice = async (tripId: string) => {
-    const existingInvoice = invoices.find(inv => inv.trajetId === tripId);
-    if (existingInvoice) {
-      toast.error(`Une facture existe déjà pour ce trajet (${existingInvoice.numero})`);
-      return;
-    }
-
-    const trip = trips.find(t => t.id === tripId);
+  const openTripInvoicing = (tripId: string) => {
+    const trip = trips.find((t) => t.id === tripId);
     if (!trip) return;
-
     if (trip.recette <= 0) {
-      toast.error('Impossible de créer une facture : la recette doit être supérieure à 0 FCFA');
+      toast.error('Impossible de facturer : la recette du trajet doit être supérieure à 0 FCFA');
       return;
     }
+    const reste = getTripRemainingRecetteToInvoice(trip, invoices);
+    if (reste <= 0.01) {
+      toast.error('La recette de ce trajet est déjà entièrement facturée (somme des TTC).');
+      return;
+    }
+    navigate(`/factures?create=1&trajetId=${encodeURIComponent(tripId)}`);
+  };
 
-    await withInvoiceGuard(async () => {
+  const openStopsDialog = (trip: Trip) => {
+    setStopsDialogTrip(trip);
+    setStopsDraft(initialStopsDraftFromTrip(trip));
+    setIsStopsDialogOpen(true);
+  };
+
+  const handleSaveStopsDraft = async () => {
+    if (!stopsDialogTrip) return;
+    if (stopsDraft.length === 0) {
+      toast.error('Ajoutez au moins un arrêt ou annulez.');
+      return;
+    }
+    if (stopsDraft.some((s) => !s.lieu.trim())) {
+      toast.error('Chaque arrêt doit avoir un lieu renseigné.');
+      return;
+    }
+    await withGuard(async () => {
       try {
-        await createInvoice({
-          numero: genInvoiceNum(invoices),
-          trajetId: tripId,
-          statut: 'en_attente',
-          montantHT: trip.recette,
-          tva: 0,
-          tps: 0,
-          montantTTC: trip.recette,
-          montantPaye: 0,
-          dateCreation: new Date().toISOString().split('T')[0],
-        });
-        toast.success(`Facture créée avec succès pour le trajet ${trip.origine} → ${trip.destination}`);
+        const ordered = stopsDraft.map((s, i) => ({ ...s, ordre: i }));
+        await updateTrip(stopsDialogTrip.id, { stops: ordered });
+        toast.success('Arrêts du trajet enregistrés');
+        setIsStopsDialogOpen(false);
+        setStopsDialogTrip(null);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erreur lors de la création');
+        toast.error(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement');
       }
     });
   };
 
-  const hasInvoice = (tripId: string) => {
-    return invoices.some(inv => inv.trajetId === tripId);
+  const moveFormStop = (index: number, delta: -1 | 1) => {
+    setFormData((prev) => {
+      const arr = [...prev.stops];
+      const j = index + delta;
+      if (j < 0 || j >= arr.length) return prev;
+      const a = arr[index];
+      const b = arr[j];
+      arr[index] = b;
+      arr[j] = a;
+      return { ...prev, stops: arr.map((s, i) => ({ ...s, ordre: i })) };
+    });
+  };
+
+  const removeFormStop = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      stops: prev.stops
+        .filter((_, i) => i !== index)
+        .map((s, i) => ({ ...s, ordre: i })),
+    }));
+  };
+
+  const addFormStop = () => {
+    setFormData((prev) => ({
+      ...prev,
+      stops: [...prev.stops, newTripStop(prev.stops.length, 'livraison', '')],
+    }));
+  };
+
+  const syncFormStopsFromOrigineDest = () => {
+    setFormData((prev) => ({
+      ...prev,
+      stops: [
+        newTripStop(0, 'chargement', prev.origine.trim() || 'Chargement', {
+          lat: prev.origineLat,
+          lng: prev.origineLng,
+        }),
+        newTripStop(1, 'livraison', prev.destination.trim() || 'Livraison', {
+          lat: prev.destinationLat,
+          lng: prev.destinationLng,
+        }),
+      ],
+    }));
+  };
+
+  const moveDraftStop = (index: number, delta: -1 | 1) => {
+    setStopsDraft((prev) => {
+      const arr = [...prev];
+      const j = index + delta;
+      if (j < 0 || j >= arr.length) return prev;
+      const tmp = arr[index];
+      arr[index] = arr[j];
+      arr[j] = tmp;
+      return arr.map((s, i) => ({ ...s, ordre: i }));
+    });
+  };
+
+  const removeDraftStop = (index: number) => {
+    setStopsDraft((prev) =>
+      prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, ordre: i })),
+    );
+  };
+
+  const addDraftStop = () => {
+    setStopsDraft((prev) => [...prev, newTripStop(prev.length, 'livraison', '')]);
   };
 
   const getStatusBadge = (statut: TripStatus) => {
@@ -439,8 +659,30 @@ export default function Trips() {
           const matchesDescription = trip.description?.toLowerCase().includes(search);
           const matchesItineraire = `${trip.origine} → ${trip.destination}`.toLowerCase().includes(search);
           const matchesChauffeur = getDriverLabel(trip.chauffeurId).toLowerCase().includes(search);
-          
-          if (!matchesClient && !matchesMarchandise && !matchesDescription && !matchesItineraire && !matchesChauffeur) {
+          const matchesRefAtc = trip.referenceAtc?.toLowerCase().includes(search);
+          const matchesDest = trip.destinataire?.toLowerCase().includes(search);
+          const matchesRetourB = trip.retourBordereaux?.toLowerCase().includes(search);
+          const matchesQty =
+            trip.quantiteChargee != null && String(trip.quantiteChargee).includes(search);
+          const matchesStops =
+            trip.stops?.some((s) =>
+              [s.lieu, s.clientRef, s.notes]
+                .filter(Boolean)
+                .some((f) => String(f).toLowerCase().includes(search)),
+            ) ?? false;
+
+          if (
+            !matchesClient &&
+            !matchesMarchandise &&
+            !matchesDescription &&
+            !matchesItineraire &&
+            !matchesChauffeur &&
+            !matchesRefAtc &&
+            !matchesDest &&
+            !matchesRetourB &&
+            !matchesQty &&
+            !matchesStops
+          ) {
             return false;
           }
         }
@@ -639,8 +881,14 @@ export default function Trips() {
       filtersDescription,
       columns: [
         { header: 'Itinéraire', value: (t) => `${t.origine} → ${t.destination}` },
+        { header: 'Arrêts', value: (t) => stopsSummaryLine(t) || '(résumé seul)' },
         { header: 'Distance (km)', value: (t) => getTripDistanceKm(t) ?? '' },
         { header: 'Client', value: (t) => t.client || '-' },
+        { header: 'Réf. ATC', value: (t) => t.referenceAtc || '' },
+        { header: 'Destinataire', value: (t) => t.destinataire || '' },
+        { header: 'Qualité / marchandise', value: (t) => t.marchandise || '' },
+        { header: 'Quantité chargée', value: (t) => (t.quantiteChargee != null ? t.quantiteChargee : '') },
+        { header: 'Retour bordereaux', value: (t) => t.retourBordereaux || '' },
         { header: 'Chauffeur', value: (t) => getDriverLabel(t.chauffeurId) },
         { header: 'Statut', value: (t) => formatTripStatusFr(t.statut) },
         { header: 'Départ', value: (t) => t.dateDepart },
@@ -684,6 +932,10 @@ export default function Trips() {
       columns: [
         { header: 'Itinéraire', value: (t) => `${EMOJI.adresse} ${t.origine} → ${t.destination}` },
         {
+          header: 'Arrêts',
+          value: (t) => (stopsSummaryLine(t) ? `${EMOJI.liste} ${stopsSummaryLine(t)}` : '—'),
+        },
+        {
           header: 'Distance',
           value: (t) => {
             const km = getTripDistanceKm(t);
@@ -691,6 +943,17 @@ export default function Trips() {
           },
         },
         { header: 'Client', value: (t) => t.client || '-' },
+        { header: 'ATC', value: (t) => t.referenceAtc || '—' },
+        { header: 'Destinataire', value: (t) => t.destinataire || '—' },
+        { header: 'Qualité', value: (t) => t.marchandise || '—' },
+        {
+          header: 'Qté',
+          value: (t) =>
+            t.quantiteChargee != null && t.quantiteChargee > 0
+              ? String(t.quantiteChargee)
+              : '—',
+        },
+        { header: 'Bordereaux', value: (t) => t.retourBordereaux || '—' },
         { header: 'Chauffeur', value: (t) => `${EMOJI.personne} ${getDriverLabel(t.chauffeurId)}` },
         { header: 'Statut', value: (t) => {
           const statuts: Record<string, string> = {
@@ -733,7 +996,7 @@ export default function Trips() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Trajets"
-        description="Planifiez et suivez tous vos trajets de transport"
+        description={PAGE_TRAJETS_DESCRIPTION}
         icon={Route}
         gradient="from-green-500/20 via-cyan-500/10 to-transparent"
         stats={[
@@ -792,15 +1055,18 @@ export default function Trips() {
           }}>
             {canManageFleet && (
             <DialogTrigger asChild>
-                <Button className="shadow-md hover:shadow-lg transition-all duration-300">
+                <Button
+                  className="shadow-md hover:shadow-lg transition-all duration-300"
+                  onClick={() => resetForm()}
+                >
                 <Plus className="mr-2 h-4 w-4" />
                 Ajouter un trajet
               </Button>
             </DialogTrigger>
             )}
-            <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Ajouter un trajet</DialogTitle>
+                <DialogTitle>{editingTripId ? 'Modifier le trajet' : 'Ajouter un trajet'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -908,7 +1174,10 @@ export default function Trips() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="destination">Destination *</Label>
+                  <Label htmlFor="destination">Destination (résumé) *</Label>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Ex. zone ou « À préciser » ; le détail peut aller dans les arrêts ci-dessous.
+                  </p>
                   <div className="flex gap-2">
                   <Input
                     id="destination"
@@ -930,50 +1199,124 @@ export default function Trips() {
                 </div>
               </div>
 
-              {/* Coordonnées optionnelles pour localisation précise (GPS / simulation) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 rounded-lg border border-dashed bg-muted/30">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Coordonnées origine (optionnel)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder="Latitude"
-                      value={formData.origineLat ?? ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, origineLat: e.target.value === '' ? undefined : parseFloat(e.target.value) }))}
-                      className="text-sm"
-                    />
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder="Longitude"
-                      value={formData.origineLng ?? ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, origineLng: e.target.value === '' ? undefined : parseFloat(e.target.value) }))}
-                      className="text-sm"
-                    />
+              <div className="rounded-lg border border-dashed bg-muted/20 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">Arrêts (chargements / livraisons)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Optionnel : sans ligne ici, un chargement à l’origine et une livraison à la destination du résumé sont enregistrés automatiquement.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={syncFormStopsFromOrigineDest}>
+                      Reprendre origine / destination
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={addFormStop}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Arrêt
+                    </Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Coordonnées destination (optionnel)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder="Latitude"
-                      value={formData.destinationLat ?? ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, destinationLat: e.target.value === '' ? undefined : parseFloat(e.target.value) }))}
-                      className="text-sm"
-                    />
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder="Longitude"
-                      value={formData.destinationLng ?? ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, destinationLng: e.target.value === '' ? undefined : parseFloat(e.target.value) }))}
-                      className="text-sm"
-                    />
+                {formData.stops.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun arrêt détaillé — utilisation du résumé seul à l’enregistrement.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.stops.map((stop, index) => (
+                      <div
+                        key={stop.id}
+                        className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end rounded-md border bg-background p-3"
+                      >
+                        <div className="md:col-span-2">
+                          <Label className="text-xs">Type</Label>
+                          <Select
+                            value={stop.type}
+                            onValueChange={(v) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                stops: prev.stops.map((s, i) =>
+                                  i === index ? { ...s, type: v as TripStopType } : s,
+                                ),
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="chargement">Chargement</SelectItem>
+                              <SelectItem value="livraison">Livraison</SelectItem>
+                              <SelectItem value="autre">Autre</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="md:col-span-5">
+                          <Label className="text-xs">Lieu</Label>
+                          <Input
+                            value={stop.lieu}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                stops: prev.stops.map((s, i) =>
+                                  i === index ? { ...s, lieu: e.target.value } : s,
+                                ),
+                              }))
+                            }
+                            placeholder="Ex. Dangote, Yopougon…"
+                          />
+                        </div>
+                        <div className="md:col-span-3">
+                          <Label className="text-xs">Réf. client (optionnel)</Label>
+                          <Input
+                            value={stop.clientRef ?? ''}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                stops: prev.stops.map((s, i) =>
+                                  i === index ? { ...s, clientRef: e.target.value || undefined } : s,
+                                ),
+                              }))
+                            }
+                            placeholder="Client / BL…"
+                          />
+                        </div>
+                        <div className="md:col-span-2 flex gap-1 justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 shrink-0"
+                            disabled={index === 0}
+                            onClick={() => moveFormStop(index, -1)}
+                            title="Monter"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 shrink-0"
+                            disabled={index >= formData.stops.length - 1}
+                            onClick={() => moveFormStop(index, 1)}
+                            title="Descendre"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 text-destructive"
+                            onClick={() => removeFormStop(index)}
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Afficher la distance issue de la carte (itinéraire routier) */}
@@ -1030,7 +1373,7 @@ export default function Trips() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="client">Client (optionnel)</Label>
+                  <Label htmlFor="client">Client / structure (optionnel)</Label>
                   <Select 
                     value={formData.client || 'none'} 
                     onValueChange={(value) => setFormData({ ...formData, client: value === 'none' ? '' : value })}
@@ -1051,18 +1394,86 @@ export default function Trips() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Vous pouvez ajouter des clients dans la section "Tiers"
+                    Compte ou donneur d’ordre côté « gros » ou habituellement facturé ; le destinataire de livraison peut
+                    être différent (champ dédié ci-dessous). Fiches :{' '}
+                    <Link to="/clients" className="text-primary font-medium underline-offset-2 hover:underline">
+                      Clients
+                    </Link>
+                    .
                   </p>
                 </div>
 
                 <div>
-                  <Label htmlFor="marchandise">Marchandise (optionnel)</Label>
+                  <Label htmlFor="marchandise">Marchandise / qualité (optionnel)</Label>
+                  <datalist id="cement-marchandise-suggestions">
+                    {CEMENT_MARCHANDISE_SUGGESTIONS.map((q) => (
+                      <option key={q} value={q} />
+                    ))}
+                  </datalist>
                   <Input
                     id="marchandise"
+                    list="cement-marchandise-suggestions"
                     value={formData.marchandise}
                     onChange={(e) => setFormData({ ...formData, marchandise: e.target.value })}
-                    placeholder="Type de marchandise"
+                    placeholder="Ex. Cimaf 42.5R"
                   />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-primary/25 bg-muted/15 p-4 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Suivi livraison — référence commande, destinataire, quantité, retour bordereaux
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="referenceAtc">Réf. ATC / commande (optionnel)</Label>
+                    <Input
+                      id="referenceAtc"
+                      value={formData.referenceAtc}
+                      onChange={(e) => setFormData({ ...formData, referenceAtc: e.target.value })}
+                      placeholder="Ex. 9002, 2071…"
+                      maxLength={64}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="destinataire">Destinataire de livraison (optionnel)</Label>
+                    <Input
+                      id="destinataire"
+                      value={formData.destinataire}
+                      onChange={(e) => setFormData({ ...formData, destinataire: e.target.value })}
+                      placeholder="Point de livraison ou client final si différent du compte ci-dessus"
+                      maxLength={255}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="quantiteChargee">Quantité chargée / livrée (optionnel)</Label>
+                    <Input
+                      id="quantiteChargee"
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={formData.quantiteChargee ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setFormData({
+                          ...formData,
+                          quantiteChargee:
+                            raw === '' ? undefined : Math.max(0, Number.parseFloat(raw) || 0),
+                        });
+                      }}
+                      placeholder="Sacs, tonnes… (nombre)"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="retourBordereaux">Retour bordereaux (optionnel)</Label>
+                    <Input
+                      id="retourBordereaux"
+                      value={formData.retourBordereaux}
+                      onChange={(e) => setFormData({ ...formData, retourBordereaux: e.target.value })}
+                      placeholder="Ex. ok, en attente…"
+                      maxLength={32}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1103,7 +1514,16 @@ export default function Trips() {
               </div>
 
                 <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enregistrement...</> : 'Ajouter'}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enregistrement...
+                    </>
+                  ) : editingTripId ? (
+                    'Enregistrer les modifications'
+                  ) : (
+                    'Ajouter'
+                  )}
                 </Button>
               </form>
             </DialogContent>
@@ -1142,7 +1562,7 @@ export default function Trips() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search"
-                  placeholder="Rechercher par client, marchandise, description, itinéraire ou chauffeur..."
+                  placeholder="Rechercher par client, marchandise, description, arrêts, itinéraire ou chauffeur..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -1243,7 +1663,6 @@ export default function Trips() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-          <div className="overflow-x-auto">
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
@@ -1278,6 +1697,40 @@ export default function Trips() {
                   <TableRow key={trip.id} className="hover:bg-muted/50 transition-colors duration-200">
                     <TableCell className="font-medium">
                       <div>{trip.origine} → {trip.destination}</div>
+                      {stopsSummaryLine(trip) ? (
+                        <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                          <ListOrdered className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          <span>{stopsSummaryLine(trip)}</span>
+                        </div>
+                      ) : null}
+                      {trip.marchandise ? (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          <span className="font-medium text-foreground/80">Qualité :</span> {trip.marchandise}
+                        </div>
+                      ) : null}
+                      {trip.referenceAtc ? (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="font-medium text-foreground/80">ATC :</span> {trip.referenceAtc}
+                        </div>
+                      ) : null}
+                      {trip.destinataire ? (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="font-medium text-foreground/80">Destinataire :</span>{' '}
+                          {trip.destinataire}
+                        </div>
+                      ) : null}
+                      {trip.quantiteChargee != null && trip.quantiteChargee > 0 ? (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="font-medium text-foreground/80">Qté :</span>{' '}
+                          {trip.quantiteChargee.toLocaleString('fr-FR')}
+                        </div>
+                      ) : null}
+                      {trip.retourBordereaux ? (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="font-medium text-foreground/80">Bordereaux :</span>{' '}
+                          {trip.retourBordereaux}
+                        </div>
+                      ) : null}
                       {trip.description && <div className="text-xs text-muted-foreground mt-1">{trip.description}</div>}
                     </TableCell>
                     <TableCell>{trip.client || '-'}</TableCell>
@@ -1300,7 +1753,24 @@ export default function Trips() {
                         );
                       })()}
                     </TableCell>
-                    <TableCell className="text-right font-semibold text-accent">{trip.recette.toLocaleString('fr-FR')} FCFA</TableCell>
+                    <TableCell className="text-right font-semibold text-accent">
+                      {(() => {
+                        const stats = calculateTripStats(trip.id, expenses, trip, invoices);
+                        const hint =
+                          invoices?.some((inv) => inv.trajetId === trip.id) &&
+                          trip.recette !== stats.recette;
+                        return (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span>{stats.recette.toLocaleString('fr-FR')} FCFA</span>
+                            {hint ? (
+                              <span className="text-[10px] text-muted-foreground font-normal leading-tight">
+                                Montant trajet : {trip.recette.toLocaleString('fr-FR')}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right">
                       {(() => {
                         const stats = calculateTripStats(trip.id, expenses, trip, invoices);
@@ -1375,22 +1845,52 @@ export default function Trips() {
                             </Button>
                           );
                         })()}
-                        {canManageAccounting && !hasInvoice(trip.id) && trip.recette > 0 && (
+                        {canManageFleet && trip.statut !== 'annule' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditTrip(trip)}
+                              className="h-8 w-8 p-0"
+                              title="Modifier le trajet (itinéraire, client, recette, arrêts…)"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => duplicateTripAsDraft(trip)}
+                              className="h-8 w-8 p-0"
+                              title="Dupliquer vers un nouveau trajet (brouillon)"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                        {canManageFleet && trip.statut !== 'termine' && trip.statut !== 'annule' && (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleCreateInvoice(trip.id)}
+                            onClick={() => openStopsDialog(trip)}
                             className="h-8 w-8 p-0"
-                            title="Créer une facture pour ce trajet"
-                            disabled={isInvoiceSubmitting}
+                            title="Arrêts (chargements / livraisons)"
                           >
-                            {isInvoiceSubmitting ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <FileText className="h-4 w-4" />
-                            )}
+                            <ListOrdered className="h-4 w-4" />
                           </Button>
                         )}
+                        {canManageAccounting &&
+                          trip.recette > 0 &&
+                          getTripRemainingRecetteToInvoice(trip, invoices) > 0.01 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openTripInvoicing(trip.id)}
+                              className="h-8 w-8 p-0"
+                              title="Facturer ce trajet (ou le reste) — plusieurs clients possibles"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                          )}
                         {canManageFleet && (
                         <Button
                           size="sm"
@@ -1409,9 +1909,159 @@ export default function Trips() {
               )}
             </TableBody>
           </Table>
-          </div>
             </CardContent>
           </Card>
+
+      <Dialog
+        open={isStopsDialogOpen}
+        onOpenChange={(open) => {
+          setIsStopsDialogOpen(open);
+          if (!open) {
+            setStopsDialogTrip(null);
+            setStopsDraft([]);
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Arrêts du trajet</DialogTitle>
+          </DialogHeader>
+          {stopsDialogTrip && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {stopsDialogTrip.origine} → {stopsDialogTrip.destination} —{' '}
+                <span className="font-medium text-foreground">
+                  {formatTripStatusFr(stopsDialogTrip.statut)}
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={addDraftStop}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Arrêt
+                </Button>
+              </div>
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {stopsDraft.map((stop, index) => (
+                  <div
+                    key={stop.id}
+                    className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end rounded-md border bg-muted/15 p-3"
+                  >
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">Type</Label>
+                      <Select
+                        value={stop.type}
+                        onValueChange={(v) =>
+                          setStopsDraft((prev) =>
+                            prev.map((s, i) =>
+                              i === index ? { ...s, type: v as TripStopType } : s,
+                            ),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="chargement">{labelTripStopType('chargement')}</SelectItem>
+                          <SelectItem value="livraison">{labelTripStopType('livraison')}</SelectItem>
+                          <SelectItem value="autre">{labelTripStopType('autre')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-4">
+                      <Label className="text-xs">Lieu *</Label>
+                      <Input
+                        value={stop.lieu}
+                        onChange={(e) =>
+                          setStopsDraft((prev) =>
+                            prev.map((s, i) => (i === index ? { ...s, lieu: e.target.value } : s)),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">Statut</Label>
+                      <Select
+                        value={stop.statut}
+                        onValueChange={(v) =>
+                          setStopsDraft((prev) =>
+                            prev.map((s, i) =>
+                              i === index ? { ...s, statut: v as TripStopStatut } : s,
+                            ),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="prevu">{labelTripStopStatut('prevu')}</SelectItem>
+                          <SelectItem value="fait">{labelTripStopStatut('fait')}</SelectItem>
+                          <SelectItem value="annule">{labelTripStopStatut('annule')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">Réf. client</Label>
+                      <Input
+                        value={stop.clientRef ?? ''}
+                        onChange={(e) =>
+                          setStopsDraft((prev) =>
+                            prev.map((s, i) =>
+                              i === index ? { ...s, clientRef: e.target.value || undefined } : s,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex gap-1 flex-wrap justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        disabled={index === 0}
+                        onClick={() => moveDraftStop(index, -1)}
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        disabled={index >= stopsDraft.length - 1}
+                        onClick={() => moveDraftStop(index, 1)}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-destructive"
+                        onClick={() => removeDraftStop(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button className="w-full" onClick={() => void handleSaveStopsDraft()} disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enregistrement…
+                  </>
+                ) : (
+                  'Enregistrer les arrêts'
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Sélecteur de ville pour l'origine (nom + coordonnées pour localisation précise) */}
       <CityPicker
@@ -1505,8 +2155,10 @@ export default function Trips() {
                 {tripExpenses.length > 0 ? (
                   <div>
                     <h4 className="font-semibold mb-3">Détail des dépenses</h4>
-                    <div className="overflow-x-auto">
-                    <Table className="min-w-[500px]">
+                    <Table
+                      className="min-w-[500px]"
+                      containerClassName="max-h-none shadow-none"
+                    >
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
@@ -1530,7 +2182,6 @@ export default function Trips() {
                         ))}
                       </TableBody>
                     </Table>
-                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">

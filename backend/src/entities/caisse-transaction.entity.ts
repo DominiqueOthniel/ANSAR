@@ -37,6 +37,6 @@ export class CaisseTransactionEntity {
   @Column({ name: 'exclutRevenu', type: 'boolean', default: false })
   exclutRevenu: boolean;
 
-  @Column({ name: 'createdAt', type: 'timestamptz', nullable: true })
+  @Column({ name: 'createdAt', type: 'datetime', nullable: true })
   createdAt?: Date;
 }

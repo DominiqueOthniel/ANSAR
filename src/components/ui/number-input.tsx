@@ -50,15 +50,20 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = e.target.value;
-      
+
       // Permettre les nombres, le point décimal et le moins (pour les négatifs)
       if (newValue === '' || newValue === '-' || /^-?\d*\.?\d*$/.test(newValue)) {
         setDisplayValue(newValue);
-        
-        // Si c'est un nombre valide, appeler onChange
+
         const numValue = parseFloat(newValue);
         if (!isNaN(numValue)) {
-          onChange?.(numValue);
+          let v = numValue;
+          if (min !== undefined && v < min) v = min;
+          if (max !== undefined && v > max) v = max;
+          if (v !== numValue) {
+            setDisplayValue(v.toString());
+          }
+          onChange?.(v);
         } else if (newValue === '') {
           onChange?.(0);
         }

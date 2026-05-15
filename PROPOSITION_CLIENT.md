@@ -7,7 +7,6 @@
 
 ### 1. **Protection par Chiffrement**
 ✅ **Chiffrement AES-256** de toutes les données sensibles
-- Coordonnées GPS des trajets
 - Informations bancaires et comptes
 - Numéros de CNI des chauffeurs
 - Données financières (caisse, crédits)

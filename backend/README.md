@@ -5,8 +5,22 @@ Backend REST pour l’application Truck Track (gestion de flotte, trajets, chauf
 ## Prérequis
 
 - **Node.js** 18+
-- **PostgreSQL** 14+
+- **PostgreSQL** 14+ (ou **Docker Desktop** pour la base ci-dessous)
 - **npm** ou **yarn**
+
+## PostgreSQL avec Docker (recommandé en local)
+
+À la racine du dépôt (dossier parent de `backend/`) :
+
+```bash
+docker compose up -d
+```
+
+Puis dans `backend/.env` : `USE_SQLITE=false` et les variables `DB_*` ci-dessous (ou `DATABASE_URL`).
+
+## Développement sans Docker (SQLite)
+
+Si `USE_SQLITE=true` dans `.env` (sans `DATABASE_URL`), l’API utilise le fichier **`dev.sqlite`** dans `backend/` (package `sql.js`). Aucun PostgreSQL requis. À réserver au **développement** ; en production utiliser PostgreSQL et `USE_SQLITE=false`.
 
 ## Installation
 

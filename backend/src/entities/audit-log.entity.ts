@@ -23,13 +23,13 @@ export class AuditLog {
   @Column({ type: 'text', nullable: true })
   summary?: string;
 
-  @Column({ name: 'beforeData', type: 'jsonb', nullable: true })
+  @Column({ name: 'beforeData', type: 'simple-json', nullable: true })
   beforeData?: Record<string, unknown> | null;
 
-  @Column({ name: 'afterData', type: 'jsonb', nullable: true })
+  @Column({ name: 'afterData', type: 'simple-json', nullable: true })
   afterData?: Record<string, unknown> | null;
 
-  @CreateDateColumn({ name: 'createdAt', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'createdAt', type: 'datetime' })
   createdAt: Date;
 }
 

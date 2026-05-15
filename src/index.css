@@ -4,51 +4,52 @@
 
 @layer base {
   :root {
-    --background: 220 25% 97%;
-    --foreground: 222 30% 12%;
+    --background: 220 22% 98%;
+    --foreground: 222 32% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 30% 12%;
+    --card-foreground: 222 32% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 30% 12%;
+    --popover-foreground: 222 32% 11%;
 
-    --primary: 252 87% 62%;
+    /* Violet légèrement assourdi : lisible en salle de marché, moins « néon » */
+    --primary: 251 72% 56%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 14% 94%;
-    --secondary-foreground: 222 30% 20%;
+    --secondary-foreground: 222 28% 18%;
 
-    --muted: 220 18% 94%;
-    --muted-foreground: 220 12% 50%;
+    --muted: 220 16% 93%;
+    --muted-foreground: 220 11% 44%;
 
-    --accent: 252 87% 62%;
+    --accent: 251 72% 56%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 142 64% 42%;
     --success-foreground: 0 0% 100%;
 
-    --border: 220 18% 90%;
-    --input: 220 18% 92%;
-    --ring: 252 87% 62%;
+    --border: 220 16% 88%;
+    --input: 220 16% 90%;
+    --ring: 251 72% 56%;
 
-    --radius: 0.875rem;
+    --radius: 0.75rem;
 
     /* Sidebar */
     --sidebar-background: 232 35% 14%;
     --sidebar-foreground: 220 20% 92%;
-    --sidebar-primary: 252 87% 62%;
+    --sidebar-primary: 251 72% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 232 30% 20%;
     --sidebar-accent-foreground: 220 20% 92%;
     --sidebar-border: 232 28% 22%;
-    --sidebar-ring: 252 87% 62%;
+    --sidebar-ring: 251 72% 56%;
 
     /* Charts */
-    --chart-1: 252 87% 62%;
+    --chart-1: 251 72% 56%;
     --chart-2: 142 71% 45%;
     --chart-3: 199 89% 48%;
     --chart-4: 27 96% 55%;
@@ -65,38 +66,38 @@
     --popover: 232 30% 13%;
     --popover-foreground: 220 20% 94%;
 
-    --primary: 252 87% 68%;
+    --primary: 251 70% 64%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 232 28% 18%;
-    --secondary-foreground: 220 20% 80%;
+    --secondary-foreground: 220 18% 82%;
 
-    --muted: 232 28% 18%;
-    --muted-foreground: 220 15% 60%;
+    --muted: 232 26% 17%;
+    --muted-foreground: 220 12% 58%;
 
-    --accent: 252 87% 68%;
+    --accent: 251 70% 64%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 75% 55%;
+    --destructive: 0 72% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 65% 50%;
+    --success: 142 58% 48%;
     --success-foreground: 0 0% 100%;
 
-    --border: 232 28% 22%;
-    --input: 232 28% 20%;
-    --ring: 252 87% 68%;
+    --border: 232 24% 20%;
+    --input: 232 24% 19%;
+    --ring: 251 70% 64%;
 
     --sidebar-background: 232 38% 10%;
     --sidebar-foreground: 220 20% 92%;
-    --sidebar-primary: 252 87% 68%;
+    --sidebar-primary: 251 70% 64%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 232 30% 16%;
     --sidebar-accent-foreground: 220 20% 92%;
     --sidebar-border: 232 28% 20%;
-    --sidebar-ring: 252 87% 68%;
+    --sidebar-ring: 251 70% 64%;
 
-    --chart-1: 252 87% 68%;
+    --chart-1: 251 70% 64%;
     --chart-2: 142 65% 55%;
     --chart-3: 199 89% 58%;
     --chart-4: 27 96% 62%;
@@ -108,12 +109,18 @@
   * {
     @apply border-border;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground antialiased font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    text-rendering: optimizeLegibility;
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight;
+    @apply tracking-tight text-balance;
   }
 }
 
@@ -134,7 +141,7 @@
 
   /* Hover card avec lift */
   .card-lift {
-    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10;
+    @apply transition-all duration-300 ease-ios hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10;
   }
 
   /* Badge glow */
@@ -144,12 +151,12 @@
 
   /* Stat card moderne */
   .stat-card {
-    @apply relative overflow-hidden rounded-2xl border bg-card p-5 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5;
+    @apply relative overflow-hidden rounded-2xl border bg-card p-5 transition-all duration-300 ease-ios hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5;
   }
 
   /* Bouton premium */
   .btn-premium {
-    @apply relative overflow-hidden bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-semibold rounded-xl px-5 py-2.5 shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0;
+    @apply relative overflow-hidden bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-semibold rounded-xl px-5 py-2.5 shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 transition-all duration-300 ease-ios hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] motion-reduce:active:scale-100;
   }
 
   /* Sidebar item */
@@ -199,8 +206,19 @@
   to   { transform: rotate(360deg); }
 }
 
-.animate-fade-in-up     { animation: fadeInUp 0.45s ease-out forwards; }
-.animate-fade-in-scale  { animation: fadeInScale 0.35s ease-out forwards; }
+.animate-fade-in-up     { animation: fadeInUp 0.45s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+.animate-fade-in-scale  { animation: fadeInScale 0.38s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-in-scale,
+  .animate-ios-page-in,
+  .animate-ios-overlay-in,
+  .animate-ios-pop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
 .animate-float          { animation: float 4s ease-in-out infinite; }
 .animate-spin-slow      { animation: spin-slow 12s linear infinite; }
 .animate-pulse-glow     { animation: pulse-glow 2.5s ease-in-out infinite; }
