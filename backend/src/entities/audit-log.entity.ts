@@ -29,7 +29,7 @@ export class AuditLog {
   @Column({ name: 'afterData', type: 'simple-json', nullable: true })
   afterData?: Record<string, unknown> | null;
 
-  @CreateDateColumn({ name: 'createdAt', type: 'datetime' })
+  @CreateDateColumn({ name: 'createdAt', type: 'timestamptz' })
   createdAt: Date;
 }
 
