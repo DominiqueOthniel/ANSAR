@@ -1,0 +1,9 @@
+# Contexte racine : accélère le build de l’image API (Dockerfile racine).
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+coverage
+.nyc_output
