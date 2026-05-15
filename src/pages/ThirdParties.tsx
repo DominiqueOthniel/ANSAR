@@ -150,7 +150,20 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
           toast.success(isClientsScope ? 'Client modifié avec succès' : 'Tier modifié avec succès');
         } else {
           await createThirdParty(payload);
-          toast.success(isClientsScope ? 'Client ajouté avec succès' : 'Tier ajouté avec succès');
+          const clientListFiltersActive =
+            isClientsScope &&
+            (searchTerm.trim() !== '' ||
+              clientFilterPlafond !== 'all' ||
+              clientFilterTrip !== 'all' ||
+              clientFilterParcel !== 'all' ||
+              clientFilterContact !== 'all');
+          toast.success(
+            isClientsScope
+              ? clientListFiltersActive
+                ? 'Client ajouté. Si la fiche n’apparaît pas, les filtres actifs peuvent la masquer — cliquez sur « Réinitialiser ».'
+                : 'Client ajouté avec succès'
+              : 'Tier ajouté avec succès',
+          );
         }
         setIsDialogOpen(false);
         resetForm();

@@ -842,19 +842,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const createThirdParty = async (data: Parameters<typeof thirdPartiesApi.create>[0]) => {
     const r = await thirdPartiesApi.create(data);
-    void refreshThirdParties();
-    return normalizeThirdParty(r as Record<string, unknown>);
+    const normalized = normalizeThirdParty(r as Record<string, unknown>);
+    setThirdParties((prev) => dedup([normalized, ...prev]));
+    await refreshThirdParties();
+    return normalized;
   };
 
   const updateThirdParty = async (id: string, data: Parameters<typeof thirdPartiesApi.update>[1]) => {
     const r = await thirdPartiesApi.update(id, data);
-    void refreshThirdParties();
-    return normalizeThirdParty(r as Record<string, unknown>);
+    const normalized = normalizeThirdParty(r as Record<string, unknown>);
+    setThirdParties((prev) => dedup(prev.map((tp) => (tp.id === id ? normalized : tp))));
+    await refreshThirdParties();
+    return normalized;
   };
 
   const deleteThirdParty = async (id: string) => {
     await thirdPartiesApi.delete(id);
-    void refreshThirdParties();
+    setThirdParties((prev) => prev.filter((tp) => tp.id !== id));
+    await refreshThirdParties();
   };
 
   const createMerchandiseQuality = async (
