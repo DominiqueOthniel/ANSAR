@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemainingRecetteToInvoice, sumMontantTTCForTripInvoices } from '@/lib/sync-utils';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import PageHeader from '@/components/PageHeader';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PAGE_TRAJETS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
@@ -158,6 +159,17 @@ export default function Trips() {
   const [editingMerchandiseId, setEditingMerchandiseId] = useState<string | null>(null);
   const [merchEditDraft, setMerchEditDraft] = useState('');
   const { isSubmitting, withGuard } = useSubmitGuard();
+
+  const tiersClientsFiches = useMemo(
+    () => thirdParties.filter((tp) => tp.type === 'client'),
+    [thirdParties],
+  );
+
+  const clientStructureTierId = useMemo(() => {
+    const nom = (formData.client ?? '').trim();
+    if (!nom) return '';
+    return tiersClientsFiches.find((c) => c.nom === nom)?.id ?? '';
+  }, [formData.client, tiersClientsFiches]);
 
   const sortedMerchandiseCatalog = useMemo(
     () => stableSort([...merchandiseQualities], (a, b) => frCollator.compare(a.libelle, b.libelle)),
@@ -316,6 +328,27 @@ export default function Trips() {
       payeurParticipantId: '',
     });
     setEditingTripId(null);
+  };
+
+  const addClientParticipantRow = () => {
+    setFormData((prev) => ({
+      ...prev,
+      clientParticipants: [...prev.clientParticipants, newTripClientParticipant()],
+    }));
+  };
+
+  const removeClientParticipantRow = (participantId: string) => {
+    setFormData((prev) => {
+      const next = prev.clientParticipants.filter((p) => p.id !== participantId);
+      let payeur = prev.payeurParticipantId;
+      if (payeur === participantId) {
+        const actifs = next.filter((p) => p.libelle.trim());
+        if (actifs.length >= 2) payeur = '';
+        else if (actifs.length === 1) payeur = actifs[0].id;
+        else payeur = '';
+      }
+      return { ...prev, clientParticipants: next, payeurParticipantId: payeur };
+    });
   };
 
   const normDate = (d: string) => (d && d.includes('T') ? d.split('T')[0] : d) || '';
@@ -1546,26 +1579,25 @@ export default function Trips() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="client">Client / structure (optionnel)</Label>
-                  <Select 
-                    value={formData.client || 'none'} 
-                    onValueChange={(value) => setFormData({ ...formData, client: value === 'none' ? '' : value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un client" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Aucun client</SelectItem>
-                      {thirdParties
-                        .filter(tp => tp.type === 'client')
-                        .map(client => (
-                          <SelectItem key={client.id} value={client.nom}>
-                            {client.nom}
-                            {client.telephone && ` - ${client.telephone}`}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="client-tier-picker">Client / structure (optionnel)</Label>
+                  <ThirdPartyPicker
+                    id="client-tier-picker"
+                    className="mt-1"
+                    options={tiersClientsFiches}
+                    value={clientStructureTierId}
+                    onValueChange={(tierId) => {
+                      const nom = tierId ? tiersClientsFiches.find((c) => c.id === tierId)?.nom ?? '' : '';
+                      setFormData((prev) => ({ ...prev, client: nom }));
+                    }}
+                    placeholder="Rechercher un client (fiche Tiers)…"
+                    searchPlaceholder="Nom, téléphone…"
+                    topChoices={[{ id: '', label: 'Aucun client', keywords: 'aucun effacer vider' }]}
+                    orphanLabel={
+                      (formData.client ?? '').trim() && !clientStructureTierId
+                        ? (formData.client ?? '').trim()
+                        : undefined
+                    }
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     Compte ou donneur d’ordre côté « gros » ou habituellement facturé ; le destinataire de livraison peut
                     être différent (champ dédié ci-dessous). Fiches :{' '}
@@ -1627,6 +1659,156 @@ export default function Trips() {
                     </p>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">Clients sur le trajet (parts / facturation)</p>
+                    <p className="text-xs text-muted-foreground max-w-3xl">
+                      Une ligne par client ou structure qui partage la mission : libellé (obligatoire pour compter la
+                      ligne), fiche Tiers type client si vous en avez une (
+                      <Link to="/tiers" className="text-primary underline-offset-2 hover:underline">
+                        Tiers
+                      </Link>
+                      ), part de recette optionnelle. À partir de deux lignes renseignées, choisissez le payeur au
+                      règlement (défaut factures / encaissements multi-clients). Sans ligne ici, seul le champ «
+                      Client / structure » ci-dessus s’applique.
+                    </p>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" onClick={addClientParticipantRow}>
+                    <Plus className="h-4 w-4 mr-1 shrink-0" />
+                    Ajouter un client
+                  </Button>
+                </div>
+                {formData.clientParticipants.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    Aucune ligne multi-client — le menu « Client / structure » suffit pour un seul compte.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.clientParticipants.map((p, index) => (
+                      <div
+                        key={p.id}
+                        className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end rounded-md border bg-background p-3"
+                      >
+                        <div className="md:col-span-4">
+                          <Label className="text-xs">Libellé *</Label>
+                          <Input
+                            value={p.libelle}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setFormData((prev) => ({
+                                ...prev,
+                                clientParticipants: prev.clientParticipants.map((x, i) =>
+                                  i === index ? { ...x, libelle: v } : x,
+                                ),
+                              }));
+                            }}
+                            placeholder="Raison sociale ou nom affiché"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div className="md:col-span-4">
+                          <Label className="text-xs">Fiche client (Tiers)</Label>
+                          <ThirdPartyPicker
+                            className="mt-1"
+                            triggerSize="sm"
+                            options={tiersClientsFiches}
+                            value={p.tierId ?? ''}
+                            onValueChange={(tierId) => {
+                              const id = tierId || undefined;
+                              const nom = id ? tiersClientsFiches.find((c) => c.id === id)?.nom : undefined;
+                              setFormData((prev) => ({
+                                ...prev,
+                                clientParticipants: prev.clientParticipants.map((x, i) => {
+                                  if (i !== index) return x;
+                                  const lib = (x.libelle ?? '').trim();
+                                  return {
+                                    ...x,
+                                    tierId: id,
+                                    libelle: lib || nom || '',
+                                  };
+                                }),
+                              }));
+                            }}
+                            placeholder="Rechercher une fiche…"
+                            searchPlaceholder="Nom client, téléphone…"
+                            topChoices={[{ id: '', label: 'Sans fiche', keywords: 'sans fiche' }]}
+                          />
+                        </div>
+                        <div className="md:col-span-3">
+                          <Label className="text-xs">Part recette (FCFA, optionnel)</Label>
+                          <NumberInput
+                            className="mt-1"
+                            min={0}
+                            value={p.montantAttribue ?? 0}
+                            onChange={(value) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                clientParticipants: prev.clientParticipants.map((x, i) =>
+                                  i === index
+                                    ? {
+                                        ...x,
+                                        montantAttribue:
+                                          value != null && value > 0 ? value : undefined,
+                                      }
+                                    : x,
+                                ),
+                              }))
+                            }
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="md:col-span-1 flex justify-end pb-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-destructive shrink-0"
+                            onClick={() => removeClientParticipantRow(p.id)}
+                            title="Retirer cette ligne"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {formData.clientParticipants.filter((x) => x.libelle.trim()).length >= 2 && (
+                  <div className="space-y-2 pt-2 border-t border-border/60">
+                    <Label className="text-sm">Payeur au règlement *</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Client désigné pour le règlement par défaut et les factures lorsque plusieurs lignes sont
+                      actives.
+                    </p>
+                    <RadioGroup
+                      value={formData.payeurParticipantId}
+                      onValueChange={(v) => setFormData((prev) => ({ ...prev, payeurParticipantId: v }))}
+                      className="flex flex-col gap-2"
+                    >
+                      {formData.clientParticipants
+                        .filter((x) => x.libelle.trim())
+                        .map((x) => (
+                          <div key={x.id} className="flex items-center gap-2">
+                            <RadioGroupItem value={x.id} id={`payeur-${x.id}`} />
+                            <Label htmlFor={`payeur-${x.id}`} className="font-normal cursor-pointer text-sm">
+                              {x.libelle.trim()}
+                              {x.tierId ? (
+                                <span className="text-muted-foreground text-xs ml-1">
+                                  (
+                                  {tiersClientsFiches.find((c) => c.id === x.tierId)?.nom ??
+                                    'fiche Tiers'}
+                                  )
+                                </span>
+                              ) : null}
+                            </Label>
+                          </div>
+                        ))}
+                    </RadioGroup>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-lg border border-dashed border-primary/25 bg-muted/15 p-4 space-y-3">

@@ -15,6 +15,7 @@ import { Plus, Edit, Trash2, Filter, DollarSign, TrendingDown, Receipt, FileText
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PAGE_DEPENSES_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
@@ -82,6 +83,18 @@ export default function Expenses() {
     () =>
       stableSort(
         thirdParties.filter((tp) => tp.type === 'employe'),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
+  const fournisseursFiches = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter(
+          (tp) =>
+            tp.type === 'fournisseur' && tp.nom && tp.nom.trim() !== '' && tp.id && tp.id.trim() !== '',
+        ),
         (a, b) => frCollator.compare(a.nom, b.nom),
       ),
     [thirdParties],
@@ -822,29 +835,27 @@ export default function Expenses() {
                 {formData.categorie === 'Salaire' ? (
                   <>
                     <Label htmlFor="employe-siege">Employé / personnel siège</Label>
-                    <Select
-                      value={formData.fournisseurId || 'none'}
-                      onValueChange={(value) => {
-                        const id = value === 'none' ? '' : value;
+                    <ThirdPartyPicker
+                      id="employe-siege"
+                      className="mt-1"
+                      options={employesSiege}
+                      value={formData.fournisseurId}
+                      onValueChange={(id) =>
                         setFormData((prev) => ({
                           ...prev,
                           fournisseurId: id,
                           chauffeurId: id ? '' : prev.chauffeurId,
-                        }));
-                      }}
-                    >
-                      <SelectTrigger id="employe-siege">
-                        <SelectValue placeholder="Sélectionner" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Aucun (ex. uniquement chauffeur)</SelectItem>
-                        {employesSiege.map((tp) => (
-                          <SelectItem key={tp.id} value={tp.id}>
-                            {tp.nom}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                        }))
+                      }
+                      placeholder="Rechercher un employé siège…"
+                      topChoices={[
+                        {
+                          id: '',
+                          label: 'Aucun (ex. uniquement chauffeur)',
+                          keywords: 'aucun chauffeur seul',
+                        },
+                      ]}
+                    />
                     <p className="text-xs text-muted-foreground mt-1">
                       Fiches créées dans{' '}
                       <Link to="/tiers" className="text-primary font-medium underline-offset-2 hover:underline">
@@ -855,22 +866,16 @@ export default function Expenses() {
                   </>
                 ) : (
                   <>
-                <Label htmlFor="fournisseur">Fournisseur (optionnel)</Label>
-                <Select value={formData.fournisseurId || 'none'} onValueChange={(value) => setFormData({ ...formData, fournisseurId: value === 'none' ? '' : value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un fournisseur" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Aucun fournisseur</SelectItem>
-                    {thirdParties
-                      .filter(tp => tp.type === 'fournisseur')
-                      .map(tp => (
-                        <SelectItem key={tp.id} value={tp.id}>
-                          {tp.nom}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="fournisseur-tier-picker">Fournisseur (optionnel)</Label>
+                <ThirdPartyPicker
+                  id="fournisseur-tier-picker"
+                  className="mt-1"
+                  options={fournisseursFiches}
+                  value={formData.fournisseurId}
+                  onValueChange={(id) => setFormData({ ...formData, fournisseurId: id })}
+                  placeholder="Rechercher un fournisseur…"
+                  topChoices={[{ id: '', label: 'Aucun fournisseur', keywords: 'aucun sans' }]}
+                />
                 <p className="text-xs text-muted-foreground mt-1">
                   Vous pouvez ajouter des fournisseurs dans la section "Tiers"
                 </p>
@@ -1247,21 +1252,21 @@ export default function Expenses() {
                 <User className="h-4 w-4" />
                 Fournisseur
               </Label>
-              <Select value={filterFournisseur} onValueChange={setFilterFournisseur}>
-                <SelectTrigger className="w-full h-11 bg-background hover:bg-muted/50 transition-colors border-border/50 focus:border-primary/50 shadow-sm">
-                  <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <SelectValue placeholder="Sélectionner un fournisseur" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les fournisseurs</SelectItem>
-                  <SelectItem value="none">Sans fournisseur</SelectItem>
-                  {thirdParties
-                    ?.filter(tp => tp.type === 'fournisseur' && tp.nom && tp.nom.trim() !== '' && tp.id && tp.id.trim() !== '')
-                    .map(tp => tp.id ? (
-                      <SelectItem key={tp.id} value={tp.id}>{tp.nom}</SelectItem>
-                    ) : null)}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <ThirdPartyPicker
+                  className="min-w-0 flex-1 min-h-11 bg-background hover:bg-muted/50"
+                  options={fournisseursFiches}
+                  value={filterFournisseur}
+                  onValueChange={setFilterFournisseur}
+                  placeholder="Filtrer par fournisseur…"
+                  searchPlaceholder="Nom fournisseur, téléphone…"
+                  topChoices={[
+                    { id: 'all', label: 'Tous les fournisseurs', keywords: 'tous effacer' },
+                    { id: 'none', label: 'Sans fournisseur', keywords: 'sans aucun' },
+                  ]}
+                />
+              </div>
             </div>
 
             <div>

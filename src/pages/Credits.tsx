@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PAGE_CREDITS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -167,6 +168,15 @@ export default function Credits() {
   const [listSort, setListSort] = useState<string>('date_desc');
   const { isSubmitting, withGuard } = useSubmitGuard();
   const { isSubmitting: isRemboursSubmitting, withGuard: withRemboursGuard } = useSubmitGuard();
+
+  const tierClientsFiches = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'client'),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
 
   const refreshCreditsFromApi = async () => {
     const data = await creditsApi.getAll();
@@ -585,7 +595,9 @@ export default function Credits() {
                     {form.type === 'pret_accorde' && (
                       <div>
                         <Label>Fiche client</Label>
-                        <Select
+                        <ThirdPartyPicker
+                          className="mt-1"
+                          options={tierClientsFiches}
                           value={form.clientTierId}
                           onValueChange={(id) => {
                             if (id === 'none') {
@@ -597,22 +609,16 @@ export default function Credits() {
                               setForm((f) => ({ ...f, clientTierId: id, preteur: tp.nom }));
                             }
                           }}
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Rattacher à une fiche…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sans rattachement (texte libre)</SelectItem>
-                            {thirdParties
-                              .filter((tp) => tp.type === 'client')
-                              .map((tp) => (
-                                <SelectItem key={tp.id} value={tp.id}>
-                                  {tp.nom}
-                                  {tp.telephone ? ` — ${tp.telephone}` : ''}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Rechercher une fiche client…"
+                          searchPlaceholder="Nom, téléphone…"
+                          topChoices={[
+                            {
+                              id: 'none',
+                              label: 'Sans rattachement (texte libre)',
+                              keywords: 'sans libre',
+                            },
+                          ]}
+                        />
                         <p className="text-xs text-muted-foreground mt-1">
                           Indispensable pour le plafond : la commande est liée à la fiche client par son identifiant, pas seulement par le nom saisi ci‑dessous.
                         </p>

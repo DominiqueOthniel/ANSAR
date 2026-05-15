@@ -24,6 +24,7 @@ import {
   formatTripStatusFr,
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PAGE_FACTURES_DESCRIPTION } from '@/lib/metier-activite';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -109,6 +110,15 @@ export default function Invoices() {
   const { isSubmitting: isCreatingTripInvoice, withGuard: withTripInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isCreatingExpenseInvoice, withGuard: withExpenseInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isConfirmingPayment, withGuard: withPaymentGuard } = useSubmitGuard();
+
+  const tierClientsFiches = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'client'),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
 
   // Pré-ouverture du dialog de création (ex. depuis Expéditions ou Trajets).
   useEffect(() => {
@@ -1758,27 +1768,24 @@ export default function Invoices() {
                               />
                             </div>
                             <div className="grid gap-3 sm:grid-cols-2">
-                              <div>
-                                <Label>Fiche client (optionnel)</Label>
-                                <Select
-                                  value={invoiceTripClientTierId || 'none'}
-                                  onValueChange={(v) => setInvoiceTripClientTierId(v === 'none' ? '' : v)}
-                                >
-                                  <SelectTrigger className="mt-1">
-                                    <SelectValue placeholder="Rattacher une fiche client" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">Sans fiche (libellé ci-contre)</SelectItem>
-                                    {thirdParties
-                                      .filter((tp) => tp.type === 'client')
-                                      .map((tp) => (
-                                        <SelectItem key={tp.id} value={tp.id}>
-                                          {tp.nom}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                            <div>
+                              <Label>Fiche client (optionnel)</Label>
+                              <ThirdPartyPicker
+                                className="mt-1"
+                                options={tierClientsFiches}
+                                value={invoiceTripClientTierId}
+                                onValueChange={(id) => setInvoiceTripClientTierId(id)}
+                                placeholder="Rechercher une fiche client…"
+                                searchPlaceholder="Nom, téléphone…"
+                                topChoices={[
+                                  {
+                                    id: '',
+                                    label: 'Sans fiche (libellé ci-contre)',
+                                    keywords: 'sans fiche libre',
+                                  },
+                                ]}
+                              />
+                            </div>
                               <div>
                                 <Label htmlFor="trip-inv-lib">Libellé client sur la facture</Label>
                                 <Input
