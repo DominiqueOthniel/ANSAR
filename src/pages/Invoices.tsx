@@ -368,11 +368,13 @@ export default function Invoices() {
     setPaymentAmount(0); // Montant du nouveau paiement à ajouter (pré-rempli à 0)
     setPaymentPayerParticipantId('');
     const trip = invoice.trajetId ? trips.find((t) => t.id === invoice.trajetId) : undefined;
-    if (trip && tripHasMultipleInvoicePayers(trip)) {
+    if (trip) {
       const parts = (trip.clientParticipants ?? []).filter((p) => p.libelle.trim());
-      const payeurId = trip.payeurParticipantId;
-      const def = payeurId ? parts.find((p) => p.id === payeurId) : parts[0];
-      if (def) setPaymentPayerParticipantId(def.id);
+      if (parts.length > 0) {
+        const payeurId = trip.payeurParticipantId;
+        const def = payeurId ? parts.find((p) => p.id === payeurId) : parts[0];
+        if (def) setPaymentPayerParticipantId(def.id);
+      }
     }
     const accs = getBankAccounts();
     setPaymentCompteBanqueId(accs[0]?.id ?? '');
@@ -3329,14 +3331,20 @@ export default function Invoices() {
               {selectedInvoice.trajetId &&
                 (() => {
                   const tr = trips.find((t) => t.id === selectedInvoice.trajetId);
-                  if (!tripHasMultipleInvoicePayers(tr)) return null;
                   const parts = (tr?.clientParticipants ?? []).filter((p) => p.libelle.trim());
+                  if (parts.length === 0) return null;
+                  const multi = tripHasMultipleInvoicePayers(tr);
                   return (
                     <div>
-                      <Label htmlFor="paymentPayerParticipant">Client payeur (cet encaissement) *</Label>
+                      <Label htmlFor="paymentPayerParticipant">
+                        {multi
+                          ? 'Client payeur (cet encaissement) *'
+                          : 'Client payeur (attribution de l’encaissement)'}
+                      </Label>
                       <Select
                         value={paymentPayerParticipantId || undefined}
                         onValueChange={setPaymentPayerParticipantId}
+                        disabled={!multi}
                       >
                         <SelectTrigger id="paymentPayerParticipant" className="mt-1">
                           <SelectValue placeholder="Choisir le client qui verse" />
@@ -3356,8 +3364,9 @@ export default function Invoices() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Plusieurs clients sur ce trajet : chaque versement est enregistré avec son payeur (suivi par
-                        fiche client et ventilation sur la facture).
+                        {multi
+                          ? 'Plusieurs clients sur ce trajet : choisissez qui verse cet encaissement (ventilation par fiche client sur la facture).'
+                          : 'Un seul client structuré sur ce trajet : l’encaissement lui est attribué automatiquement.'}
                       </p>
                     </div>
                   );

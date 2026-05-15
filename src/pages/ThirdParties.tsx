@@ -34,6 +34,24 @@ const THIRD_SORT_OPTIONS = [
   { value: 'type_desc', label: 'Type (fournisseur → propriétaire)' },
 ] as const;
 
+const CLIENT_SORT_OPTIONS = [
+  { value: 'nom_asc', label: 'Nom A → Z' },
+  { value: 'nom_desc', label: 'Nom Z → A' },
+  { value: 'plafond_desc', label: 'Plafond encours (du plus haut)' },
+  { value: 'plafond_asc', label: 'Plafond encours (du plus bas, sans plafond en dernier)' },
+] as const;
+
+type ClientPlafondFilter = 'all' | 'defined' | 'none';
+type ClientTripFilter = 'all' | 'yes' | 'no';
+type ClientParcelFilter = 'all' | 'yes' | 'no';
+type ClientContactFilter =
+  | 'all'
+  | 'phone_set'
+  | 'phone_missing'
+  | 'email_set'
+  | 'email_missing'
+  | 'coords_incomplete';
+
 const typeOrder = (t: string) =>
   t === 'proprietaire' ? 0 : t === 'client' ? 1 : t === 'fournisseur' ? 2 : t === 'employe' ? 3 : 9;
 
@@ -69,6 +87,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   );
   const [searchTerm, setSearchTerm] = useState('');
   const [listSort, setListSort] = useState<string>('nom_asc');
+  const [clientFilterPlafond, setClientFilterPlafond] = useState<ClientPlafondFilter>('all');
+  const [clientFilterTrip, setClientFilterTrip] = useState<ClientTripFilter>('all');
+  const [clientFilterParcel, setClientFilterParcel] = useState<ClientParcelFilter>('all');
+  const [clientFilterContact, setClientFilterContact] = useState<ClientContactFilter>('all');
   const [detailClient, setDetailClient] = useState<ThirdParty | null>(null);
   const [creditsForPlafondSheet, setCreditsForPlafondSheet] = useState<CreditLike[]>([]);
 
@@ -184,18 +206,50 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     }
   };
 
-  const filteredThirdParties = thirdParties.filter(tp => {
+  const clientHasTripLink = (tp: ThirdParty) =>
+    tp.type === 'client' &&
+    trips.some(
+      (t) =>
+        matchClientReference(t.client, tp.nom) ||
+        (t.clientParticipants ?? []).some((p) => p.tierId === tp.id),
+    );
+
+  const clientHasParcelLink = (tp: ThirdParty) =>
+    tp.type === 'client' &&
+    parcelExpeditions.some((ex) =>
+      ex.lots.some((lot) => matchClientReference(lot.clients, tp.nom)),
+    );
+
+  const filteredThirdParties = thirdParties.filter((tp) => {
     if (filterType !== 'all' && tp.type !== filterType) return false;
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      return (
+      const matchSearch =
         tp.nom.toLowerCase().includes(search) ||
         (tp.telephone && tp.telephone.includes(search)) ||
         (tp.email && tp.email.toLowerCase().includes(search)) ||
         (tp.adresse && tp.adresse.toLowerCase().includes(search)) ||
+        (tp.notes && tp.notes.toLowerCase().includes(search)) ||
         (tp.plafondCredit != null &&
-          String(Math.round(tp.plafondCredit)).includes(search.replace(/\s/g, '')))
-      );
+          String(Math.round(tp.plafondCredit)).includes(search.replace(/\s/g, '')));
+      if (!matchSearch) return false;
+    }
+    if (isClientsScope && tp.type === 'client') {
+      const hasPlafond = tp.plafondCredit != null && Number.isFinite(tp.plafondCredit);
+      if (clientFilterPlafond === 'defined' && !hasPlafond) return false;
+      if (clientFilterPlafond === 'none' && hasPlafond) return false;
+      if (clientFilterTrip === 'yes' && !clientHasTripLink(tp)) return false;
+      if (clientFilterTrip === 'no' && clientHasTripLink(tp)) return false;
+      if (clientFilterParcel === 'yes' && !clientHasParcelLink(tp)) return false;
+      if (clientFilterParcel === 'no' && clientHasParcelLink(tp)) return false;
+      const tel = (tp.telephone ?? '').trim();
+      const em = (tp.email ?? '').trim();
+      const adr = (tp.adresse ?? '').trim();
+      if (clientFilterContact === 'phone_set' && !tel) return false;
+      if (clientFilterContact === 'phone_missing' && tel) return false;
+      if (clientFilterContact === 'email_set' && !em) return false;
+      if (clientFilterContact === 'email_missing' && em) return false;
+      if (clientFilterContact === 'coords_incomplete' && tel && em && adr) return false;
     }
     return true;
   });
@@ -209,6 +263,24 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         return stableSort(list, (a, b) => typeOrder(a.type) - typeOrder(b.type) || frCollator.compare(a.nom, b.nom));
       case 'type_desc':
         return stableSort(list, (a, b) => typeOrder(b.type) - typeOrder(a.type) || frCollator.compare(a.nom, b.nom));
+      case 'plafond_desc':
+        return stableSort(list, (a, b) => {
+          const pa = a.type === 'client' && a.plafondCredit != null ? a.plafondCredit : -1;
+          const pb = b.type === 'client' && b.plafondCredit != null ? b.plafondCredit : -1;
+          return pb - pa || frCollator.compare(a.nom, b.nom);
+        });
+      case 'plafond_asc':
+        return stableSort(list, (a, b) => {
+          const pa =
+            a.type === 'client' && a.plafondCredit != null && Number.isFinite(a.plafondCredit)
+              ? a.plafondCredit
+              : Number.POSITIVE_INFINITY;
+          const pb =
+            b.type === 'client' && b.plafondCredit != null && Number.isFinite(b.plafondCredit)
+              ? b.plafondCredit
+              : Number.POSITIVE_INFINITY;
+          return pa - pb || frCollator.compare(a.nom, b.nom);
+        });
       case 'nom_asc':
       default:
         return stableSort(list, (a, b) => frCollator.compare(a.nom, b.nom));
@@ -343,13 +415,46 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     });
   }, [detailClient, creditsForPlafondSheet]);
 
-  // Fonction pour générer la description des filtres
+  const listSortOptions = useMemo(
+    () => (isClientsScope ? [...CLIENT_SORT_OPTIONS] : [...THIRD_SORT_OPTIONS]),
+    [isClientsScope],
+  );
+
+  const clientPlafondFilterLabel: Record<ClientPlafondFilter, string> = {
+    all: '',
+    defined: 'Plafond encours défini',
+    none: 'Sans plafond encours',
+  };
+  const clientTripFilterLabel: Record<ClientTripFilter, string> = {
+    all: '',
+    yes: 'Au moins un trajet relié',
+    no: 'Aucun trajet relié',
+  };
+  const clientParcelFilterLabel: Record<ClientParcelFilter, string> = {
+    all: '',
+    yes: 'Au moins une expédition colis',
+    no: 'Aucune expédition colis',
+  };
+  const clientContactFilterLabel: Record<ClientContactFilter, string> = {
+    all: '',
+    phone_set: 'Téléphone renseigné',
+    phone_missing: 'Téléphone absent',
+    email_set: 'Email renseigné',
+    email_missing: 'Email absent',
+    coords_incomplete: 'Coordonnées incomplètes (tél., email ou adresse manquant)',
+  };
+
   const getFiltersDescription = () => {
     const filters: string[] = [];
     if (searchTerm) filters.push(`Recherche: "${searchTerm}"`);
-    if (isClientsScope) filters.push('Vue clients');
-    else if (filterType !== 'all') filters.push(`Type: ${getTypeLabel(filterType)}`);
-    const sortLabel = THIRD_SORT_OPTIONS.find((o) => o.value === listSort)?.label;
+    if (isClientsScope) {
+      filters.push('Vue clients');
+      if (clientFilterPlafond !== 'all') filters.push(clientPlafondFilterLabel[clientFilterPlafond]);
+      if (clientFilterTrip !== 'all') filters.push(clientTripFilterLabel[clientFilterTrip]);
+      if (clientFilterParcel !== 'all') filters.push(clientParcelFilterLabel[clientFilterParcel]);
+      if (clientFilterContact !== 'all') filters.push(clientContactFilterLabel[clientFilterContact]);
+    } else if (filterType !== 'all') filters.push(`Type: ${getTypeLabel(filterType)}`);
+    const sortLabel = listSortOptions.find((o) => o.value === listSort)?.label;
     if (sortLabel) filters.push(`Tri: ${sortLabel}`);
     return filters.length > 0 ? `Filtres appliqués: ${filters.join(', ')}` : sortLabel ? `Tri: ${sortLabel}` : undefined;
   };
@@ -649,7 +754,13 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               <Filter className="h-5 w-5" />
               Filtres de recherche
             </CardTitle>
-            {(searchTerm || (!isClientsScope && filterType !== 'all')) && (
+            {(searchTerm ||
+              (!isClientsScope && filterType !== 'all') ||
+              (isClientsScope &&
+                (clientFilterPlafond !== 'all' ||
+                  clientFilterTrip !== 'all' ||
+                  clientFilterParcel !== 'all' ||
+                  clientFilterContact !== 'all'))) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -657,7 +768,13 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   setSearchTerm('');
                   setListSort('nom_asc');
                   if (!isClientsScope) setFilterType('all');
-                  else setFilterType('client');
+                  else {
+                    setFilterType('client');
+                    setClientFilterPlafond('all');
+                    setClientFilterTrip('all');
+                    setClientFilterParcel('all');
+                    setClientFilterContact('all');
+                  }
                 }}
                 className="text-xs"
               >
@@ -695,7 +812,11 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search-third-parties"
-                  placeholder="Rechercher par nom, téléphone, email ou adresse..."
+                  placeholder={
+                    isClientsScope
+                      ? 'Nom, téléphone, email, adresse, notes ou montant de plafond…'
+                      : 'Nom, téléphone, email, adresse ou notes…'
+                  }
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -720,13 +841,78 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               </div>
             )}
 
+            {isClientsScope &&
+              (clientFilterPlafond !== 'all' ||
+                clientFilterTrip !== 'all' ||
+                clientFilterParcel !== 'all' ||
+                clientFilterContact !== 'all') && (
+                <div className="flex flex-wrap gap-2 pb-2">
+                  {clientFilterPlafond !== 'all' && (
+                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/20 px-3 py-1.5">
+                      {clientPlafondFilterLabel[clientFilterPlafond]}
+                      <button
+                        type="button"
+                        onClick={() => setClientFilterPlafond('all')}
+                        className="ml-2 hover:bg-emerald-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre plafond"
+                        title="Retirer le filtre plafond"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientFilterTrip !== 'all' && (
+                    <Badge variant="secondary" className="bg-teal-500/10 text-teal-800 dark:text-teal-300 border-teal-500/20 px-3 py-1.5">
+                      {clientTripFilterLabel[clientFilterTrip]}
+                      <button
+                        type="button"
+                        onClick={() => setClientFilterTrip('all')}
+                        className="ml-2 hover:bg-teal-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre trajets"
+                        title="Retirer le filtre trajets"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientFilterParcel !== 'all' && (
+                    <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-800 dark:text-cyan-300 border-cyan-500/20 px-3 py-1.5">
+                      {clientParcelFilterLabel[clientFilterParcel]}
+                      <button
+                        type="button"
+                        onClick={() => setClientFilterParcel('all')}
+                        className="ml-2 hover:bg-cyan-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre colis"
+                        title="Retirer le filtre colis"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientFilterContact !== 'all' && (
+                    <Badge variant="secondary" className="bg-slate-500/10 text-slate-800 dark:text-slate-300 border-slate-500/20 px-3 py-1.5">
+                      {clientContactFilterLabel[clientFilterContact]}
+                      <button
+                        type="button"
+                        onClick={() => setClientFilterContact('all')}
+                        className="ml-2 hover:bg-slate-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre coordonnées"
+                        title="Retirer le filtre coordonnées"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                </div>
+              )}
+
             {/* Sélecteurs de filtres */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <ListSortSelect
                 id="sort-third-parties"
                 value={listSort}
                 onChange={setListSort}
-                options={[...THIRD_SORT_OPTIONS]}
+                options={listSortOptions}
               />
               {!isClientsScope ? (
               <div>
@@ -753,6 +939,80 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               </div>
               )}
             </div>
+
+            {isClientsScope && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-2 border-t border-dashed">
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Plafond encours (fiche)</Label>
+                  <Select
+                    value={clientFilterPlafond}
+                    onValueChange={(v) => setClientFilterPlafond(v as ClientPlafondFilter)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Indifférent" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Indifférent</SelectItem>
+                      <SelectItem value="defined">Plafond défini</SelectItem>
+                      <SelectItem value="none">Sans plafond</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Lien trajets</Label>
+                  <Select
+                    value={clientFilterTrip}
+                    onValueChange={(v) => setClientFilterTrip(v as ClientTripFilter)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Indifférent" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Indifférent</SelectItem>
+                      <SelectItem value="yes">Au moins un trajet relié</SelectItem>
+                      <SelectItem value="no">Aucun trajet relié</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Nom sur mission ou participant structuré.</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Lien expéditions colis</Label>
+                  <Select
+                    value={clientFilterParcel}
+                    onValueChange={(v) => setClientFilterParcel(v as ClientParcelFilter)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Indifférent" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Indifférent</SelectItem>
+                      <SelectItem value="yes">Au moins une expédition</SelectItem>
+                      <SelectItem value="no">Aucune expédition</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Client mentionné sur une ligne colis.</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Coordonnées</Label>
+                  <Select
+                    value={clientFilterContact}
+                    onValueChange={(v) => setClientFilterContact(v as ClientContactFilter)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Indifférent" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Indifférent</SelectItem>
+                      <SelectItem value="phone_set">Téléphone renseigné</SelectItem>
+                      <SelectItem value="phone_missing">Téléphone absent</SelectItem>
+                      <SelectItem value="email_set">Email renseigné</SelectItem>
+                      <SelectItem value="email_missing">Email absent</SelectItem>
+                      <SelectItem value="coords_incomplete">Fiche incomplète (tél., email ou adresse manquant)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -761,9 +1021,15 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         {sortedThirdParties.length === 0 ? (
           <div className="col-span-full text-center py-12">
             <p className="text-muted-foreground">
-              {searchTerm || (!isClientsScope && filterType !== 'all')
+              {searchTerm ||
+              (!isClientsScope && filterType !== 'all') ||
+              (isClientsScope &&
+                (clientFilterPlafond !== 'all' ||
+                  clientFilterTrip !== 'all' ||
+                  clientFilterParcel !== 'all' ||
+                  clientFilterContact !== 'all'))
                 ? isClientsScope
-                  ? 'Aucun client ne correspond à votre recherche'
+                  ? 'Aucun client ne correspond aux filtres ou à la recherche'
                   : 'Aucun tier ne correspond à votre recherche'
                 : isClientsScope
                   ? 'Aucun client enregistré'

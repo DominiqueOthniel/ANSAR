@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, Trip, TripStatus, TripStop, TripStopType, TripStopStatut } from '@/contexts/AppContext';
+import {
+  useApp,
+  Trip,
+  TripStatus,
+  TripStop,
+  TripStopType,
+  TripStopStatut,
+  type ThirdParty,
+} from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -45,6 +53,29 @@ function itineraireResume(origine: string, destination: string | undefined): str
   const o = (origine ?? '').trim() || '—';
   const d = (destination ?? '').trim();
   return d ? `${o} → ${d}` : `${o} → —`;
+}
+
+/** Suggestions fiches Tiers pour le champ texte libre Client/BL ou Fournisseur/BL. */
+function tierSuggestionsForStopType(
+  type: TripStopType,
+  clients: ThirdParty[],
+  fournisseurs: ThirdParty[],
+): ThirdParty[] {
+  if (type === 'chargement') {
+    return stableSort([...fournisseurs], (a, b) => frCollator.compare(a.nom, b.nom));
+  }
+  if (type === 'livraison') {
+    return stableSort([...clients], (a, b) => frCollator.compare(a.nom, b.nom));
+  }
+  const seen = new Set<string>();
+  const merged: ThirdParty[] = [];
+  for (const tp of [...clients, ...fournisseurs]) {
+    if (!seen.has(tp.id)) {
+      seen.add(tp.id);
+      merged.push(tp);
+    }
+  }
+  return stableSort(merged, (a, b) => frCollator.compare(a.nom, b.nom));
 }
 
 function marchandiseCatalogHasLibelle(
@@ -162,6 +193,11 @@ export default function Trips() {
 
   const tiersClientsFiches = useMemo(
     () => thirdParties.filter((tp) => tp.type === 'client'),
+    [thirdParties],
+  );
+
+  const fournisseursFiches = useMemo(
+    () => thirdParties.filter((tp) => tp.type === 'fournisseur'),
     [thirdParties],
   );
 
@@ -1468,7 +1504,22 @@ export default function Trips() {
                                 ? 'Client / BL livraison (optionnel)'
                                 : 'Référence (optionnel)'}
                           </Label>
+                          <datalist id={`trip-form-stop-ref-${stop.id}`}>
+                            {tierSuggestionsForStopType(
+                              stop.type,
+                              tiersClientsFiches,
+                              fournisseursFiches,
+                            ).map((tp) => (
+                              <option
+                                key={tp.id}
+                                value={tp.nom}
+                                label={tp.telephone ? String(tp.telephone) : undefined}
+                              />
+                            ))}
+                          </datalist>
                           <Input
+                            list={`trip-form-stop-ref-${stop.id}`}
+                            autoComplete="off"
                             value={stop.clientRef ?? ''}
                             onChange={(e) =>
                               setFormData((prev) => ({
@@ -1480,8 +1531,8 @@ export default function Trips() {
                             }
                             placeholder={
                               stop.type === 'chargement'
-                                ? 'Nom fournisseur, bon de chargement…'
-                                : 'Destinataire, bon de livraison…'
+                                ? 'Liste ou saisie : fournisseur, BL…'
+                                : 'Liste ou saisie : client, BL…'
                             }
                           />
                         </div>
@@ -2412,7 +2463,22 @@ export default function Trips() {
                             ? 'Client / BL'
                             : 'Réf.'}
                       </Label>
+                      <datalist id={`trip-stops-draft-ref-${stop.id}`}>
+                        {tierSuggestionsForStopType(
+                          stop.type,
+                          tiersClientsFiches,
+                          fournisseursFiches,
+                        ).map((tp) => (
+                          <option
+                            key={tp.id}
+                            value={tp.nom}
+                            label={tp.telephone ? String(tp.telephone) : undefined}
+                          />
+                        ))}
+                      </datalist>
                       <Input
+                        list={`trip-stops-draft-ref-${stop.id}`}
+                        autoComplete="off"
                         value={stop.clientRef ?? ''}
                         onChange={(e) =>
                           setStopsDraft((prev) =>
@@ -2422,7 +2488,9 @@ export default function Trips() {
                           )
                         }
                         placeholder={
-                          stop.type === 'chargement' ? 'Nom fournisseur, BL…' : 'Destinataire, BL…'
+                          stop.type === 'chargement'
+                            ? 'Liste ou saisie : fournisseur, BL…'
+                            : 'Liste ou saisie : client, BL…'
                         }
                       />
                     </div>
