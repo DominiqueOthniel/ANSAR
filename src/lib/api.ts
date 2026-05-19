@@ -245,6 +245,8 @@ export interface ClientOrderPayload {
   dateCommande: string;
   dateLivraisonSouhaitee?: string;
   notes?: string;
+  montantPaye?: number;
+  datePaiement?: string;
 }
 
 export interface ClientDeliveryPayload {

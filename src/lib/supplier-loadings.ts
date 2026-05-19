@@ -44,6 +44,25 @@ export function findSupplierLoadingForOrder(
   return loadings.find((l) => l.assignments?.some((a) => a.clientOrderId === orderId));
 }
 
+/** Client déjà lié au bon via une affectation existante. */
+export function getLoadingAssignedClientId(loading: {
+  assignments?: { clientId?: string }[];
+}): string | undefined {
+  for (const a of loading.assignments ?? []) {
+    if (a.clientId) return a.clientId;
+  }
+  return undefined;
+}
+
+/** Vérifie qu’une commande du client donné peut être rattachée au bon. */
+export function canAssignClientOrderToLoading(
+  loading: { assignments?: { clientId?: string }[] },
+  orderClientId: string,
+): boolean {
+  const locked = getLoadingAssignedClientId(loading);
+  return !locked || locked === orderClientId;
+}
+
 export function formatSupplierLoadingBonOption(l: {
   numeroBon?: string;
   designation: string;

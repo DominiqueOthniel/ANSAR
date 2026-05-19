@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { History, Loader2, RefreshCw, Database, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ExportButtons } from '@/components/ExportButtons';
+import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { auditLogsApi, setApiActor, type AuditLogRow } from '@/lib/api';
@@ -186,12 +188,63 @@ export default function AuditLogs() {
     }
   };
 
+  const getFiltersDescription = () => {
+    const parts: string[] = [];
+    if (moduleFilter !== ALL) {
+      parts.push(MODULE_OPTIONS.find((o) => o.value === moduleFilter)?.label ?? moduleFilter);
+    }
+    if (actionFilter !== ALL) {
+      parts.push(ACTION_OPTIONS.find((o) => o.value === actionFilter)?.label ?? actionFilter);
+    }
+    if (actorLogin.trim()) parts.push(`Utilisateur: ${actorLogin.trim()}`);
+    if (from) parts.push(`Du: ${from}`);
+    if (to) parts.push(`Au: ${to}`);
+    parts.push(`Limite: ${limit}`);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  };
+
+  const auditColumns = [
+    { header: 'Date', value: (r: AuditLogRow) => formatDateTime(r.createdAt) },
+    { header: 'Module', value: (r: AuditLogRow) => r.module },
+    { header: 'Action', value: (r: AuditLogRow) => r.action },
+    { header: 'Utilisateur', value: (r: AuditLogRow) => r.actorLogin ?? '—' },
+    { header: 'Rôle', value: (r: AuditLogRow) => r.actorRole ?? '—' },
+    { header: 'Résumé', value: (r: AuditLogRow) => r.summary ?? '—' },
+    { header: 'ID entité', value: (r: AuditLogRow) => r.entityId ?? '—' },
+  ];
+
+  const handleExportExcel = () => {
+    exportToExcel({
+      title: 'Historique des actions',
+      fileName: `audit_${new Date().toISOString().split('T')[0]}.xlsx`,
+      sheetName: 'Audit',
+      filtersDescription: getFiltersDescription(),
+      columns: auditColumns,
+      rows,
+    });
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    exportToPrintablePDF({
+      title: 'Historique des actions',
+      fileName: `audit_${new Date().toISOString().split('T')[0]}.pdf`,
+      filtersDescription: getFiltersDescription(),
+      headerColor: '#475569',
+      accentColor: '#475569',
+      columns: auditColumns,
+      rows,
+    });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Historique des actions"
         description="Journal des créations, modifications et suppressions (dépenses, caisse, crédits)."
         icon={History}
+        actions={<ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />}
       />
 
       <Card>

@@ -31,6 +31,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, KeyRound, Users as UsersIcon, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ExportButtons } from '@/components/ExportButtons';
+import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { ROLE_META, ROLE_OPTIONS, formatRoleLabel } from '@/lib/auth-users';
 
 export default function Users() {
@@ -98,6 +100,34 @@ export default function Users() {
     });
   };
 
+  const handleExportExcel = () => {
+    exportToExcel({
+      title: 'Utilisateurs TruckTrack',
+      fileName: `utilisateurs_${new Date().toISOString().split('T')[0]}.xlsx`,
+      columns: [
+        { header: 'Login', value: (u) => u.login },
+        { header: 'Rôle', value: (u) => formatRoleLabel(u.role) },
+      ],
+      rows: users,
+    });
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    exportToPrintablePDF({
+      title: 'Utilisateurs TruckTrack',
+      fileName: `utilisateurs_${new Date().toISOString().split('T')[0]}.pdf`,
+      headerColor: '#7c3aed',
+      accentColor: '#7c3aed',
+      columns: [
+        { header: 'Login', value: (u) => u.login },
+        { header: 'Rôle', value: (u) => formatRoleLabel(u.role) },
+      ],
+      rows: users,
+    });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
+
   return (
     <div className="space-y-6 p-1">
       <PageHeader
@@ -106,6 +136,8 @@ export default function Users() {
         icon={UsersIcon}
         gradient="from-violet-500/15 via-purple-500/10 to-transparent"
         actions={
+          <div className="flex flex-wrap gap-2">
+            <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -177,6 +209,7 @@ export default function Users() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

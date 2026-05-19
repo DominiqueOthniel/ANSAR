@@ -69,4 +69,15 @@ export class CreateClientOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Encaissement déjà reçu à la création (acompte ou solde). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  montantPaye?: number;
+
+  @IsOptional()
+  @IsString()
+  datePaiement?: string;
 }

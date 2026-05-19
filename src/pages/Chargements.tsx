@@ -9,6 +9,7 @@ import {
   formatSupplierLoadingStatusFr,
   SUPPLIER_LOADING_STATUS_OPTIONS,
   type SupplierLoadingStatus,
+  getLoadingAssignedClientId,
   isLoadingUnassigned,
 } from '@/lib/supplier-loadings';
 import { formatClientOrderStatusFr } from '@/lib/client-operations';
@@ -44,6 +45,9 @@ import {
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban } from 'lucide-react';
 import { toast } from 'sonner';
+import { ExportButtons } from '@/components/ExportButtons';
+import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
+import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import type { SupplierLoadingAssignmentPayload } from '@/lib/api';
 import {
@@ -126,6 +130,7 @@ export default function Chargements() {
   const [assignLoading, setAssignLoading] = useState<SupplierLoading | null>(null);
   const [assignRows, setAssignRows] = useState<SupplierLoadingAssignmentPayload[]>([]);
   const [assignSearch, setAssignSearch] = useState('');
+  const [assignClientId, setAssignClientId] = useState('');
 
   const fournisseurs = useMemo(
     () =>
@@ -136,13 +141,20 @@ export default function Chargements() {
     [thirdParties],
   );
 
+  const clients = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'client' && tp.nom.trim()),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
   const clientsById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const tp of thirdParties) {
-      if (tp.type === 'client') m.set(tp.id, tp.nom);
-    }
+    for (const tp of clients) m.set(tp.id, tp.nom);
     return m;
-  }, [thirdParties]);
+  }, [clients]);
 
   const sortedLoadings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -312,13 +324,23 @@ export default function Chargements() {
       })),
     );
     setAssignSearch('');
+    setAssignClientId(getLoadingAssignedClientId(l) ?? '');
     setAssignDialogOpen(true);
   };
 
+  const assignClientLocked = Boolean(
+    assignLoading && getLoadingAssignedClientId(assignLoading),
+  );
+
   const ordersForAssign = useMemo(() => {
+    if (!assignClientId) return [];
     const q = assignSearch.trim().toLowerCase();
     return stableSort(
-      clientOrders.filter((o) => o.statut !== 'annulee'),
+      clientOrders.filter((o) => {
+        if (o.statut === 'annulee') return false;
+        if (o.clientId !== assignClientId) return false;
+        return true;
+      }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
     ).filter((o) => {
       if (!q) return true;
@@ -329,12 +351,19 @@ export default function Chargements() {
         clientNom.toLowerCase().includes(q)
       );
     });
-  }, [clientOrders, assignSearch, clientsById]);
+  }, [clientOrders, assignSearch, assignClientId, clientsById]);
 
   const toggleOrderInAssign = (orderId: string) => {
+    const order = clientOrders.find((o) => o.id === orderId);
+    if (!order) return;
+    if (assignClientId && order.clientId !== assignClientId) {
+      toast.error('Ce bon ne peut être affecté qu’à un seul client.');
+      return;
+    }
     setAssignRows((prev) => {
       const exists = prev.find((r) => r.clientOrderId === orderId);
       if (exists) return prev.filter((r) => r.clientOrderId !== orderId);
+      if (!assignClientId) setAssignClientId(order.clientId);
       return [...prev, { clientOrderId: orderId }];
     });
   };
@@ -350,11 +379,110 @@ export default function Chargements() {
   const saveAssignments = () =>
     withGuard(async () => {
       if (!assignLoading) return;
+      const clientIds = new Set(
+        assignRows
+          .map((r) => clientOrders.find((o) => o.id === r.clientOrderId)?.clientId)
+          .filter((id): id is string => Boolean(id)),
+      );
+      if (clientIds.size > 1) {
+        toast.error('Un bon ne peut être affecté qu’à un seul client.');
+        return;
+      }
       await setSupplierLoadingAssignments(assignLoading.id, assignRows);
       toast.success('Affectation enregistrée.');
       setAssignDialogOpen(false);
     });
 
+  const getFiltersDescription = () => {
+    const parts: string[] = [];
+    if (search.trim()) parts.push(`Recherche: "${search.trim()}"`);
+    if (filterFournisseur) {
+      const f = fournisseurs.find((x) => x.id === filterFournisseur);
+      if (f) parts.push(`Fournisseur: ${f.nom}`);
+    }
+    if (filterStatut !== 'all') parts.push(`Statut: ${formatSupplierLoadingStatusFr(filterStatut as SupplierLoadingStatus)}`);
+    if (unassignedOnly) parts.push('Non affectés uniquement');
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  };
+
+  const loadingExportColumns = [
+    { header: 'Date', value: (l: SupplierLoading) => l.dateChargement },
+    { header: 'Fournisseur', value: (l: SupplierLoading) => l.fournisseurNom ?? '—' },
+    { header: 'N° bon', value: (l: SupplierLoading) => l.numeroBon || '—' },
+    { header: 'Désignation', value: (l: SupplierLoading) => l.designation },
+    {
+      header: 'Quantité',
+      value: (l: SupplierLoading) =>
+        l.quantite != null ? `${l.quantite}${l.unite ? ` ${l.unite}` : ''}` : '—',
+    },
+    {
+      header: 'Valeur bon (FCFA)',
+      value: (l: SupplierLoading) => (l.montantBon != null ? Math.round(l.montantBon) : '—'),
+    },
+    { header: 'Statut', value: (l: SupplierLoading) => formatSupplierLoadingStatusFr(l.statut) },
+    { header: 'Lieu', value: (l: SupplierLoading) => l.lieu || '—' },
+  ];
+
+  const buildLoadingDetailBlocks = (l: SupplierLoading) => {
+    const assigns = l.assignments ?? [];
+    return [
+      {
+        title: `Affectations (${assigns.length})`,
+        columns: ['Client', 'Commande', 'Réf. commande', 'Qté affectée', 'Notes'],
+        rows:
+          assigns.length > 0
+            ? assigns.map((a) => [
+                a.clientNom ?? '—',
+                a.orderDesignation ?? '—',
+                a.orderReference ?? '—',
+                a.quantiteAffectee != null ? a.quantiteAffectee : '—',
+                a.notes ?? '—',
+              ])
+            : [['—', 'Aucune commande liée', '', '', '']],
+      },
+    ];
+  };
+
+  const handleExportExcel = () => {
+    exportToExcelWithDetails({
+      title: 'Bons de chargement',
+      fileName: `chargements_${new Date().toISOString().split('T')[0]}.xlsx`,
+      sheetName: 'Chargements',
+      filtersDescription: getFiltersDescription(),
+      columns: loadingExportColumns,
+      rows: sortedLoadings,
+      buildDetailBlocks: buildLoadingDetailBlocks,
+      getDetailHeading: (l) =>
+        `${l.numeroBon?.trim() || l.designation} — ${l.fournisseurNom ?? 'Fournisseur'}`,
+    });
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    const nonAffectes = sortedLoadings.filter(
+      (l) => !l.assignments?.length,
+    ).length;
+    exportToPrintablePDFWithDetails({
+      title: 'Bons de chargement',
+      fileName: `chargements_${new Date().toISOString().split('T')[0]}.pdf`,
+      filtersDescription: getFiltersDescription(),
+      headerColor: '#65a30d',
+      headerTextColor: '#ffffff',
+      evenRowColor: '#f7fee7',
+      oddRowColor: '#ffffff',
+      accentColor: '#65a30d',
+      totals: [
+        { label: 'Bons listés', value: sortedLoadings.length, style: 'neutral', icon: EMOJI.liste },
+        { label: 'Sans affectation', value: nonAffectes, style: 'neutral', icon: '📦' },
+      ],
+      columns: loadingExportColumns,
+      rows: sortedLoadings,
+      buildDetailBlocks: buildLoadingDetailBlocks,
+      getDetailHeading: (l) =>
+        `${l.numeroBon?.trim() || l.designation} — ${l.fournisseurNom ?? ''}`,
+    });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
 
   return (
     <div className="space-y-6">
@@ -363,6 +491,7 @@ export default function Chargements() {
         description={PAGE_CHARGEMENTS_DESCRIPTION}
         actions={
           <div className="flex flex-wrap gap-2">
+            <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
             <Button variant="outline" size="sm" asChild>
               <Link to="/fournisseurs">Vue fournisseurs</Link>
             </Button>
@@ -731,12 +860,37 @@ export default function Chargements() {
                   </>
                 )}
               </p>
+              <div className="space-y-2">
+                <Label>Client</Label>
+                <ThirdPartyPicker
+                  options={clients}
+                  value={assignClientId}
+                  onValueChange={setAssignClientId}
+                  placeholder="Choisir un client…"
+                  searchPlaceholder="Rechercher un client…"
+                  disabled={assignClientLocked}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {assignClientLocked
+                    ? `Bon réservé au client : ${clientsById.get(assignClientId) ?? '—'}`
+                    : assignClientId
+                      ? `${ordersForAssign.length} commande(s) — ${clientsById.get(assignClientId) ?? 'client'}`
+                      : 'Choisissez un client pour afficher ses commandes.'}
+                </p>
+              </div>
               <Input
-                placeholder="Filtrer commandes (client, réf., désignation)…"
+                placeholder="Filtrer par réf., désignation…"
                 value={assignSearch}
                 onChange={(e) => setAssignSearch(e.target.value)}
               />
               <div className="border rounded-md max-h-[320px] overflow-y-auto divide-y">
+                {ordersForAssign.length === 0 ? (
+                  <p className="p-4 text-sm text-center text-muted-foreground">
+                    {!assignClientId
+                      ? 'Sélectionnez un client pour voir ses commandes.'
+                      : 'Aucune commande active pour ce client.'}
+                  </p>
+                ) : null}
                 {ordersForAssign.map((o) => {
                   const selected = assignRows.some((r) => r.clientOrderId === o.id);
                   const row = assignRows.find((r) => r.clientOrderId === o.id);

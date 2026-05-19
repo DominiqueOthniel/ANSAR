@@ -37,15 +37,24 @@ import {
   CLIENT_DELIVERY_STATUS_OPTIONS,
   formatClientOrderStatusFr,
   formatClientDeliveryStatusFr,
+  canDeleteClientOrder,
+  isClientOrderEditable,
   type ClientOrderStatus,
   type ClientDeliveryStatus,
 } from '@/lib/client-operations';
 import {
+  canAssignClientOrderToLoading,
   canLinkClientOrderToLoading,
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
 } from '@/lib/supplier-loadings';
 import { checkPretAccordePlafond } from '@/lib/client-credit-plafond';
+import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
+import {
+  paymentModeFromInvoice,
+  resolvePaymentAtCreation,
+  type PaymentAtCreationMode,
+} from '@/lib/payment-at-creation';
 import {
   loadCreditsForPlafond,
   thirdPartiesToClientTierLike,
@@ -130,15 +139,22 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     dateCommande: todayIso(),
     dateLivraisonSouhaitee: '',
     notes: '',
+    paiementMode: 'en_attente' as PaymentAtCreationMode,
+    montantAvance: undefined as number | undefined,
+    datePaiement: todayIso(),
   });
 
   const selectableLoadings = useMemo(
     () =>
       stableSort(
-        supplierLoadings.filter((l) => canLinkClientOrderToLoading(l.statut)),
+        supplierLoadings.filter(
+          (l) =>
+            canLinkClientOrderToLoading(l.statut) &&
+            canAssignClientOrderToLoading(l, clientId),
+        ),
         (a, b) => b.dateChargement.localeCompare(a.dateChargement),
       ),
-    [supplierLoadings],
+    [supplierLoadings, clientId],
   );
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
@@ -191,6 +207,10 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   const linkOrderToLoading = async (orderId: string, loadingId: string, qty?: number) => {
     const loading = supplierLoadings.find((l) => l.id === loadingId);
     if (!loading) return;
+    if (!canAssignClientOrderToLoading(loading, clientId)) {
+      toast.error('Ce bon est déjà affecté à un autre client.');
+      return;
+    }
     const existing = (loading.assignments ?? []).map((a) => ({
       clientOrderId: a.clientOrderId,
       quantiteAffectee: a.quantiteAffectee,
@@ -246,6 +266,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       dateCommande: todayIso(),
       dateLivraisonSouhaitee: '',
       notes: '',
+      paiementMode: 'en_attente',
+      montantAvance: undefined,
+      datePaiement: todayIso(),
     });
     setEditingOrder(null);
   };
@@ -255,8 +278,31 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     setOrderDialogOpen(true);
   };
 
+  const handleDeleteOrder = async (o: ClientOrder) => {
+    if (!canDeleteClientOrder(o.statut)) {
+      toast.error('Une commande livrée ou annulée ne peut pas être supprimée.');
+      return;
+    }
+    if (!confirm(`Supprimer la commande « ${o.designation} » ?`)) return;
+    try {
+      await deleteClientOrder(o.id);
+      toast.success('Commande supprimée');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Suppression impossible');
+    }
+  };
+
   const openEditOrder = (o: ClientOrder) => {
+    if (!isClientOrderEditable(o.statut)) {
+      toast.error('Cette commande est livrée ou annulée et ne peut plus être modifiée.');
+      return;
+    }
     const linked = findSupplierLoadingForOrder(supplierLoadings, o.id);
+    const inv = invoiceForOrder(o);
+    const invPay =
+      inv && inv.montantTTC > 0
+        ? paymentModeFromInvoice(inv.montantTTC, inv.montantPaye, inv.statut)
+        : { mode: 'en_attente' as PaymentAtCreationMode, montantAvance: undefined };
     setEditingOrder(o);
     setOrderForm({
       supplierLoadingId: linked?.id ?? '',
@@ -272,6 +318,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       dateCommande: o.dateCommande,
       dateLivraisonSouhaitee: o.dateLivraisonSouhaitee ?? '',
       notes: o.notes ?? '',
+      paiementMode: invPay.mode,
+      montantAvance: invPay.montantAvance,
+      datePaiement: inv?.datePaiement ?? inv?.dateCreation ?? todayIso(),
     });
     setOrderDialogOpen(true);
   };
@@ -284,8 +333,29 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     }
     await withGuard(async () => {
       try {
+        if (editingOrder && !isClientOrderEditable(editingOrder.statut)) {
+          toast.error('Cette commande est livrée ou annulée et ne peut plus être modifiée.');
+          return;
+        }
         const finalMontant =
           recalcMontant(orderForm.quantite, orderForm.prixUnitaire) ?? orderForm.montant;
+        const montantCmd = Math.round(finalMontant ?? 0);
+        const payment =
+          montantCmd > 0
+            ? resolvePaymentAtCreation({
+                mode: orderForm.paiementMode,
+                montantTotal: montantCmd,
+                montantAvance: orderForm.montantAvance,
+              })
+            : null;
+        if (
+          orderForm.paiementMode === 'avance' &&
+          montantCmd > 0 &&
+          (orderForm.montantAvance == null || orderForm.montantAvance <= 0)
+        ) {
+          toast.error('Indiquez le montant de l’acompte encaissé.');
+          return;
+        }
         const payload = {
           clientId,
           articleId: orderForm.articleId || undefined,
@@ -300,6 +370,13 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
           dateCommande: orderForm.dateCommande,
           dateLivraisonSouhaitee: orderForm.dateLivraisonSouhaitee || undefined,
           notes: orderForm.notes.trim() || undefined,
+          ...(payment
+            ? {
+                montantPaye: payment.montantPaye,
+                datePaiement:
+                  payment.montantPaye > 0 ? orderForm.datePaiement : undefined,
+              }
+            : {}),
         };
         if (editingOrder) {
           await updateClientOrder(editingOrder.id, payload);
@@ -344,9 +421,21 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               orderForm.supplierLoadingId.trim(),
               orderForm.quantite,
             );
-            toast.success('Commande enregistrée et liée au bon fournisseur');
+            const payMsg =
+              payment && payment.montantPaye > 0
+                ? payment.statut === 'payee'
+                  ? ' — facture soldée'
+                  : ` — acompte ${payment.montantPaye.toLocaleString('fr-FR')} FCFA`
+                : '';
+            toast.success(`Commande enregistrée et liée au bon fournisseur${payMsg}`);
           } else {
-            toast.success('Commande enregistrée');
+            const payMsg =
+              payment && payment.montantPaye > 0
+                ? payment.statut === 'payee'
+                  ? ' — facture soldée'
+                  : ` — acompte ${payment.montantPaye.toLocaleString('fr-FR')} FCFA`
+                : '';
+            toast.success(`Commande enregistrée${payMsg}`);
           }
         }
         setOrderDialogOpen(false);
@@ -537,32 +626,47 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       Facture {invoiceForOrder(o)!.numero}
                     </Link>
                   )}
-                  <div className="flex gap-1 mt-2">
-                    <Button type="button" size="sm" variant="ghost" onClick={() => openEditOrder(o)}>
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openNewDelivery(o.id)}
-                    >
-                      <Truck className="h-3.5 w-3.5 mr-1" />
-                      Livrer
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => {
-                        if (confirm(`Supprimer la commande « ${o.designation} » ?`)) {
-                          void deleteClientOrder(o.id).then(() => toast.success('Commande supprimée'));
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                  <div className="flex gap-1 mt-2 flex-wrap items-center">
+                    {isClientOrderEditable(o.statut) ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openEditOrder(o)}
+                          title="Modifier la commande"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        {canDeleteClientOrder(o.statut) && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            title="Supprimer la commande"
+                            onClick={() => void handleDeleteOrder(o)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground px-1">
+                        Commande terminée (non modifiable)
+                      </span>
+                    )}
+                    {o.statut !== 'annulee' && o.statut !== 'livree' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openNewDelivery(o.id)}
+                      >
+                        <Truck className="h-3.5 w-3.5 mr-1" />
+                        Livrer
+                      </Button>
+                    )}
                   </div>
                 </li>
               );
@@ -853,6 +957,25 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 rows={2}
               />
             </div>
+            <PaymentAtCreationFields
+                label="Encaissement client (FAC-CMD)"
+                montant={
+                  recalcMontant(orderForm.quantite, orderForm.prixUnitaire) ??
+                  orderForm.montant ??
+                  0
+                }
+                mode={orderForm.paiementMode}
+                onModeChange={(m) => setOrderForm((p) => ({ ...p, paiementMode: m }))}
+                montantAvance={orderForm.montantAvance}
+                onMontantAvanceChange={(v) =>
+                  setOrderForm((p) => ({ ...p, montantAvance: v }))
+                }
+                datePaiement={orderForm.datePaiement}
+                onDatePaiementChange={(v) =>
+                  setOrderForm((p) => ({ ...p, datePaiement: v }))
+                }
+                variant="client"
+              />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOrderDialogOpen(false)}>
                 Annuler

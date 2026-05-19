@@ -1,10 +1,9 @@
 import * as XLSX from 'xlsx';
 import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
 
-interface ExportColumn<T> {
+export interface ExportColumnDef<T> {
   header: string;
   value: (row: T, index: number) => string | number | null | undefined;
-  // Style conditionnel pour la cellule (permet de colorier en rouge/vert, etc.)
   cellStyle?: (row: T, index: number) => 'positive' | 'negative' | 'neutral' | undefined;
 }
 
@@ -13,8 +12,21 @@ interface ExportOptions<T> {
   fileName: string;
   sheetName?: string;
   filtersDescription?: string;
-  columns: ExportColumn<T>[];
+  columns: ExportColumnDef<T>[];
   rows: T[];
+}
+
+/** Sous-tableau affiché sous la synthèse (par client, par section, etc.). */
+export interface ExportDetailBlock {
+  title: string;
+  columns: string[];
+  rows: (string | number)[][];
+}
+
+export interface ExportWithDetailsOptions<T> extends ExportOptions<T> {
+  buildDetailBlocks: (row: T, index: number) => ExportDetailBlock[];
+  getDetailHeading?: (row: T, index: number) => string;
+  detailsSectionTitle?: string;
 }
 
 export function exportToExcel<T>(options: ExportOptions<T>) {
@@ -55,6 +67,177 @@ export function exportToExcel<T>(options: ExportOptions<T>) {
   XLSX.writeFile(workbook, fileName);
 }
 
+function appendDetailBlockRows(
+  data: (string | number)[][],
+  block: ExportDetailBlock,
+): void {
+  data.push([block.title]);
+  data.push(block.columns);
+  block.rows.forEach((row) => {
+    data.push(row.map((c) => (c == null ? '' : c)));
+  });
+  data.push([]);
+}
+
+/** Export Excel : tableau de synthèse puis, pour chaque ligne, blocs de détail structurés. */
+export function exportToExcelWithDetails<T>(options: ExportWithDetailsOptions<T>) {
+  const {
+    title,
+    fileName,
+    sheetName = 'Données',
+    filtersDescription,
+    columns,
+    rows,
+    buildDetailBlocks,
+    getDetailHeading,
+    detailsSectionTitle = 'DÉTAIL PAR CLIENT',
+  } = options;
+
+  const data: (string | number)[][] = [];
+  data.push([title]);
+  if (filtersDescription) data.push([filtersDescription]);
+  data.push([]);
+  data.push(columns.map((c) => c.header));
+  rows.forEach((row, index) => {
+    data.push(
+      columns.map((c) => {
+        const value = c.value(row, index);
+        if (value == null) return '';
+        return typeof value === 'number' || typeof value === 'string' ? value : String(value);
+      }),
+    );
+  });
+
+  data.push([]);
+  data.push([detailsSectionTitle]);
+  data.push([]);
+
+  rows.forEach((row, index) => {
+    const heading = getDetailHeading?.(row, index) ?? `Ligne ${index + 1}`;
+    data.push([`▸ ${heading}`]);
+    data.push([]);
+    buildDetailBlocks(row, index).forEach((block) => appendDetailBlockRows(data, block));
+    data.push([]);
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, fileName);
+}
+
+export interface ExportDocumentOptions {
+  title: string;
+  fileName: string;
+  filtersDescription?: string;
+  sheetName?: string;
+  /** Tableau principal (synthèse). */
+  summary: ExportDetailBlock;
+  /** Sections détaillées sous la synthèse. */
+  sections?: ExportDetailBlock[];
+}
+
+/** Export Excel multi-sections : synthèse puis blocs détaillés. */
+export function exportDocumentToExcel(options: ExportDocumentOptions): void {
+  const { title, fileName, sheetName = 'Données', filtersDescription, summary, sections = [] } =
+    options;
+  const data: (string | number)[][] = [];
+  data.push([title]);
+  if (filtersDescription) data.push([filtersDescription]);
+  data.push([]);
+  appendDetailBlockRows(data, summary);
+  for (const block of sections) {
+    appendDetailBlockRows(data, block);
+  }
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, fileName);
+}
+
+export interface PDFDocumentOptions extends ExportDocumentOptions {
+  headerColor?: string;
+  headerTextColor?: string;
+  accentColor?: string;
+  totals?: ExportTotal[];
+}
+
+/** Export PDF multi-sections (fenêtre d’impression). */
+export function exportDocumentToPDF(options: PDFDocumentOptions): void {
+  const accentColor = options.accentColor ?? '#1e40af';
+  const headerColor = options.headerColor ?? accentColor;
+  const summaryRows = options.summary.rows
+    .map((row, ri) => {
+      const bg = ri % 2 === 0 ? '#ffffff' : '#f9fafb';
+      const cells = row
+        .map((c) => `<td>${escapeHtml(c == null ? '' : String(c))}</td>`)
+        .join('');
+      return `<tr style="background-color:${bg};">${cells}</tr>`;
+    })
+    .join('');
+  const summaryHeaders = options.summary.columns
+    .map((h) => `<th>${escapeHtml(h)}</th>`)
+    .join('');
+  const detailHtml = (options.sections ?? [])
+    .map((block) => buildPdfDetailBlockHtml(block, accentColor))
+    .join('');
+  const filtersBlock = options.filtersDescription
+    ? `<div class="filters-box">${escapeHtml(options.filtersDescription)}</div>`
+    : '';
+  const totals = options.totals ?? [];
+  const totalsHtml =
+    totals.length > 0
+      ? `<div class="totals-section"><h3 class="totals-title">Récapitulatif</h3><div class="totals-grid">${totals
+          .map(
+            (t) =>
+              `<div class="total-item ${t.style ?? 'neutral'}"><div class="total-label">${t.icon ?? ''} ${escapeHtml(t.label)}</div><div class="total-value">${escapeHtml(String(t.value))}</div></div>`,
+          )
+          .join('')}</div></div>`
+      : '';
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  const currentDate = new Date().toLocaleString('fr-FR', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  printWindow.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"/><title>${escapeHtml(options.title)}</title>
+<style>
+body{font-family:system-ui,sans-serif;padding:24px;color:#111827;margin:0}
+h1{font-size:22px;color:${accentColor};margin:0 0 8px}
+.date{font-size:12px;color:#6b7280;margin-bottom:20px}
+.filters-box{background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px}
+table{width:100%;border-collapse:collapse;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+thead th{padding:10px;text-align:left;font-size:11px;background:${headerColor};color:${options.headerTextColor ?? '#fff'}}
+tbody td{padding:8px;font-size:12px;border-bottom:1px solid #e5e7eb}
+.detail-block{margin-top:16px}
+.detail-block-title{font-size:12px;font-weight:600;color:#4b5563;margin:0 0 8px;text-transform:uppercase}
+.totals-section{margin-top:24px;padding:16px;border:2px solid ${accentColor};border-radius:12px}
+.totals-grid{display:flex;flex-wrap:wrap;gap:12px}
+.total-item{padding:12px 20px;border-radius:8px;text-align:center;min-width:140px}
+.total-item.neutral{background:#f3f4f6;border:1px solid #9ca3af}
+.total-item.positive{background:#dcfce7;border:1px solid #22c55e}
+.total-label{font-size:11px;color:#6b7280}
+.total-value{font-size:18px;font-weight:700}
+</style></head><body>
+<h1>${escapeHtml(options.title)}</h1>
+<p class="date">Document généré le ${currentDate}</p>
+${filtersBlock}
+<h2 style="font-size:14px;color:${accentColor}">${escapeHtml(options.summary.title)}</h2>
+<table><thead><tr>${summaryHeaders}</tr></thead><tbody>${summaryRows}</tbody></table>
+${detailHtml}
+${totalsHtml}
+<p style="margin-top:24px;font-size:11px;color:#9ca3af;text-align:center">TruckTrack · ${currentDate}</p>
+</body></html>`);
+  printWindow.document.close();
+  setTimeout(() => printWindow.print(), 250);
+}
+
 // Interface pour les totaux à afficher dans l'export
 export interface ExportTotal {
   label: string;
@@ -72,15 +255,75 @@ export interface PDFBranding {
 }
 
 export interface PDFExportOptions<T> extends ExportOptions<T> {
-  headerColor?: string; // Couleur de fond de l'en-tête (défaut: bleu)
-  headerTextColor?: string; // Couleur du texte de l'en-tête (défaut: blanc)
-  evenRowColor?: string; // Couleur des lignes paires (défaut: gris clair)
-  oddRowColor?: string; // Couleur des lignes impaires (défaut: blanc)
-  accentColor?: string; // Couleur d'accent pour le titre (défaut: bleu)
-  totals?: ExportTotal[]; // Totaux à afficher en bas du tableau
+  headerColor?: string;
+  headerTextColor?: string;
+  evenRowColor?: string;
+  oddRowColor?: string;
+  accentColor?: string;
+  totals?: ExportTotal[];
   branding?: PDFBranding;
-  /** Masque le bloc « Total enregistrements » (utile quand les totaux détaillés suffisent) */
   hideDefaultStatBox?: boolean;
+  buildDetailBlocks?: (row: T, index: number) => ExportDetailBlock[];
+  getDetailHeading?: (row: T, index: number) => string;
+  detailsSectionTitle?: string;
+}
+
+export function exportToPrintablePDFWithDetails<T>(options: PDFExportOptions<T>) {
+  exportToPrintablePDF(options);
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildPdfDetailBlockHtml(block: ExportDetailBlock, accentColor: string): string {
+  const headers = block.columns.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+  const body = block.rows
+    .map((row, ri) => {
+      const bg = ri % 2 === 0 ? '#ffffff' : '#f9fafb';
+      const cells = row
+        .map((c) => `<td>${escapeHtml(c == null ? '' : String(c))}</td>`)
+        .join('');
+      return `<tr style="background-color:${bg};">${cells}</tr>`;
+    })
+    .join('');
+  return `
+    <div class="detail-block">
+      <h4 class="detail-block-title">${escapeHtml(block.title)}</h4>
+      <table class="detail-table">
+        <thead><tr style="background:${accentColor};color:#fff;">${headers}</tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function buildPdfDetailsSectionHtml<T>(
+  pdfOptions: PDFExportOptions<T>,
+  rows: T[],
+  accentColor: string,
+): string {
+  if (!pdfOptions.buildDetailBlocks) return '';
+  const sectionTitle = pdfOptions.detailsSectionTitle ?? 'DÉTAIL PAR CLIENT';
+  const parts = rows.map((row, index) => {
+    const heading = pdfOptions.getDetailHeading?.(row, index) ?? `Ligne ${index + 1}`;
+    const blocks = pdfOptions.buildDetailBlocks!(row, index)
+      .map((b) => buildPdfDetailBlockHtml(b, accentColor))
+      .join('');
+    return `
+      <div class="client-detail-card">
+        <h3 class="client-detail-heading">${escapeHtml(heading)}</h3>
+        ${blocks}
+      </div>`;
+  });
+  return `
+    <div class="details-section">
+      <h2 class="details-section-title">${escapeHtml(sectionTitle)}</h2>
+      ${parts.join('')}
+    </div>`;
 }
 
 export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOptions<T>) {
@@ -355,6 +598,62 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
           .total-item.neutral .total-value {
             color: #374151;
           }
+          .details-section {
+            margin-top: 36px;
+            page-break-before: auto;
+          }
+          .details-section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: ${accentColor};
+            margin: 0 0 20px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid ${accentColor};
+          }
+          .client-detail-card {
+            margin-bottom: 28px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #fafafa;
+            page-break-inside: avoid;
+          }
+          .client-detail-heading {
+            font-size: 14px;
+            font-weight: 700;
+            color: #111827;
+            margin: 0 0 14px 0;
+          }
+          .detail-block {
+            margin-bottom: 16px;
+          }
+          .detail-block-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #4b5563;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+          }
+          .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-bottom: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+          }
+          .detail-table thead th {
+            padding: 8px 6px;
+            text-align: left;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+          }
+          .detail-table tbody td {
+            padding: 7px 6px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+          }
           @media print {
             body {
               padding: 0;
@@ -400,6 +699,7 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
             ${tableRows}
           </tbody>
         </table>
+        ${buildPdfDetailsSectionHtml(pdfOptions, rows, accentColor)}
         ${totals.length > 0 ? `
         <div class="totals-section">
           <div class="totals-title">📊 RÉCAPITULATIF DES TOTAUX</div>

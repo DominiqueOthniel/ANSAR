@@ -147,9 +147,8 @@ export function checkPretAccordePlafond(params: {
     tauxInteret: params.tauxInteret ?? 0,
   });
   if (encours + newCible <= plafond + 0.01) return { ok: true };
-  const dispo = Math.max(0, plafond - encours);
   return {
     ok: false,
-    message: `Plafond « ${client.nom} » : ${Math.round(dispo).toLocaleString('fr-FR')} FCFA encore disponibles (encours commandes non payées ${Math.round(encours).toLocaleString('fr-FR')} FCFA / plafond ${Math.round(plafond).toLocaleString('fr-FR')} FCFA). Cette nouvelle ligne représente ${Math.round(newCible).toLocaleString('fr-FR')} FCFA à recouvrer (montant + % si renseigné).`,
+    message: `Ce client n'est pas éligible — le plafond d'encours serait dépassé.`,
   };
 }

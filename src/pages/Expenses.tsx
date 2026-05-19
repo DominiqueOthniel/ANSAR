@@ -27,6 +27,14 @@ import {
   getArticleSupplierUnitPrice,
   listArticlesForSupplier,
 } from '@/lib/article-pricing';
+import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
+import {
+  paymentModeFromInvoice,
+  resolvePaymentAtCreation,
+  type PaymentAtCreationMode,
+} from '@/lib/payment-at-creation';
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const categories = ['Carburant', 'Maintenance', 'Péage', 'Assurance', 'Salaire', 'Don', 'Autre'];
 
@@ -120,6 +128,9 @@ export default function Expenses() {
     prixUnitaire: undefined as number | undefined,
     date: '',
     description: '',
+    paiementMode: 'en_attente' as PaymentAtCreationMode,
+    montantAvance: undefined as number | undefined,
+    datePaiement: todayIso(),
   });
 
   const [invoiceFormData, setInvoiceFormData] = useState({
@@ -142,6 +153,9 @@ export default function Expenses() {
       prixUnitaire: undefined,
       date: '',
       description: '',
+      paiementMode: 'en_attente',
+      montantAvance: undefined,
+      datePaiement: todayIso(),
     });
     setEditingExpense(null);
     setNewSubCategory('');
@@ -247,6 +261,24 @@ export default function Expenses() {
       finalMontant = formData.quantite * formData.prixUnitaire;
     }
 
+    if (
+      formData.paiementMode === 'avance' &&
+      finalMontant > 0 &&
+      (formData.montantAvance == null || formData.montantAvance <= 0)
+    ) {
+      toast.error('Indiquez le montant de l’acompte payé.');
+      return;
+    }
+
+    const payment =
+      finalMontant > 0
+        ? resolvePaymentAtCreation({
+            mode: formData.paiementMode,
+            montantTotal: finalMontant,
+            montantAvance: formData.montantAvance,
+          })
+        : null;
+
     let chauffeurPayload = formData.chauffeurId || undefined;
     let fournisseurPayload = formData.fournisseurId || undefined;
     if (formData.categorie === 'Salaire') {
@@ -295,7 +327,14 @@ export default function Expenses() {
                 const montantTVA = tvaRate > 0 ? montantHTApresRemise * tvaRate : undefined;
                 const montantTPS = tpsRate > 0 ? montantHTApresRemise * tpsRate : undefined;
                 const montantTTC = montantHTApresRemise + (montantTVA || 0) + (montantTPS || 0);
-                const montantPaye = Math.min(inv.montantPaye || 0, montantTTC);
+                const payResolved =
+                  payment ??
+                  resolvePaymentAtCreation({
+                    mode: formData.paiementMode,
+                    montantTotal: montantTTC,
+                    montantAvance: formData.montantAvance,
+                  });
+                const montantPaye = Math.min(payResolved.montantPaye, montantTTC);
                 await updateInvoice(inv.id, {
                   montantHT: updated.montant,
                   remise: remisePct > 0 ? remisePct : undefined,
@@ -304,7 +343,11 @@ export default function Expenses() {
                   tps: montantTPS,
                   montantTTC,
                   montantPaye,
-                  statut: montantPaye >= montantTTC ? 'payee' : 'en_attente',
+                  statut: payResolved.statut,
+                  datePaiement:
+                    montantPaye > 0
+                      ? formData.datePaiement || formData.date || todayIso()
+                      : undefined,
                 });
               }),
             );
@@ -320,16 +363,27 @@ export default function Expenses() {
             categorie: created.categorie,
           });
           try {
+            const pay = payment ?? { montantPaye: 0, statut: 'en_attente' as const };
             await createInvoice({
               numero: nextExpenseInvoiceNumero(invoices),
               expenseId: created.id,
-              statut: 'en_attente',
+              statut: pay.statut,
               montantHT: created.montant,
               montantTTC: created.montant,
-              montantPaye: 0,
+              montantPaye: pay.montantPaye,
+              datePaiement:
+                pay.montantPaye > 0
+                  ? formData.datePaiement || formData.date || todayIso()
+                  : undefined,
               dateCreation: new Date().toISOString().split('T')[0],
             });
-            toast.success('Dépense ajoutée — facture fournisseur créée automatiquement');
+            const payMsg =
+              pay.montantPaye > 0
+                ? pay.statut === 'payee'
+                  ? ' — facture soldée'
+                  : ` — acompte ${pay.montantPaye.toLocaleString('fr-FR')} FCFA`
+                : '';
+            toast.success(`Dépense ajoutée — facture fournisseur créée${payMsg}`);
           } catch (invErr) {
             console.error(invErr);
             toast.error(
@@ -348,6 +402,11 @@ export default function Expenses() {
   };
 
   const handleEdit = (expense: Expense) => {
+    const linkedInv = invoices.find((inv) => inv.expenseId === expense.id);
+    const invPay =
+      linkedInv && linkedInv.montantTTC > 0
+        ? paymentModeFromInvoice(linkedInv.montantTTC, linkedInv.montantPaye, linkedInv.statut)
+        : { mode: 'en_attente' as PaymentAtCreationMode, montantAvance: undefined };
     setEditingExpense(expense);
     setFormData({
       camionId: expense.camionId ?? '',
@@ -362,6 +421,9 @@ export default function Expenses() {
       prixUnitaire: expense.prixUnitaire,
       date: expense.date,
       description: expense.description,
+      paiementMode: invPay.mode,
+      montantAvance: invPay.montantAvance,
+      datePaiement: linkedInv?.datePaiement ?? linkedInv?.dateCreation ?? todayIso(),
     });
     setIsDialogOpen(true);
   };
@@ -1042,6 +1104,28 @@ export default function Expenses() {
                   required
                 />
               </div>
+              <PaymentAtCreationFields
+                label="Paiement fournisseur (FAC-EXP)"
+                montant={
+                  formData.quantite != null &&
+                  formData.prixUnitaire != null &&
+                  formData.quantite > 0 &&
+                  formData.prixUnitaire > 0
+                    ? formData.quantite * formData.prixUnitaire
+                    : formData.montant
+                }
+                mode={formData.paiementMode}
+                onModeChange={(m) => setFormData((p) => ({ ...p, paiementMode: m }))}
+                montantAvance={formData.montantAvance}
+                onMontantAvanceChange={(v) =>
+                  setFormData((p) => ({ ...p, montantAvance: v }))
+                }
+                datePaiement={formData.datePaiement}
+                onDatePaiementChange={(v) =>
+                  setFormData((p) => ({ ...p, datePaiement: v }))
+                }
+                variant="fournisseur"
+              />
               <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enregistrement...</> : (editingExpense ? 'Modifier' : 'Ajouter')}
               </Button>

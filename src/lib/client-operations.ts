@@ -28,6 +28,20 @@ export function formatClientOrderStatusFr(s: ClientOrderStatus): string {
   return ORDER_STATUS_LABELS[s] ?? s;
 }
 
+/** Commande clôturée : plus de modification ni suppression. */
+export function isClientOrderLocked(statut: ClientOrderStatus): boolean {
+  return statut === 'livree' || statut === 'annulee';
+}
+
+/** Modifiable tant que la commande n’est pas livrée ni annulée. */
+export function isClientOrderEditable(statut: ClientOrderStatus): boolean {
+  return !isClientOrderLocked(statut);
+}
+
+export function canDeleteClientOrder(statut: ClientOrderStatus): boolean {
+  return isClientOrderEditable(statut);
+}
+
 export function formatClientDeliveryStatusFr(s: ClientDeliveryStatus): string {
   return DELIVERY_STATUS_LABELS[s] ?? s;
 }

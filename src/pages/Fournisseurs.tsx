@@ -37,6 +37,15 @@ import {
 } from 'lucide-react';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import { cn } from '@/lib/utils';
+import { ExportButtons } from '@/components/ExportButtons';
+import {
+  exportToExcel,
+  exportToExcelWithDetails,
+  exportToPrintablePDF,
+  exportToPrintablePDFWithDetails,
+} from '@/lib/export-utils';
+import { toast } from 'sonner';
+import { EMOJI } from '@/lib/emoji-palette';
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -138,6 +147,124 @@ export default function Fournisseurs() {
     }
   }, [filtered, selectedId]);
 
+  const getFiltersDescription = () => {
+    const parts: string[] = [];
+    if (search.trim()) parts.push(`Recherche: "${search.trim()}"`);
+    if (filterEtat !== 'all') parts.push(`État: ${formatSupplierEtatFr(filterEtat)}`);
+    parts.push(viewMode === 'fil' ? 'Vue: fil global' : 'Vue: par fournisseur');
+    return parts.join(' · ');
+  };
+
+  const summaryColumns = [
+    { header: 'Fournisseur', value: (s: SupplierSummary) => s.nom },
+    { header: 'État', value: (s: SupplierSummary) => formatSupplierEtatFr(s.etat) },
+    { header: 'Bons total', value: (s: SupplierSummary) => s.chargementsTotal },
+    { header: 'Bons non affectés', value: (s: SupplierSummary) => s.chargementsEnAttente },
+    { header: 'Bons partiels', value: (s: SupplierSummary) => s.chargementsPartiels },
+    { header: 'Dépenses (90 j.)', value: (s: SupplierSummary) => s.depensesRecentes },
+    {
+      header: 'Montant dépenses (FCFA)',
+      value: (s: SupplierSummary) => Math.round(s.montantDepensesRecentes),
+    },
+    { header: 'Transports sous-traités', value: (s: SupplierSummary) => s.transportsDirectClient },
+    { header: 'Tarifs catalogue', value: (s: SupplierSummary) => s.tarifsArticles },
+    { header: 'Dernière activité', value: (s: SupplierSummary) => s.derniereActivite ?? '—' },
+  ];
+
+  const buildSupplierDetailBlocks = (s: SupplierSummary) => [
+    {
+      title: `Activités récentes (${s.activites.length})`,
+      columns: ['Date', 'Type', 'Libellé', 'Détail', 'Montant (FCFA)', 'Statut'],
+      rows:
+        s.activites.length > 0
+          ? s.activites.map((a) => [
+              a.date,
+              formatSupplierActivityKindFr(a.kind),
+              a.label,
+              a.detail ?? '—',
+              a.amount != null ? Math.round(a.amount) : '—',
+              a.statut ?? '—',
+            ])
+          : [['—', 'Aucune activité récente', '', '', '', '']],
+    },
+  ];
+
+  const handleExportExcel = () => {
+    if (viewMode === 'fil') {
+      const feed = buildGlobalSupplierFeed(summaries, 500);
+      exportToExcel({
+        title: 'Mouvements fournisseurs',
+        fileName: `fournisseurs_fil_${new Date().toISOString().split('T')[0]}.xlsx`,
+        sheetName: 'Mouvements',
+        filtersDescription: getFiltersDescription(),
+        columns: [
+          { header: 'Date', value: (a) => a.date },
+          { header: 'Fournisseur', value: (a) => a.fournisseurNom },
+          { header: 'Type', value: (a) => formatSupplierActivityKindFr(a.kind) },
+          { header: 'Libellé', value: (a) => a.label },
+          { header: 'Détail', value: (a) => a.detail ?? '—' },
+          {
+            header: 'Montant (FCFA)',
+            value: (a) => (a.amount != null ? Math.round(a.amount) : '—'),
+          },
+          { header: 'Statut', value: (a) => a.statut ?? '—' },
+        ],
+        rows: feed,
+      });
+    } else {
+      exportToExcelWithDetails({
+        title: 'État des fournisseurs',
+        fileName: `fournisseurs_${new Date().toISOString().split('T')[0]}.xlsx`,
+        sheetName: 'Fournisseurs',
+        filtersDescription: getFiltersDescription(),
+        columns: summaryColumns,
+        rows: filtered,
+        buildDetailBlocks: buildSupplierDetailBlocks,
+        getDetailHeading: (s) => s.nom,
+      });
+    }
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    if (viewMode === 'fil') {
+      const feed = buildGlobalSupplierFeed(summaries, 500);
+      exportToPrintablePDF({
+        title: 'Mouvements fournisseurs',
+        fileName: `fournisseurs_fil_${new Date().toISOString().split('T')[0]}.pdf`,
+        filtersDescription: getFiltersDescription(),
+        headerColor: '#ca8a04',
+        accentColor: '#ca8a04',
+        columns: [
+          { header: 'Date', value: (a) => a.date },
+          { header: 'Fournisseur', value: (a) => a.fournisseurNom },
+          { header: 'Type', value: (a) => formatSupplierActivityKindFr(a.kind) },
+          { header: 'Libellé', value: (a) => a.label },
+          { header: 'Montant', value: (a) => (a.amount != null ? `${Math.round(a.amount)} F` : '—') },
+        ],
+        rows: feed,
+      });
+    } else {
+      exportToPrintablePDFWithDetails({
+        title: 'État des fournisseurs',
+        fileName: `fournisseurs_${new Date().toISOString().split('T')[0]}.pdf`,
+        filtersDescription: getFiltersDescription(),
+        headerColor: '#ca8a04',
+        accentColor: '#ca8a04',
+        totals: [
+          { label: 'Fournisseurs', value: filtered.length, style: 'neutral', icon: EMOJI.liste },
+          { label: 'À traiter', value: kpis.alerte, style: 'negative', icon: '⚠️' },
+          { label: 'Bons en attente', value: kpis.bonsAttente, style: 'neutral', icon: '📦' },
+        ],
+        columns: summaryColumns,
+        rows: filtered,
+        buildDetailBlocks: buildSupplierDetailBlocks,
+        getDetailHeading: (s) => s.nom,
+      });
+    }
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -145,6 +272,7 @@ export default function Fournisseurs() {
         description={PAGE_FOURNISSEURS_DESCRIPTION}
         actions={
           <div className="flex flex-wrap gap-2">
+            <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
             <Button variant="outline" size="sm" asChild>
               <Link to="/chargements">
                 <Container className="h-4 w-4 mr-1" />

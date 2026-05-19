@@ -239,6 +239,12 @@ export class SupplierLoadingsService {
       if (cancelled.length > 0) {
         throw new BadRequestException('Impossible d’affecter à une commande annulée.');
       }
+      const clientIds = new Set(orders.map((o) => o.clientId));
+      if (clientIds.size > 1) {
+        throw new BadRequestException(
+          'Un bon ne peut être affecté qu’à un seul client.',
+        );
+      }
     }
 
     await this.assignmentRepo.delete({ loadingId: id });

@@ -16,6 +16,12 @@ import PageHeader from '@/components/PageHeader';
 import { PAGE_CLIENTS_DESCRIPTION, PAGE_TIERS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
+import {
+  buildSoldeInitialMap,
+  exportClientsDetailedExcel,
+  exportClientsDetailedPDF,
+} from '@/lib/client-export';
+import { loadCreditsForPlafond } from '@/lib/client-initial-balance';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
@@ -603,13 +609,38 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     return filters.length > 0 ? `Filtres appliqués: ${filters.join(', ')}` : sortLabel ? `Tri: ${sortLabel}` : undefined;
   };
 
-  // Fonctions d'export
+  const buildClientsExportContext = async () => {
+    const clients = sortedThirdParties.filter((tp) => tp.type === 'client');
+    const credits =
+      creditsForPlafondSheet.length > 0
+        ? creditsForPlafondSheet
+        : await loadCreditsForPlafond();
+    const soldeInitialByClientId = await buildSoldeInitialMap(clients);
+    return {
+      clients,
+      clientOrders,
+      clientDeliveries,
+      invoices,
+      supplierLoadings,
+      credits,
+      soldeInitialByClientId,
+      filtersDescription: getFiltersDescription(),
+    };
+  };
+
   const handleExportExcel = () => {
-    const exportTitle = isClientsScope ? 'Liste des clients' : 'Liste des Tiers';
-    const exportPrefix = isClientsScope ? 'clients' : 'tiers';
+    if (isClientsScope) {
+      void withGuard(async () => {
+        const ctx = await buildClientsExportContext();
+        exportClientsDetailedExcel(ctx);
+        toast.success('Export Excel détaillé généré avec succès');
+      });
+      return;
+    }
+    const exportTitle = 'Liste des Tiers';
     exportToExcel({
       title: exportTitle,
-      fileName: `${exportPrefix}_${new Date().toISOString().split('T')[0]}.xlsx`,
+      fileName: `tiers_${new Date().toISOString().split('T')[0]}.xlsx`,
       filtersDescription: getFiltersDescription(),
       columns: [
         { header: 'Nom', value: (tp) => tp.nom },
@@ -626,35 +657,40 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   };
 
   const handleExportPDF = () => {
+    if (isClientsScope) {
+      void withGuard(async () => {
+        const ctx = await buildClientsExportContext();
+        exportClientsDetailedPDF(ctx, [
+          { label: 'Clients exportés', value: ctx.clients.length, style: 'positive', icon: '👥' },
+          { label: 'Clients avec commandes', value: clientsWithOrders, style: 'neutral', icon: EMOJI.liste },
+        ]);
+        toast.success('Export PDF détaillé généré — utilisez « Enregistrer en PDF » dans la fenêtre d’impression');
+      });
+      return;
+    }
     const totalProprietaires = filteredThirdParties.filter((tp) => tp.type === 'proprietaire').length;
     const totalClients = filteredThirdParties.filter((tp) => tp.type === 'client').length;
     const totalFournisseurs = filteredThirdParties.filter((tp) => tp.type === 'fournisseur').length;
     const totalEmployes = filteredThirdParties.filter((tp) => tp.type === 'employe').length;
-    const exportTitle = isClientsScope ? 'Liste des clients' : 'Liste des Tiers';
-    const exportPrefix = isClientsScope ? 'clients' : 'tiers';
-    const headerColor = isClientsScope ? '#059669' : '#4f46e5';
+    const exportTitle = 'Liste des Tiers';
+    const headerColor = '#4f46e5';
 
     exportToPrintablePDF({
       title: exportTitle,
-      fileName: `${exportPrefix}_${new Date().toISOString().split('T')[0]}.pdf`,
+      fileName: `tiers_${new Date().toISOString().split('T')[0]}.pdf`,
       filtersDescription: getFiltersDescription(),
       headerColor,
       headerTextColor: '#ffffff',
-      evenRowColor: isClientsScope ? '#ecfdf5' : '#eef2ff',
+      evenRowColor: '#eef2ff',
       oddRowColor: '#ffffff',
       accentColor: headerColor,
-      totals: isClientsScope
-        ? [
-            { label: 'Clients', value: filteredThirdParties.length, style: 'positive' as const, icon: '👥' },
-            { label: 'Clients avec commandes', value: clientsWithOrders, style: 'neutral' as const, icon: EMOJI.liste },
-          ]
-        : [
+      totals: [
             { label: 'Total Tiers', value: filteredThirdParties.length, style: 'neutral', icon: EMOJI.liste },
             { label: 'Propriétaires', value: totalProprietaires, style: 'neutral', icon: '🏢' },
             { label: 'Clients', value: totalClients, style: 'positive', icon: '👥' },
             { label: 'Fournisseurs', value: totalFournisseurs, style: 'neutral', icon: '🏢' },
             { label: 'Personnel siège', value: totalEmployes, style: 'neutral', icon: '👔' },
-          ],
+      ],
       columns: [
         { header: 'Nom', value: (tp) => tp.nom },
         { header: 'Type', value: (tp) => {

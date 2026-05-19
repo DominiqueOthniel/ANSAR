@@ -2,7 +2,6 @@ import { useRef, useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Truck, ClipboardList, DollarSign, TrendingUp, TrendingDown, FileText, Users, Package, AlertCircle, LayoutDashboard, Building2, Wallet, RefreshCw, HardDrive, Upload, Receipt, Layers, UserCircle2, UserCog } from 'lucide-react';
-import { formatClientOrderStatusFr } from '@/lib/client-operations';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +18,15 @@ import { EMOJI } from '@/lib/emoji-palette';
 import { useAuth } from '@/contexts/AuthContext';
 import { adminApi } from '@/lib/api';
 import { toast } from 'sonner';
+import { ExportButtons } from '@/components/ExportButtons';
+import { exportDocumentToExcel, exportDocumentToPDF } from '@/lib/export-utils';
+import { formatClientOrderStatusFr } from '@/lib/client-operations';
 import { getCaisseSoldeActuel, getTotalBanqueDisponible } from '@/lib/bank-local';
+import {
+  buildDashboardMonths,
+  formatMonthLabelFr,
+  isSameCalendarMonth,
+} from '@/lib/calendar-month';
 
 /** Axe Y : montants lisibles (k / M) */
 function formatAxisFcfa(v: number): string {
@@ -212,55 +219,43 @@ export default function Dashboard() {
     percentage: ((value / totalDepenses) * 100).toFixed(1)
   }));
 
-  // Évolution mensuelle basée sur les vraies données
-  const monthlyData = (() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // Calculer les données pour les 3 derniers mois
-    const months = [];
-    for (let i = 2; i >= 0; i--) {
-      const date = new Date(currentYear, currentMonth - i, 1);
-      const monthName = date.toLocaleDateString('fr-FR', { month: 'short' });
-      
-      // Chiffre d'affaires et dépenses pour ce mois
-      const monthTrips = trips.filter((trip) => {
-        const tripDate = new Date(trip.dateDepart);
-        return tripDate.getMonth() === date.getMonth() &&
-               tripDate.getFullYear() === date.getFullYear();
-      });
-      const monthExpeditions = parcelExpeditions.filter((ex) => {
-        const exDate = new Date(ex.dateDepart);
-        return exDate.getMonth() === date.getMonth() && exDate.getFullYear() === date.getFullYear();
-      });
-      
-      const monthExpenses = expenses.filter(exp => {
-        const expDate = new Date(exp.date);
-        return expDate.getMonth() === date.getMonth() && 
-               expDate.getFullYear() === date.getFullYear();
-      });
-      
-      // Chiffre d'affaires du mois à partir des montants payés
+  // Évolution mensuelle : dates calendaires (sans décalage fuseau) + mois présents dans les données
+  const monthlyData = useMemo(() => {
+    const chartMonths = buildDashboardMonths(
+      [
+        ...expenses.map((e) => e.date),
+        ...trips.map((t) => t.dateDepart),
+        ...parcelExpeditions.map((ex) => ex.dateDepart),
+        ...invoices.map((inv) => inv.datePaiement ?? inv.dateCreation),
+      ],
+      { trailingMonths: 12, maxPoints: 18 },
+    );
+
+    return chartMonths.map((bucket) => {
+      const monthTrips = trips.filter((trip) =>
+        isSameCalendarMonth(trip.dateDepart, bucket),
+      );
+      const monthExpeditions = parcelExpeditions.filter((ex) =>
+        isSameCalendarMonth(ex.dateDepart, bucket),
+      );
+      const monthExpenses = expenses.filter((exp) => isSameCalendarMonth(exp.date, bucket));
+
       const monthRecettesTrips = monthTrips.reduce(
         (sum, trip) => sum + calculatePaidAmountForTrip(trip.id, invoices),
         0,
       );
-      const monthRecettesExpeditions = monthExpeditions.reduce((sum, ex) => {
-        return sum + calculatePaidAmountForParcelExpedition(ex.id, invoices);
-      }, 0);
-      const monthRecettes = monthRecettesTrips + monthRecettesExpeditions;
-      const monthDepenses = monthExpenses.reduce((sum, exp) => sum + exp.montant, 0);
-      
-      months.push({
-        month: monthName,
-        recettes: monthRecettes,
-        depenses: monthDepenses
-      });
-    }
-    
-    return months;
-  })();
+      const monthRecettesExpeditions = monthExpeditions.reduce(
+        (sum, ex) => sum + calculatePaidAmountForParcelExpedition(ex.id, invoices),
+        0,
+      );
+
+      return {
+        month: formatMonthLabelFr(bucket),
+        recettes: monthRecettesTrips + monthRecettesExpeditions,
+        depenses: monthExpenses.reduce((sum, exp) => sum + exp.montant, 0),
+      };
+    });
+  }, [expenses, trips, parcelExpeditions, invoices]);
 
   const COLORS = [
     'hsl(var(--chart-1))', 
@@ -269,6 +264,100 @@ export default function Dashboard() {
     'hsl(var(--chart-4))',
     'hsl(var(--chart-5))'
   ];
+
+  const handleExportExcel = () => {
+    exportDocumentToExcel({
+      title: 'Synthèse tableau de bord',
+      fileName: `dashboard_${new Date().toISOString().split('T')[0]}.xlsx`,
+      sheetName: 'Dashboard',
+      summary: {
+        title: 'Indicateurs clés',
+        columns: ['Indicateur', 'Valeur'],
+        rows: [
+          ['Encaissement (trajets + colis)', `${Math.round(totalRecettes).toLocaleString('fr-FR')} FCFA`],
+          ['Dépenses', `${Math.round(totalDepenses).toLocaleString('fr-FR')} FCFA`],
+          ['Bénéfice', `${Math.round(totalProfit).toLocaleString('fr-FR')} FCFA`],
+          ['Flotte active', `${activeTrucks} / ${trucks.length}`],
+          ['Caisse espèces', `${Math.round(soldeCaisseEspeces).toLocaleString('fr-FR')} FCFA`],
+          ['Banque disponible', `${Math.round(soldeBanqueDisponible).toLocaleString('fr-FR')} FCFA`],
+          ['Trésorerie totale', `${Math.round(tresorerieTotale).toLocaleString('fr-FR')} FCFA`],
+          ['Créances clients', `${Math.round(creancesClients).toLocaleString('fr-FR')} FCFA`],
+          ['Position entreprise', `${Math.round(positionEntreprise).toLocaleString('fr-FR')} FCFA`],
+          ['Factures en attente', `${pendingInvoices} (${Math.round(pendingAmount).toLocaleString('fr-FR')} FCFA)`],
+          ['Commandes actives', String(activeOrders)],
+          ['Commandes livrées', String(deliveredOrders)],
+        ],
+      },
+      sections: [
+        {
+          title: 'Évolution mensuelle',
+          columns: ['Mois', 'Recettes (FCFA)', 'Dépenses (FCFA)'],
+          rows: monthlyData.map((m) => [m.month, Math.round(m.recettes), Math.round(m.depenses)]),
+        },
+        {
+          title: 'Dépenses par catégorie',
+          columns: ['Catégorie', 'Montant (FCFA)', '%'],
+          rows: expensesData.map((e) => [e.name, Math.round(e.value), `${e.percentage}%`]),
+        },
+        {
+          title: 'Top camions (encaissement)',
+          columns: ['Immatriculation', 'Modèle', 'Missions', 'Encaissement (FCFA)'],
+          rows: truckRevenue.map((t) => [t.name, t.model, t.tripsCount, Math.round(t.revenue)]),
+        },
+        {
+          title: 'Commandes récentes',
+          columns: ['Date', 'Désignation', 'Statut', 'Montant (FCFA)'],
+          rows: recentOrdersSorted.slice(0, 30).map((o) => [
+            o.dateCommande,
+            o.designation,
+            formatClientOrderStatusFr(o.statut),
+            o.montant != null ? Math.round(o.montant) : '—',
+          ]),
+        },
+      ],
+    });
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    exportDocumentToPDF({
+      title: 'Synthèse tableau de bord',
+      fileName: `dashboard_${new Date().toISOString().split('T')[0]}.pdf`,
+      headerColor: '#7c3aed',
+      accentColor: '#7c3aed',
+      summary: {
+        title: 'Indicateurs clés',
+        columns: ['Indicateur', 'Valeur'],
+        rows: [
+          ['Encaissement', `${Math.round(totalRecettes).toLocaleString('fr-FR')} FCFA`],
+          ['Dépenses', `${Math.round(totalDepenses).toLocaleString('fr-FR')} FCFA`],
+          ['Bénéfice', `${Math.round(totalProfit).toLocaleString('fr-FR')} FCFA`],
+          ['Créances clients', `${Math.round(creancesClients).toLocaleString('fr-FR')} FCFA`],
+        ],
+      },
+      sections: [
+        {
+          title: 'Évolution mensuelle',
+          columns: ['Mois', 'Recettes', 'Dépenses'],
+          rows: monthlyData.map((m) => [
+            m.month,
+            Math.round(m.recettes).toLocaleString('fr-FR'),
+            Math.round(m.depenses).toLocaleString('fr-FR'),
+          ]),
+        },
+        {
+          title: 'Top camions',
+          columns: ['Camion', 'Encaissement (FCFA)'],
+          rows: truckRevenue.map((t) => [t.name, Math.round(t.revenue).toLocaleString('fr-FR')]),
+        },
+      ],
+      totals: [
+        { label: 'Factures', value: totalInvoices, style: 'neutral' },
+        { label: 'Commandes actives', value: activeOrders, style: 'neutral' },
+      ],
+    });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
 
   return (
     <div className="space-y-6 p-1">
@@ -306,6 +395,7 @@ export default function Dashboard() {
         ]}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
             <Badge variant="outline" className="text-xs sm:text-sm px-2 sm:px-4 py-1.5 sm:py-2 hidden sm:flex">
               {EMOJI.date} {new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </Badge>
@@ -478,7 +568,7 @@ export default function Dashboard() {
                 Chiffre d&apos;affaires vs dépenses
               </CardTitle>
               <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                Encaissements réels (trajets &amp; expéditions) et dépenses enregistrées — tendance sur trois mois glissants.
+                Encaissements réels (trajets &amp; expéditions) et dépenses selon leur date comptable — jusqu’à 12 mois + tout mois où il y a de l’activité.
               </p>
             </div>
             <div

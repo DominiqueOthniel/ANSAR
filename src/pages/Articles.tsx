@@ -29,6 +29,8 @@ import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Plus, Edit, Trash2, Search, ChevronDown, Boxes, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ExportButtons } from '@/components/ExportButtons';
+import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
 import { frCollator, stableSort } from '@/lib/list-sort';
 
 export default function Articles() {
@@ -233,12 +235,91 @@ export default function Articles() {
     });
   };
 
+  const handleExportExcel = () => {
+    exportToExcelWithDetails({
+      title: 'Catalogue articles',
+      fileName: `articles_${new Date().toISOString().split('T')[0]}.xlsx`,
+      sheetName: 'Articles',
+      filtersDescription: search.trim() ? `Recherche: "${search.trim()}"` : undefined,
+      columns: [
+        { header: 'Libellé', value: (a: Article) => a.libelle },
+        { header: 'Unité', value: (a: Article) => a.unite },
+        {
+          header: 'Prix vente (FCFA)',
+          value: (a: Article) => (a.prixVente != null ? Math.round(a.prixVente) : '—'),
+        },
+        { header: 'Actif', value: (a: Article) => (a.actif !== false ? 'Oui' : 'Non') },
+        {
+          header: 'Nb tarifs fournisseur',
+          value: (a: Article) => (a.supplierPrices ?? []).length,
+        },
+      ],
+      rows: sortedArticles,
+      buildDetailBlocks: (a) => [
+        {
+          title: `Tarifs fournisseurs (${(a.supplierPrices ?? []).length})`,
+          columns: ['Fournisseur', 'Prix unitaire (FCFA)', 'Notes'],
+          rows:
+            (a.supplierPrices ?? []).length > 0
+              ? (a.supplierPrices ?? []).map((p) => [
+                  p.fournisseurNom ?? p.fournisseurId,
+                  Math.round(p.prixUnitaire),
+                  p.notes ?? '—',
+                ])
+              : [['—', 'Aucun tarif enregistré', '']],
+        },
+      ],
+      getDetailHeading: (a) => a.libelle,
+    });
+    toast.success('Export Excel généré');
+  };
+
+  const handleExportPDF = () => {
+    exportToPrintablePDFWithDetails({
+      title: 'Catalogue articles',
+      fileName: `articles_${new Date().toISOString().split('T')[0]}.pdf`,
+      filtersDescription: search.trim() ? `Recherche: "${search.trim()}"` : undefined,
+      headerColor: '#7c3aed',
+      accentColor: '#7c3aed',
+      columns: [
+        { header: 'Libellé', value: (a: Article) => a.libelle },
+        { header: 'Unité', value: (a: Article) => a.unite },
+        {
+          header: 'Prix vente',
+          value: (a: Article) =>
+            a.prixVente != null ? `${Math.round(a.prixVente).toLocaleString('fr-FR')} F` : '—',
+        },
+        { header: 'Actif', value: (a: Article) => (a.actif !== false ? 'Oui' : 'Non') },
+      ],
+      rows: sortedArticles,
+      buildDetailBlocks: (a) => [
+        {
+          title: 'Tarifs fournisseurs',
+          columns: ['Fournisseur', 'Prix (FCFA)', 'Notes'],
+          rows:
+            (a.supplierPrices ?? []).length > 0
+              ? (a.supplierPrices ?? []).map((p) => [
+                  p.fournisseurNom ?? '—',
+                  Math.round(p.prixUnitaire),
+                  p.notes ?? '—',
+                ])
+              : [['—', '—', '—']],
+        },
+      ],
+      getDetailHeading: (a) => a.libelle,
+    });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Articles"
         description={PAGE_ARTICLES_DESCRIPTION}
         icon={Boxes}
+        actions={
+          <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
+        }
       />
 
       <Card>

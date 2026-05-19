@@ -17,6 +17,7 @@ import {
 import { ThirdParty } from '../entities/third-party.entity';
 import { Article } from '../entities/article.entity';
 import { Invoice } from '../entities/invoice.entity';
+import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignment.entity';
 import { CreateClientOrderDto } from './dto/create-client-order.dto';
 import { UpdateClientOrderDto } from './dto/update-client-order.dto';
 import { CreateClientDeliveryDto } from './dto/create-client-delivery.dto';
@@ -39,6 +40,8 @@ export class ClientOperationsService {
     private readonly articleRepo: Repository<Article>,
     @InjectRepository(Invoice)
     private readonly invoiceRepo: Repository<Invoice>,
+    @InjectRepository(SupplierLoadingAssignment)
+    private readonly loadingAssignmentRepo: Repository<SupplierLoadingAssignment>,
   ) {}
 
   private async assertClient(clientId: string): Promise<ThirdParty> {
@@ -122,12 +125,22 @@ export class ClientOperationsService {
     });
   }
 
-  private async ensureOrderInvoice(order: ClientOrder): Promise<void> {
+  private async ensureOrderInvoice(
+    order: ClientOrder,
+    payment?: { montantPaye?: number; datePaiement?: string },
+  ): Promise<void> {
     const montant = Number(order.montant ?? 0);
     if (montant <= 0) return;
 
     const libelle = order.designation;
     const notes = order.reference ? `Commande ${order.reference}` : undefined;
+    const payeRaw = payment?.montantPaye != null ? Number(payment.montantPaye) : 0;
+    const montantPaye = Math.min(Math.max(0, payeRaw), montant);
+    const statut = montantPaye >= montant - 0.01 ? 'payee' : 'en_attente';
+    const datePaiement =
+      montantPaye > 0
+        ? payment?.datePaiement?.trim() || order.dateCommande
+        : undefined;
 
     if (order.invoiceId) {
       const inv = await this.invoiceRepo.findOne({ where: { id: order.invoiceId } });
@@ -137,6 +150,9 @@ export class ClientOperationsService {
           clientOrderId: order.id,
           factureClientLibelle: libelle,
           notes: notes ?? inv.notes,
+          montantPaye,
+          statut,
+          datePaiement,
         });
         return;
       }
@@ -147,12 +163,13 @@ export class ClientOperationsService {
       numero: await this.nextInvoiceNum('FAC-CMD'),
       clientOrderId: order.id,
       clientTierId: order.clientId,
-      statut: 'en_attente',
+      statut,
       montantHT: montant,
       montantHTApresRemise: montant,
       montantTTC: montant,
-      montantPaye: 0,
+      montantPaye,
       dateCreation: order.dateCommande,
+      datePaiement,
       factureClientLibelle: libelle,
       notes,
     });
@@ -372,7 +389,10 @@ export class ClientOperationsService {
       notes: dto.notes?.trim() || undefined,
     });
     const saved = await this.orderRepo.save(row);
-    await this.ensureOrderInvoice(saved);
+    await this.ensureOrderInvoice(saved, {
+      montantPaye: dto.montantPaye,
+      datePaiement: dto.datePaiement,
+    });
     return this.findOrder(saved.id);
   }
 
@@ -399,6 +419,11 @@ export class ClientOperationsService {
 
   async updateOrder(id: string, dto: UpdateClientOrderDto): Promise<ClientOrder> {
     const existing = await this.findOrder(id);
+    if (existing.statut === 'livree' || existing.statut === 'annulee') {
+      throw new BadRequestException(
+        'Une commande livrée ou annulée ne peut plus être modifiée.',
+      );
+    }
     if (dto.clientId !== undefined) await this.assertClient(dto.clientId);
 
     const built = await this.buildOrderPayloadAsync(dto, existing);
@@ -439,12 +464,36 @@ export class ClientOperationsService {
     }
 
     const updated = await this.findOrder(id);
-    await this.ensureOrderInvoice(updated);
+    const payment =
+      dto.montantPaye !== undefined
+        ? {
+            montantPaye: dto.montantPaye,
+            datePaiement: dto.datePaiement,
+          }
+        : undefined;
+    await this.ensureOrderInvoice(updated, payment);
     return updated;
   }
 
   async removeOrder(id: string): Promise<void> {
-    await this.findOrder(id);
+    const existing = await this.findOrder(id);
+    if (existing.statut === 'livree' || existing.statut === 'annulee') {
+      throw new BadRequestException(
+        'Une commande livrée ou annulée ne peut pas être supprimée.',
+      );
+    }
+    let linkedInvoice = existing.invoiceId
+      ? await this.invoiceRepo.findOne({ where: { id: existing.invoiceId } })
+      : null;
+    if (!linkedInvoice) {
+      linkedInvoice = await this.invoiceRepo.findOne({ where: { clientOrderId: id } });
+    }
+    if (linkedInvoice) {
+      throw new BadRequestException(
+        'Impossible de supprimer : une facture est liée à cette commande. Annulez la commande ou retirez la facture d’abord.',
+      );
+    }
+    await this.loadingAssignmentRepo.delete({ clientOrderId: id });
     await this.orderRepo.delete(id);
   }
 
