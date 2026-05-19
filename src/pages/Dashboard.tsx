@@ -80,7 +80,7 @@ export default function Dashboard() {
     setIsBackingUp(true);
     try {
       const response = await adminApi.backup();
-      if (!response.ok) throw new Error('Erreur lors de la gÃ©nÃ©ration du backup');
+      if (!response.ok) throw new Error('Erreur lors de la génération du backup');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const filename = `truck-track-backup-${new Date().toISOString().split('T')[0]}.json`;
@@ -89,7 +89,7 @@ export default function Dashboard() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`Backup tÃ©lÃ©chargÃ© : ${filename}`);
+      toast.success(`Backup téléchargé : ${filename}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur lors du backup');
     } finally {
@@ -101,12 +101,12 @@ export default function Dashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.name.endsWith('.json')) {
-      toast.error('Fichier invalide : sÃ©lectionnez un fichier .json');
+      toast.error('Fichier invalide : sélectionnez un fichier .json');
       e.target.value = '';
       return;
     }
     if (!confirm(
-      'âš ï¸ ATTENTION : La restauration va Ã‰CRASER toutes les donnÃ©es actuelles.\n\nContinuer la restauration ?'
+      '⚠️ ATTENTION : La restauration va ÉCRASER toutes les données actuelles.\n\nContinuer la restauration ?'
     )) {
       e.target.value = '';
       return;
@@ -118,7 +118,7 @@ export default function Dashboard() {
       if (!parsed.data || !parsed.version) throw new Error('Fichier de backup invalide ou corrompu');
       const result = await adminApi.restore(parsed.data);
       await Promise.all([refreshTrucks(), refreshDrivers(), refreshTrips(), refreshParcelExpeditions(), refreshExpenses(), refreshInvoices(), refreshThirdParties()]);
-      toast.success(`Restauration rÃ©ussie â€” ${Object.values(result.counts).reduce((a, b) => a + b, 0)} enregistrements restaurÃ©s`);
+      toast.success(`Restauration réussie — ${Object.values(result.counts).reduce((a, b) => a + b, 0)} enregistrements restaurés`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur lors de la restauration');
     } finally {
@@ -127,7 +127,7 @@ export default function Dashboard() {
     }
   };
 
-  // DÃ©finition des raccourcis vers les Ã©crans
+  // Définition des raccourcis vers les écrans
   const shortcuts = [
     { name: 'Camions', href: '/camions', icon: Truck, color: 'from-purple-500 to-pink-500', bgColor: 'bg-purple-50 dark:bg-purple-950/30', borderColor: 'border-purple-200 dark:border-purple-800' },
     { name: 'Clients', href: '/clients', icon: UserCircle2, color: 'from-emerald-500 to-teal-500', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30', borderColor: 'border-emerald-200 dark:border-emerald-800' },
@@ -138,7 +138,7 @@ export default function Dashboard() {
     { name: 'Suivi créances', href: '/credits', icon: CreditCard, color: 'from-emerald-500 to-teal-500', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30', borderColor: 'border-emerald-200 dark:border-emerald-800' },
   ];
 
-  // Chiffre dâ€™affaires (montants payÃ©s sur factures trajets + expÃ©ditions)
+  // Chiffre d'affaires (montants payés sur factures trajets + expéditions)
   const totalRecettes = invoices
     .filter((inv) => inv.trajetId || inv.parcelExpeditionId)
     .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
@@ -146,15 +146,15 @@ export default function Dashboard() {
   const totalProfit = totalRecettes - totalDepenses;
   const activeTrucks = trucks.filter(t => t.statut === 'actif').length;
 
-  /** RecalculÃ© Ã  chaque rendu (localStorage) â€” alignÃ© Caisse / Banque. */
+  /** Recalculé à chaque rendu (localStorage) — aligné Caisse / Banque. */
   const soldeCaisseEspeces = getCaisseSoldeActuel();
   const soldeBanqueDisponible = getTotalBanqueDisponible();
   const tresorerieTotale = soldeCaisseEspeces + soldeBanqueDisponible;
-  /** Factures : reste Ã  encaisser (pas encore passÃ© en caisse ni en banque dans lâ€™app). */
+  /** Factures : reste à encaisser (pas encore passé en caisse ni en banque dans l'app). */
   const creancesClients = getTotalCreancesClients(invoices);
   const positionEntreprise = tresorerieTotale + creancesClients;
   
-  // Statistiques avancÃ©es
+  // Statistiques avancées
   const totalInvoices = invoices.length;
   const paidInvoices = invoices.filter(inv => inv.statut === 'payee').length;
   const pendingInvoices = invoices.filter(inv => inv.statut === 'en_attente').length;
@@ -177,13 +177,13 @@ export default function Dashboard() {
     [clientOrders],
   );
 
-  // Top camions par encaissement (basÃ© sur les montants payÃ©s)
+  // Top camions par encaissement (basé sur les montants payés)
   const truckRevenue = trucks.map(truck => {
     const truckTrips = trips.filter(t => t.tracteurId === truck.id || t.remorqueuseId === truck.id);
     const truckExpeditions = parcelExpeditions.filter(
       (ex) => ex.tracteurId === truck.id || ex.remorqueuseId === truck.id,
     );
-    // Encaissements Ã  partir des montants payÃ©s
+    // Encaissements à partir des montants payés
     const revenueTrips = truckTrips.reduce(
       (sum, trip) => sum + calculatePaidAmountForTrip(trip.id, invoices),
       0,
@@ -201,7 +201,7 @@ export default function Dashboard() {
     };
   }).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
 
-  // DÃ©penses par catÃ©gorie
+  // Dépenses par catégorie
   const expensesByCategory = expenses.reduce((acc, exp) => {
     acc[exp.categorie] = (acc[exp.categorie] || 0) + exp.montant;
     return acc;
@@ -213,19 +213,19 @@ export default function Dashboard() {
     percentage: ((value / totalDepenses) * 100).toFixed(1)
   }));
 
-  // Ã‰volution mensuelle basÃ©e sur les vraies donnÃ©es
+  // Évolution mensuelle basée sur les vraies données
   const monthlyData = (() => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     
-    // Calculer les donnÃ©es pour les 3 derniers mois
+    // Calculer les données pour les 3 derniers mois
     const months = [];
     for (let i = 2; i >= 0; i--) {
       const date = new Date(currentYear, currentMonth - i, 1);
       const monthName = date.toLocaleDateString('fr-FR', { month: 'short' });
       
-      // Chiffre dâ€™affaires et dÃ©penses pour ce mois
+      // Chiffre d'affaires et dépenses pour ce mois
       const monthTrips = trips.filter((trip) => {
         const tripDate = new Date(trip.dateDepart);
         return tripDate.getMonth() === date.getMonth() &&
@@ -242,7 +242,7 @@ export default function Dashboard() {
                expDate.getFullYear() === date.getFullYear();
       });
       
-      // Chiffre dâ€™affaires du mois Ã  partir des montants payÃ©s
+      // Chiffre d'affaires du mois à partir des montants payés
       const monthRecettesTrips = monthTrips.reduce(
         (sum, trip) => sum + calculatePaidAmountForTrip(trip.id, invoices),
         0,
@@ -273,7 +273,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 p-1">
-      {/* En-tÃªte professionnel */}
+      {/* En-tête professionnel */}
       <PageHeader
         title="Tableau de Bord"
         description={PAGE_DASHBOARD_DESCRIPTION}
@@ -358,17 +358,17 @@ export default function Dashboard() {
         }
       />
 
-      {/* LiquiditÃ©s (caisse + banque) vs hors trÃ©sorerie (crÃ©ances factures) */}
+      {/* Liquidités (caisse + banque) vs hors trésorerie (créances factures) */}
       <Card className="overflow-hidden border-2 border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-background to-sky-500/5">
         <CardHeader className="pb-2 border-b border-border/60">
           <CardTitle className="text-lg flex items-center gap-2">
             <Layers className="h-5 w-5 text-primary" />
-            TrÃ©sorerie &amp; hors trÃ©sorerie
+            Trésorerie &amp; hors trésorerie
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-            <strong className="text-foreground">LiquiditÃ©s</strong> : argent dÃ©jÃ  en caisse et sur les comptes bancaires.
+            <strong className="text-foreground">Liquidités</strong> : argent déjà en caisse et sur les comptes bancaires.
             <span className="mx-1.5 text-border">|</span>
-            <strong className="text-foreground">Hors caisse &amp; banque</strong> : crÃ©ances clients (reste Ã  encaisser sur les factures).
+            <strong className="text-foreground">Hors caisse &amp; banque</strong> : créances clients (reste à encaisser sur les factures).
           </p>
         </CardHeader>
         <CardContent className="pt-6">
@@ -376,7 +376,7 @@ export default function Dashboard() {
             <div className="rounded-2xl border-2 border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-4 sm:p-5 space-y-3">
               <div className="flex items-center gap-2 font-semibold text-emerald-800 dark:text-emerald-300">
                 <Wallet className="h-4 w-4 shrink-0" />
-                LiquiditÃ©s (caisse + banques)
+                Liquidités (caisse + banques)
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="rounded-lg bg-background/80 p-3 border border-border/60">
@@ -389,7 +389,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-emerald-500/20">
-                <span className="text-sm font-medium">Sous-total liquiditÃ©s</span>
+                <span className="text-sm font-medium">Sous-total liquidités</span>
                 <span className="text-lg sm:text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
                   {tresorerieTotale.toLocaleString('fr-FR')} FCFA
                 </span>
@@ -402,7 +402,7 @@ export default function Dashboard() {
                 Hors caisse &amp; banque
               </div>
               <p className="text-xs text-muted-foreground mt-2 mb-4 flex-1">
-                CrÃ©ances clients : montants encore dus sur les factures (pas encore enregistrÃ©s comme encaissÃ©s).
+                Créances clients : montants encore dus sur les factures (pas encore enregistrés comme encaissés).
               </p>
               <div className="text-2xl sm:text-3xl font-bold tabular-nums text-sky-700 dark:text-sky-400">
                 {creancesClients.toLocaleString('fr-FR')} FCFA
@@ -415,7 +415,7 @@ export default function Dashboard() {
                 Position globale
               </div>
               <p className="text-xs text-muted-foreground mt-2 mb-4 flex-1">
-                LiquiditÃ©s + crÃ©ances : trÃ©sorerie disponible + montants Ã  recevoir des clients.
+                Liquidités + créances : trésorerie disponible + montants à recevoir des clients.
               </p>
               <div className="text-2xl sm:text-3xl font-bold tabular-nums text-primary">
                 {positionEntreprise.toLocaleString('fr-FR')} FCFA
@@ -570,7 +570,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">PayÃ©es</span>
+                <span className="text-sm text-muted-foreground">Payées</span>
                 <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400">
                   {paidInvoices}
                 </Badge>
@@ -632,7 +632,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Charts - Design amÃ©liorÃ© */}
+      {/* Charts - Design amélioré */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Top 5 Camions */}
         {truckRevenue.length > 0 && truckRevenue.some(t => t.revenue > 0) ? (
@@ -640,7 +640,7 @@ export default function Dashboard() {
           <CardHeader className="bg-gradient-to-br from-background to-muted/20 border-b">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg">{EMOJI.classement} Top 5 Camions â€” Encaissement</CardTitle>
+                <CardTitle className="text-lg">{EMOJI.classement} Top 5 Camions — Encaissement</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">Classement par performance</p>
               </div>
               <Package className="h-8 w-8 text-primary opacity-50" />
@@ -677,14 +677,14 @@ export default function Dashboard() {
         </Card>
         ) : null}
 
-        {/* DÃ©penses par catÃ©gorie */}
+        {/* Dépenses par catégorie */}
         {expensesData.length > 0 && expensesData.some(e => e.value > 0) ? (
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="bg-gradient-to-br from-background to-muted/20 border-b">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg">{EMOJI.argent} RÃ©partition des DÃ©penses</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Par catÃ©gorie</p>
+                <CardTitle className="text-lg">{EMOJI.argent} Répartition des Dépenses</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">Par catégorie</p>
               </div>
               <DollarSign className="h-8 w-8 text-destructive opacity-50" />
             </div>
@@ -738,7 +738,7 @@ export default function Dashboard() {
       </div>
 
 
-      {/* Recent Activity - AmÃ©liorÃ© */}
+      {/* Recent Activity - Amélioré */}
       <Card className="shadow-md hover:shadow-lg transition-shadow">
         <CardHeader className="bg-gradient-to-br from-background to-muted/20 border-b">
           <div className="flex items-center justify-between">
