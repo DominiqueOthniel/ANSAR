@@ -5,15 +5,17 @@ import { v4 as uuidv4 } from 'uuid';
 import { ThirdParty } from '../entities/third-party.entity';
 import { CreateThirdPartyDto } from './dto/create-third-party.dto';
 import { UpdateThirdPartyDto } from './dto/update-third-party.dto';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class ThirdPartiesService {
   constructor(
     @InjectRepository(ThirdParty)
     private readonly thirdPartyRepository: Repository<ThirdParty>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
-  async create(dto: CreateThirdPartyDto): Promise<ThirdParty> {
+  async create(dto: CreateThirdPartyDto, actor?: AuditActor): Promise<ThirdParty> {
     const { plafondCredit, sexe, segmentClient, ville, dateNaissance, ...rest } = dto;
     const payload: DeepPartial<ThirdParty> = {
       id: uuidv4(),
@@ -27,7 +29,16 @@ export class ThirdPartiesService {
       payload.plafondCredit = String(plafondCredit);
     }
     const thirdParty = this.thirdPartyRepository.create(payload);
-    return this.thirdPartyRepository.save(thirdParty);
+    const saved = await this.thirdPartyRepository.save(thirdParty);
+    await this.auditLogsService.log({
+      module: 'third-parties',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Création fiche ${saved.type} ${saved.nom}`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
+    return saved;
   }
 
   async findAll(): Promise<ThirdParty[]> {
@@ -42,8 +53,8 @@ export class ThirdPartiesService {
     return thirdParty;
   }
 
-  async update(id: string, dto: UpdateThirdPartyDto): Promise<ThirdParty> {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateThirdPartyDto, actor?: AuditActor): Promise<ThirdParty> {
+    const before = await this.findOne(id);
     const { plafondCredit, sexe, segmentClient, ville, dateNaissance, ...rest } = dto;
     const patch: Partial<ThirdParty> = { ...rest };
     if ('plafondCredit' in dto) {
@@ -60,11 +71,29 @@ export class ThirdPartiesService {
     if (Object.keys(patch).length) {
       await this.thirdPartyRepository.update(id, patch);
     }
-    return this.findOne(id);
+    const after = await this.findOne(id);
+    await this.auditLogsService.log({
+      module: 'third-parties',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification fiche ${after.type} ${after.nom}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 
-  async remove(id: string): Promise<void> {
-    await this.findOne(id);
+  async remove(id: string, actor?: AuditActor): Promise<void> {
+    const before = await this.findOne(id);
     await this.thirdPartyRepository.delete(id);
+    await this.auditLogsService.log({
+      module: 'third-parties',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression fiche ${before.type} ${before.nom}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 }

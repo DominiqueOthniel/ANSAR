@@ -280,11 +280,11 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   };
 
   const handleDeleteOrder = async (o: ClientOrder) => {
-    if (!canDeleteClientOrder(o.statut)) {
-      toast.error('Une commande livrée ou annulée ne peut pas être supprimée.');
-      return;
-    }
-    if (!confirm(`Supprimer la commande « ${o.designation} » ?`)) return;
+    const locked = !isClientOrderEditable(o.statut);
+    const warn = locked
+      ? '\n\nCette commande est terminée : la suppression est définitive.'
+      : '';
+    if (!confirm(`Supprimer la commande « ${o.designation} » ?${warn}`)) return;
     try {
       await deleteClientOrder(o.id);
       toast.success('Commande supprimée');
@@ -629,33 +629,31 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                   )}
                   <div className="flex gap-1 mt-2 flex-wrap items-center">
                     {isClientOrderEditable(o.statut) ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openEditOrder(o)}
-                          title="Modifier la commande"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        {canDeleteClientOrder(o.statut) && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive"
-                            title="Supprimer la commande"
-                            onClick={() => void handleDeleteOrder(o)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditOrder(o)}
+                        title="Modifier la commande"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
                     ) : (
                       <span className="text-xs text-muted-foreground px-1">
                         Commande terminée (non modifiable)
                       </span>
+                    )}
+                    {canDeleteClientOrder(o.statut) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        title="Supprimer la commande"
+                        onClick={() => void handleDeleteOrder(o)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     )}
                     {o.statut !== 'annulee' && o.statut !== 'livree' && (
                       <Button

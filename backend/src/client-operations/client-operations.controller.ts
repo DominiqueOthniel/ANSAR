@@ -9,7 +9,10 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
+import { getAuditActor } from '../audit-logs/audit-request.util';
 import { ClientOperationsService } from './client-operations.service';
 import { CreateClientOrderDto } from './dto/create-client-order.dto';
 import { UpdateClientOrderDto } from './dto/update-client-order.dto';
@@ -25,8 +28,8 @@ export class ClientOperationsController {
   constructor(private readonly service: ClientOperationsService) {}
 
   @Post('client-orders')
-  createOrder(@Body() dto: CreateClientOrderDto) {
-    return this.service.createOrder(dto);
+  createOrder(@Body() dto: CreateClientOrderDto, @Req() req: Request) {
+    return this.service.createOrder(dto, getAuditActor(req));
   }
 
   @Get('client-orders')
@@ -43,19 +46,23 @@ export class ClientOperationsController {
   updateOrder(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateClientOrderDto,
+    @Req() req: Request,
   ) {
-    return this.service.updateOrder(id, dto);
+    return this.service.updateOrder(id, dto, getAuditActor(req));
   }
 
   @Delete('client-orders/:id')
   @HttpCode(204)
-  async removeOrder(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.service.removeOrder(id);
+  async removeOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.service.removeOrder(id, getAuditActor(req));
   }
 
   @Post('client-deliveries')
-  createDelivery(@Body() dto: CreateClientDeliveryDto) {
-    return this.service.createDelivery(dto);
+  createDelivery(@Body() dto: CreateClientDeliveryDto, @Req() req: Request) {
+    return this.service.createDelivery(dto, getAuditActor(req));
   }
 
   @Get('client-deliveries')
@@ -72,13 +79,17 @@ export class ClientOperationsController {
   updateDelivery(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateClientDeliveryDto,
+    @Req() req: Request,
   ) {
-    return this.service.updateDelivery(id, dto);
+    return this.service.updateDelivery(id, dto, getAuditActor(req));
   }
 
   @Delete('client-deliveries/:id')
   @HttpCode(204)
-  async removeDelivery(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.service.removeDelivery(id);
+  async removeDelivery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.service.removeDelivery(id, getAuditActor(req));
   }
 }

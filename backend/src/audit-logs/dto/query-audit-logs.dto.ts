@@ -6,7 +6,7 @@ export class QueryAuditLogsDto {
   module?: string;
 
   @IsOptional()
-  @IsIn(['CREATE', 'UPDATE', 'DELETE', 'REMBOURSEMENT'])
+  @IsIn(['CREATE', 'UPDATE', 'DELETE', 'REMBOURSEMENT', 'PAYMENT', 'ENCAISSEMENT'])
   action?: string;
 
   @IsOptional()

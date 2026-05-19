@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { ClientOrder } from '../entities/client-order.entity';
 import { ClientDelivery } from '../entities/client-delivery.entity';
 import { ThirdParty } from '../entities/third-party.entity';
@@ -19,6 +20,7 @@ import { ClientOperationsController } from './client-operations.controller';
       Invoice,
       SupplierLoadingAssignment,
     ]),
+    AuditLogsModule,
   ],
   controllers: [ClientOperationsController],
   providers: [ClientOperationsService],

@@ -44,7 +44,7 @@ function readSidebarHidden(): boolean {
 const navigation = [
   { name: 'Dashboard',  href: '/',          icon: LayoutDashboard, color: 'from-violet-500 to-indigo-500' },
   { name: 'Clients',    href: '/clients',    icon: UserCircle2,     color: 'from-emerald-500 to-teal-500' },
-  { name: 'Historique', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
+  { name: 'Mouvements', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
   { name: 'Camions',    href: '/camions',    icon: Truck,           color: 'from-purple-500 to-pink-500' },
   { name: 'Dépenses',   href: '/depenses',   icon: DollarSign,      color: 'from-orange-500 to-red-500' },
   { name: 'Factures',   href: '/factures',   icon: FileText,        color: 'from-blue-500 to-cyan-500' },

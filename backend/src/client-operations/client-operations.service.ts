@@ -26,6 +26,7 @@ import {
   QueryClientDeliveriesDto,
   QueryClientOrdersDto,
 } from './dto/query-client-operations.dto';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class ClientOperationsService {
@@ -42,6 +43,7 @@ export class ClientOperationsService {
     private readonly invoiceRepo: Repository<Invoice>,
     @InjectRepository(SupplierLoadingAssignment)
     private readonly loadingAssignmentRepo: Repository<SupplierLoadingAssignment>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   private async assertClient(clientId: string): Promise<ThirdParty> {
@@ -165,6 +167,7 @@ export class ClientOperationsService {
   private async ensureOrderInvoice(
     order: ClientOrder,
     payment?: { montantPaye?: number; datePaiement?: string },
+    actor?: AuditActor,
   ): Promise<void> {
     const montant = Number(order.montant ?? 0);
     if (montant <= 0) return;
@@ -180,6 +183,7 @@ export class ClientOperationsService {
     );
 
     if (existing) {
+      const beforePaye = Number(existing.montantPaye ?? 0);
       await this.syncInvoiceAmount(existing.id, montant, {
         clientTierId: order.clientId,
         clientOrderId: order.id,
@@ -192,6 +196,22 @@ export class ClientOperationsService {
       if (!order.invoiceId || order.invoiceId !== existing.id) {
         await this.orderRepo.update(order.id, { invoiceId: existing.id });
       }
+      const after = await this.invoiceRepo.findOne({ where: { id: existing.id } });
+      const payeChanged =
+        payment?.montantPaye !== undefined &&
+        after &&
+        Math.abs(Number(after.montantPaye ?? 0) - beforePaye) > 0.01;
+      await this.auditLogsService.log({
+        module: 'invoices',
+        action: payeChanged ? 'ENCAISSEMENT' : 'UPDATE',
+        entityId: existing.id,
+        summary: payeChanged
+          ? `Encaissement facture ${existing.numero} : ${Number(after?.montantPaye ?? 0).toLocaleString('fr-FR')} FCFA (commande)`
+          : `Mise à jour facture ${existing.numero} (commande ${order.reference ?? order.designation})`,
+        beforeData: existing as unknown as Record<string, unknown>,
+        afterData: (after ?? existing) as unknown as Record<string, unknown>,
+        actor,
+      });
       return;
     }
 
@@ -212,6 +232,18 @@ export class ClientOperationsService {
     });
     const saved = await this.invoiceRepo.save(inv);
     await this.orderRepo.update(order.id, { invoiceId: saved.id });
+    const paye = Number(saved.montantPaye ?? 0);
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: paye > 0 ? 'ENCAISSEMENT' : 'CREATE',
+      entityId: saved.id,
+      summary:
+        paye > 0
+          ? `Facture ${saved.numero} créée (commande) avec encaissement ${paye.toLocaleString('fr-FR')} FCFA`
+          : `Création facture ${saved.numero} pour commande ${order.reference ?? order.designation}`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   private deliveryTransportMontant(delivery: ClientDelivery): number {
@@ -255,12 +287,23 @@ export class ClientOperationsService {
   }
 
   /** Supprime la FAC-LIV lorsqu’il n’y a plus de montant transport à facturer au client. */
-  private async clearDeliveryTransportInvoice(delivery: ClientDelivery): Promise<void> {
+  private async clearDeliveryTransportInvoice(
+    delivery: ClientDelivery,
+    actor?: AuditActor,
+  ): Promise<void> {
     if (!delivery.invoiceId) return;
     const inv = await this.invoiceRepo.findOne({ where: { id: delivery.invoiceId } });
     if (!inv || inv.clientDeliveryId !== delivery.id) return;
     await this.invoiceRepo.delete(delivery.invoiceId);
     await this.deliveryRepo.update(delivery.id, { invoiceId: undefined });
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: 'DELETE',
+      entityId: inv.id,
+      summary: `Suppression facture transport ${inv.numero}`,
+      beforeData: inv as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   private buildTransportInvoiceNotes(delivery: ClientDelivery, order: ClientOrder): string {
@@ -283,15 +326,16 @@ export class ClientOperationsService {
   private async ensureDeliveryInvoice(
     delivery: ClientDelivery,
     order: ClientOrder,
+    actor?: AuditActor,
   ): Promise<void> {
     const montant = this.deliveryTransportMontant(delivery);
     if (montant <= 0) {
-      await this.clearDeliveryTransportInvoice(delivery);
+      await this.clearDeliveryTransportInvoice(delivery, actor);
       return;
     }
     const bySupplier = this.isTransportBilledBySupplier(delivery);
     if (!bySupplier && !this.hasTransportMission(delivery)) {
-      await this.clearDeliveryTransportInvoice(delivery);
+      await this.clearDeliveryTransportInvoice(delivery, actor);
       return;
     }
 
@@ -309,6 +353,16 @@ export class ClientOperationsService {
           clientDeliveryId: full.id,
           factureClientLibelle: libelle,
           notes,
+        });
+        const after = await this.invoiceRepo.findOne({ where: { id: full.invoiceId } });
+        await this.auditLogsService.log({
+          module: 'invoices',
+          action: 'UPDATE',
+          entityId: full.invoiceId,
+          summary: `Mise à jour facture transport ${inv.numero}`,
+          beforeData: inv as unknown as Record<string, unknown>,
+          afterData: (after ?? inv) as unknown as Record<string, unknown>,
+          actor,
         });
         return;
       }
@@ -331,6 +385,14 @@ export class ClientOperationsService {
     });
     const saved = await this.invoiceRepo.save(inv);
     await this.deliveryRepo.update(full.id, { invoiceId: saved.id });
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Création facture transport ${saved.numero} (${montant.toLocaleString('fr-FR')} FCFA)`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   private deriveOrderStatus(deliveries: ClientDelivery[]): ClientOrderStatus {
@@ -402,7 +464,7 @@ export class ClientOperationsService {
     };
   }
 
-  async createOrder(dto: CreateClientOrderDto): Promise<ClientOrder> {
+  async createOrder(dto: CreateClientOrderDto, actor?: AuditActor): Promise<ClientOrder> {
     await this.assertClient(dto.clientId);
     const built = await this.buildOrderPayloadAsync(dto);
     const designation = (dto.designation?.trim() || built.designation || '').trim();
@@ -426,11 +488,24 @@ export class ClientOperationsService {
       notes: dto.notes?.trim() || undefined,
     });
     const saved = await this.orderRepo.save(row);
-    await this.ensureOrderInvoice(saved, {
-      montantPaye: dto.montantPaye,
-      datePaiement: dto.datePaiement,
+    await this.ensureOrderInvoice(
+      saved,
+      {
+        montantPaye: dto.montantPaye,
+        datePaiement: dto.datePaiement,
+      },
+      actor,
+    );
+    const result = await this.findOrder(saved.id);
+    await this.auditLogsService.log({
+      module: 'client-orders',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Commande client ${result.reference ?? result.designation} (${Number(result.montant ?? 0).toLocaleString('fr-FR')} FCFA)`,
+      afterData: result as unknown as Record<string, unknown>,
+      actor,
     });
-    return this.findOrder(saved.id);
+    return result;
   }
 
   async findOrders(query?: QueryClientOrdersDto): Promise<ClientOrder[]> {
@@ -454,7 +529,11 @@ export class ClientOperationsService {
     return row;
   }
 
-  async updateOrder(id: string, dto: UpdateClientOrderDto): Promise<ClientOrder> {
+  async updateOrder(
+    id: string,
+    dto: UpdateClientOrderDto,
+    actor?: AuditActor,
+  ): Promise<ClientOrder> {
     const existing = await this.findOrder(id);
     if (existing.statut === 'livree' || existing.statut === 'annulee') {
       throw new BadRequestException(
@@ -508,17 +587,21 @@ export class ClientOperationsService {
             datePaiement: dto.datePaiement,
           }
         : undefined;
-    await this.ensureOrderInvoice(updated, payment);
+    await this.ensureOrderInvoice(updated, payment, actor);
+    await this.auditLogsService.log({
+      module: 'client-orders',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification commande ${updated.reference ?? updated.designation}`,
+      beforeData: existing as unknown as Record<string, unknown>,
+      afterData: updated as unknown as Record<string, unknown>,
+      actor,
+    });
     return updated;
   }
 
-  async removeOrder(id: string): Promise<void> {
+  async removeOrder(id: string, actor?: AuditActor): Promise<void> {
     const existing = await this.findOrder(id);
-    if (existing.statut === 'livree' || existing.statut === 'annulee') {
-      throw new BadRequestException(
-        'Une commande livrée ou annulée ne peut pas être supprimée.',
-      );
-    }
     let linkedInvoice = existing.invoiceId
       ? await this.invoiceRepo.findOne({ where: { id: existing.invoiceId } })
       : null;
@@ -532,9 +615,17 @@ export class ClientOperationsService {
     }
     await this.loadingAssignmentRepo.delete({ clientOrderId: id });
     await this.orderRepo.delete(id);
+    await this.auditLogsService.log({
+      module: 'client-orders',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression commande ${existing.reference ?? existing.designation}`,
+      beforeData: existing as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
-  async createDelivery(dto: CreateClientDeliveryDto): Promise<ClientDelivery> {
+  async createDelivery(dto: CreateClientDeliveryDto, actor?: AuditActor): Promise<ClientDelivery> {
     const order = await this.findOrder(dto.clientOrderId);
     if (order.statut === 'annulee') {
       throw new BadRequestException('Impossible d’ajouter une livraison à une commande annulée.');
@@ -569,9 +660,18 @@ export class ClientOperationsService {
     const saved = await this.deliveryRepo.save(row);
     await this.syncOrderStatusFromDeliveries(order.id);
     const freshOrder = await this.findOrder(order.id);
-    await this.ensureOrderInvoice(freshOrder);
-    await this.ensureDeliveryInvoice(saved, freshOrder);
-    return this.findDelivery(saved.id);
+    await this.ensureOrderInvoice(freshOrder, undefined, actor);
+    await this.ensureDeliveryInvoice(saved, freshOrder, actor);
+    const result = await this.findDelivery(saved.id);
+    await this.auditLogsService.log({
+      module: 'client-deliveries',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Livraison ${result.lieuLivraison} (commande ${order.reference ?? order.designation})`,
+      afterData: result as unknown as Record<string, unknown>,
+      actor,
+    });
+    return result;
   }
 
   async findDeliveries(query?: QueryClientDeliveriesDto): Promise<ClientDelivery[]> {
@@ -604,7 +704,11 @@ export class ClientOperationsService {
     return row;
   }
 
-  async updateDelivery(id: string, dto: UpdateClientDeliveryDto): Promise<ClientDelivery> {
+  async updateDelivery(
+    id: string,
+    dto: UpdateClientDeliveryDto,
+    actor?: AuditActor,
+  ): Promise<ClientDelivery> {
     const existing = await this.findDelivery(id);
     const patch: Partial<ClientDelivery> = {};
     if (dto.clientOrderId !== undefined && dto.clientOrderId !== existing.clientOrderId) {
@@ -650,14 +754,31 @@ export class ClientOperationsService {
     );
     const updated = await this.findDelivery(id);
     const order = await this.findOrder(updated.clientOrderId);
-    await this.ensureOrderInvoice(order);
-    await this.ensureDeliveryInvoice(updated, order);
+    await this.ensureOrderInvoice(order, undefined, actor);
+    await this.ensureDeliveryInvoice(updated, order, actor);
+    await this.auditLogsService.log({
+      module: 'client-deliveries',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification livraison ${updated.lieuLivraison}`,
+      beforeData: existing as unknown as Record<string, unknown>,
+      afterData: updated as unknown as Record<string, unknown>,
+      actor,
+    });
     return updated;
   }
 
-  async removeDelivery(id: string): Promise<void> {
+  async removeDelivery(id: string, actor?: AuditActor): Promise<void> {
     const existing = await this.findDelivery(id);
     await this.deliveryRepo.delete(id);
     await this.syncOrderStatusFromDeliveries(existing.clientOrderId);
+    await this.auditLogsService.log({
+      module: 'client-deliveries',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression livraison ${existing.lieuLivraison}`,
+      beforeData: existing as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 }

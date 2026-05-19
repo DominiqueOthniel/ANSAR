@@ -16,6 +16,7 @@ import {
   isBankDebitType,
   transactionDeltaOnBalance,
 } from './bank-rules';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class BankService {
@@ -24,6 +25,7 @@ export class BankService {
     private readonly accountRepository: Repository<BankAccount>,
     @InjectRepository(BankTransaction)
     private readonly transactionRepository: Repository<BankTransaction>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   /** Solde = soldeInitial + somme des effets de chaque transaction (aligné front). */
@@ -50,14 +52,23 @@ export class BankService {
   }
 
   // --- Comptes ---
-  async createAccount(dto: CreateBankAccountDto): Promise<BankAccount> {
+  async createAccount(dto: CreateBankAccountDto, actor?: AuditActor): Promise<BankAccount> {
     const account = this.accountRepository.create({
       id: uuidv4(),
       ...dto,
       soldeActuel: dto.soldeInitial,
       devise: dto.devise || 'FCFA',
     });
-    return this.accountRepository.save(account);
+    const saved = await this.accountRepository.save(account);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Ouverture compte bancaire ${saved.nom}`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
+    return saved;
   }
 
   async findAllAccounts(): Promise<BankAccount[]> {
@@ -76,20 +87,45 @@ export class BankService {
     return account;
   }
 
-  async updateAccount(id: string, dto: UpdateBankAccountDto): Promise<BankAccount> {
-    await this.findOneAccount(id);
+  async updateAccount(
+    id: string,
+    dto: UpdateBankAccountDto,
+    actor?: AuditActor,
+  ): Promise<BankAccount> {
+    const before = await this.findOneAccount(id);
     await this.accountRepository.update(id, dto as Partial<BankAccount>);
     await this.recalculateSoldeForAccount(id);
-    return this.findOneAccount(id);
+    const after = await this.findOneAccount(id);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification compte bancaire ${after.nom}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 
-  async removeAccount(id: string): Promise<void> {
-    await this.findOneAccount(id);
+  async removeAccount(id: string, actor?: AuditActor): Promise<void> {
+    const before = await this.findOneAccount(id);
     await this.accountRepository.delete(id);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression compte bancaire ${before.nom}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   // --- Transactions ---
-  async createTransaction(dto: CreateBankTransactionDto): Promise<BankTransaction> {
+  async createTransaction(
+    dto: CreateBankTransactionDto,
+    actor?: AuditActor,
+  ): Promise<BankTransaction> {
     const montant = Number(dto.montant);
     if (!Number.isFinite(montant) || montant <= 0) {
       throw new BadRequestException('Le montant doit être un nombre positif.');
@@ -113,6 +149,14 @@ export class BankService {
     });
     const saved = await this.transactionRepository.save(transaction);
     await this.recalculateSoldeForAccount(dto.compteId);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Mouvement banque ${saved.type} ${montant.toLocaleString('fr-FR')} FCFA — ${saved.description ?? ''}`.trim(),
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
     return saved;
   }
 
@@ -144,6 +188,7 @@ export class BankService {
   async updateTransaction(
     id: string,
     dto: UpdateBankTransactionDto,
+    actor?: AuditActor,
   ): Promise<BankTransaction> {
     const prev = await this.findOneTransaction(id);
 
@@ -185,13 +230,31 @@ export class BankService {
       }
     }
 
-    return this.findOneTransaction(id);
+    const updated = await this.findOneTransaction(id);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification mouvement banque ${updated.type} ${Number(updated.montant).toLocaleString('fr-FR')} FCFA`,
+      beforeData: prev as unknown as Record<string, unknown>,
+      afterData: updated as unknown as Record<string, unknown>,
+      actor,
+    });
+    return updated;
   }
 
-  async removeTransaction(id: string): Promise<void> {
+  async removeTransaction(id: string, actor?: AuditActor): Promise<void> {
     const tx = await this.findOneTransaction(id);
     const compteId = tx.compteId;
     await this.transactionRepository.delete(id);
     await this.recalculateSoldeForAccount(compteId);
+    await this.auditLogsService.log({
+      module: 'bank',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression mouvement banque ${tx.type} ${Number(tx.montant).toLocaleString('fr-FR')} FCFA`,
+      beforeData: tx as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 }

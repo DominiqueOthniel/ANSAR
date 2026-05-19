@@ -6,6 +6,7 @@ import { Invoice, InvoicePaymentEncaissementPersisted } from '../entities/invoic
 import { Trip } from '../entities/trip.entity';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class InvoicesService {
@@ -14,6 +15,7 @@ export class InvoicesService {
     private readonly invoiceRepository: Repository<Invoice>,
     @InjectRepository(Trip)
     private readonly tripRepository: Repository<Trip>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   /** Somme des TTC déjà facturés sur ce trajet (hors une facture exclue, ex. PATCH). */
@@ -82,7 +84,7 @@ export class InvoicesService {
     return rows;
   }
 
-  async create(dto: CreateInvoiceDto): Promise<Invoice> {
+  async create(dto: CreateInvoiceDto, actor?: AuditActor): Promise<Invoice> {
     const ttc = Number(dto.montantTTC);
     const paye = dto.montantPaye != null ? Number(dto.montantPaye) : 0;
     if (paye < 0) throw new BadRequestException('Le montant payé ne peut pas être négatif');
@@ -104,7 +106,20 @@ export class InvoicesService {
       ...rest,
       paiementsEncaissements: slices,
     });
-    return this.invoiceRepository.save(invoice);
+    const saved = await this.invoiceRepository.save(invoice);
+    const savedPaye = Number(saved.montantPaye ?? 0);
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: savedPaye > 0 ? 'ENCAISSEMENT' : 'CREATE',
+      entityId: saved.id,
+      summary:
+        savedPaye > 0
+          ? `Facture ${saved.numero} créée avec encaissement ${savedPaye.toLocaleString('fr-FR')} FCFA`
+          : `Création facture ${saved.numero} (${Number(saved.montantTTC).toLocaleString('fr-FR')} FCFA)`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
+    return saved;
   }
 
   async findAll(): Promise<Invoice[]> {
@@ -119,8 +134,9 @@ export class InvoicesService {
     return invoice;
   }
 
-  async update(id: string, dto: UpdateInvoiceDto): Promise<Invoice> {
+  async update(id: string, dto: UpdateInvoiceDto, actor?: AuditActor): Promise<Invoice> {
     const before = await this.findOne(id);
+    const beforePaye = Number(before.montantPaye ?? 0);
     const ttc =
       dto.montantTTC !== undefined ? Number(dto.montantTTC) : Number(before.montantTTC);
     if (dto.montantPaye !== undefined) {
@@ -149,11 +165,34 @@ export class InvoicesService {
       );
     }
     await this.invoiceRepository.update(id, patch);
-    return this.findOne(id);
+    const after = await this.findOne(id);
+    const afterPaye = Number(after.montantPaye ?? 0);
+    const payeChanged =
+      dto.montantPaye !== undefined && Math.abs(afterPaye - beforePaye) > 0.01;
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: payeChanged ? 'ENCAISSEMENT' : 'UPDATE',
+      entityId: id,
+      summary: payeChanged
+        ? `Encaissement facture ${after.numero} : ${afterPaye.toLocaleString('fr-FR')} FCFA`
+        : `Modification facture ${after.numero}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 
-  async remove(id: string): Promise<void> {
-    await this.findOne(id);
+  async remove(id: string, actor?: AuditActor): Promise<void> {
+    const before = await this.findOne(id);
     await this.invoiceRepository.delete(id);
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression facture ${before.numero}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 }

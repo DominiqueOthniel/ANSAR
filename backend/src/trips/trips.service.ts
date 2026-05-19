@@ -8,6 +8,7 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStopDto } from './dto/trip-stop.dto';
 import { TripClientParticipantDto } from './dto/trip-client-participant.dto';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class TripsService {
@@ -16,6 +17,7 @@ export class TripsService {
     private readonly tripRepository: Repository<Trip>,
     @InjectRepository(Invoice)
     private readonly invoiceRepository: Repository<Invoice>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   private normalizeStopsInput(
@@ -100,7 +102,7 @@ export class TripsService {
     return { list: out, payeurId };
   }
 
-  async create(dto: CreateTripDto): Promise<Trip> {
+  async create(dto: CreateTripDto, actor?: AuditActor): Promise<Trip> {
     const {
       stops: stopsIn,
       clientParticipants: cpIn,
@@ -121,7 +123,16 @@ export class TripsService {
       clientParticipants: clientParticipants,
       payeurParticipantId: payeurId,
     });
-    return this.tripRepository.save(trip);
+    const saved = await this.tripRepository.save(trip);
+    await this.auditLogsService.log({
+      module: 'trips',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Création trajet ${saved.origine} → ${saved.destination} (recette ${Number(saved.recette).toLocaleString('fr-FR')} FCFA)`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
+    return saved;
   }
 
   async findAll(): Promise<Trip[]> {
@@ -140,7 +151,7 @@ export class TripsService {
     return trip;
   }
 
-  async update(id: string, dto: UpdateTripDto): Promise<Trip> {
+  async update(id: string, dto: UpdateTripDto, actor?: AuditActor): Promise<Trip> {
     const existing = await this.findOne(id);
     if (dto.recette !== undefined && dto.recette !== null) {
       const newRecette = Number(dto.recette);
@@ -190,11 +201,29 @@ export class TripsService {
       patch.payeurParticipantId = payeurId;
     }
     await this.tripRepository.update(id, patch as Partial<Trip>);
-    return this.findOne(id);
+    const after = await this.findOne(id);
+    await this.auditLogsService.log({
+      module: 'trips',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification trajet ${after.origine} → ${after.destination}`,
+      beforeData: existing as unknown as Record<string, unknown>,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 
-  async remove(id: string): Promise<void> {
-    await this.findOne(id);
+  async remove(id: string, actor?: AuditActor): Promise<void> {
+    const before = await this.findOne(id);
     await this.tripRepository.delete(id);
+    await this.auditLogsService.log({
+      module: 'trips',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression trajet ${before.origine} → ${before.destination}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 }

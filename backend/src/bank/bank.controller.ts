@@ -8,7 +8,10 @@ import {
   Delete,
   ParseUUIDPipe,
   HttpCode,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
+import { getAuditActor } from '../audit-logs/audit-request.util';
 import { BankService } from './bank.service';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
@@ -21,8 +24,8 @@ export class BankController {
 
   // --- Comptes ---
   @Post('accounts')
-  createAccount(@Body() dto: CreateBankAccountDto) {
-    return this.bankService.createAccount(dto);
+  createAccount(@Body() dto: CreateBankAccountDto, @Req() req: Request) {
+    return this.bankService.createAccount(dto, getAuditActor(req));
   }
 
   @Get('accounts')
@@ -44,20 +47,24 @@ export class BankController {
   updateAccount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBankAccountDto,
+    @Req() req: Request,
   ) {
-    return this.bankService.updateAccount(id, dto);
+    return this.bankService.updateAccount(id, dto, getAuditActor(req));
   }
 
   @Delete('accounts/:id')
   @HttpCode(204)
-  async removeAccount(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.bankService.removeAccount(id);
+  async removeAccount(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.bankService.removeAccount(id, getAuditActor(req));
   }
 
   // --- Transactions ---
   @Post('transactions')
-  createTransaction(@Body() dto: CreateBankTransactionDto) {
-    return this.bankService.createTransaction(dto);
+  createTransaction(@Body() dto: CreateBankTransactionDto, @Req() req: Request) {
+    return this.bankService.createTransaction(dto, getAuditActor(req));
   }
 
   @Get('transactions')
@@ -74,13 +81,17 @@ export class BankController {
   updateTransaction(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBankTransactionDto,
+    @Req() req: Request,
   ) {
-    return this.bankService.updateTransaction(id, dto);
+    return this.bankService.updateTransaction(id, dto, getAuditActor(req));
   }
 
   @Delete('transactions/:id')
   @HttpCode(204)
-  async removeTransaction(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.bankService.removeTransaction(id);
+  async removeTransaction(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.bankService.removeTransaction(id, getAuditActor(req));
   }
 }

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { History, Loader2, RefreshCw, Database, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, History, Loader2, RefreshCw, Database, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
@@ -9,6 +9,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { auditLogsApi, setApiActor, type AuditLogRow } from '@/lib/api';
 import { useApp } from '@/contexts/AppContext';
 import { runSeed, clearDemoData } from '@/lib/seed-data';
+import {
+  actionLabel,
+  extractAuditAmount,
+  formatAuditAmount,
+  isMovementModule,
+  moduleLabel,
+} from '@/lib/audit-movements';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,18 +32,28 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
 
 const ALL = '_all';
+const MOVEMENTS_ONLY = '_movements';
 
 const MODULE_OPTIONS = [
   { value: ALL, label: 'Tous les modules' },
-  { value: 'expenses', label: 'Dépenses' },
+  { value: MOVEMENTS_ONLY, label: 'Mouvements financiers (tous)' },
+  { value: 'bank', label: 'Banque' },
   { value: 'caisse', label: 'Caisse' },
+  { value: 'expenses', label: 'Dépenses' },
+  { value: 'invoices', label: 'Factures' },
   { value: 'credits', label: 'Crédits' },
+  { value: 'trips', label: 'Trajets' },
+  { value: 'client-orders', label: 'Commandes client' },
+  { value: 'client-deliveries', label: 'Livraisons' },
+  { value: 'supplier-loadings', label: 'Chargements' },
+  { value: 'third-parties', label: 'Tiers' },
 ];
 
 const ACTION_OPTIONS = [
@@ -44,6 +61,8 @@ const ACTION_OPTIONS = [
   { value: 'CREATE', label: 'Création' },
   { value: 'UPDATE', label: 'Modification' },
   { value: 'DELETE', label: 'Suppression' },
+  { value: 'ENCAISSEMENT', label: 'Encaissement' },
+  { value: 'PAYMENT', label: 'Paiement' },
   { value: 'REMBOURSEMENT', label: 'Remboursement' },
 ];
 
@@ -64,7 +83,9 @@ function actionBadgeVariant(
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (action === 'DELETE') return 'destructive';
   if (action === 'CREATE') return 'default';
-  if (action === 'REMBOURSEMENT') return 'secondary';
+  if (action === 'ENCAISSEMENT' || action === 'REMBOURSEMENT' || action === 'PAYMENT') {
+    return 'secondary';
+  }
   return 'outline';
 }
 
@@ -82,28 +103,49 @@ export default function AuditLogs() {
   const [rows, setRows] = useState<AuditLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [seedOp, setSeedOp] = useState<null | 'clear' | 'reload'>(null);
-  const [moduleFilter, setModuleFilter] = useState(ALL);
+  const [moduleFilter, setModuleFilter] = useState(MOVEMENTS_ONLY);
   const [actionFilter, setActionFilter] = useState(ALL);
   const [actorLogin, setActorLogin] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [limit, setLimit] = useState('200');
+  const [limit, setLimit] = useState('500');
 
   const load = useCallback(async () => {
     if (user) {
-      // Défensif: force l'acteur courant avant l'appel (évite un 403 si contexte API non synchronisé).
       setApiActor({ login: user.login, role: user.role });
     }
     setLoading(true);
     try {
-      const data = await auditLogsApi.getAll({
-        module: moduleFilter === ALL ? undefined : moduleFilter,
-        action: actionFilter === ALL ? undefined : actionFilter,
-        actorLogin: actorLogin.trim() || undefined,
-        from: from || undefined,
-        to: to ? `${to}T23:59:59.999Z` : undefined,
-        limit: Math.min(500, Math.max(1, parseInt(limit, 10) || 200)),
-      });
+      const parsedLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 500));
+      const movementOnly = moduleFilter === MOVEMENTS_ONLY;
+
+      const data = movementOnly
+        ? (
+            await Promise.all(
+              ['bank', 'caisse', 'expenses', 'invoices', 'credits'].map((mod) =>
+                auditLogsApi.getAll({
+                  module: mod,
+                  action: actionFilter === ALL ? undefined : actionFilter,
+                  actorLogin: actorLogin.trim() || undefined,
+                  from: from || undefined,
+                  to: to ? `${to}T23:59:59.999Z` : undefined,
+                  limit: parsedLimit,
+                }),
+              ),
+            )
+          )
+            .flat()
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .slice(0, parsedLimit)
+        : await auditLogsApi.getAll({
+            module: moduleFilter === ALL ? undefined : moduleFilter,
+            action: actionFilter === ALL ? undefined : actionFilter,
+            actorLogin: actorLogin.trim() || undefined,
+            from: from || undefined,
+            to: to ? `${to}T23:59:59.999Z` : undefined,
+            limit: parsedLimit,
+          });
+
       setRows(data);
     } catch (e) {
       console.error(e);
@@ -119,6 +161,12 @@ export default function AuditLogs() {
   useEffect(() => {
     if (user?.role === 'admin') void load();
   }, [user?.role, load]);
+
+  const movementStats = useMemo(() => {
+    const movements = rows.filter((r) => isMovementModule(r.module));
+    const encaissements = rows.filter((r) => r.action === 'ENCAISSEMENT' || r.action === 'REMBOURSEMENT');
+    return { total: rows.length, movements: movements.length, encaissements: encaissements.length };
+  }, [rows]);
 
   if (!user || user.role !== 'admin') {
     return <Navigate to="/" replace />;
@@ -205,8 +253,9 @@ export default function AuditLogs() {
 
   const auditColumns = [
     { header: 'Date', value: (r: AuditLogRow) => formatDateTime(r.createdAt) },
-    { header: 'Module', value: (r: AuditLogRow) => r.module },
-    { header: 'Action', value: (r: AuditLogRow) => r.action },
+    { header: 'Module', value: (r: AuditLogRow) => moduleLabel(r.module) },
+    { header: 'Action', value: (r: AuditLogRow) => actionLabel(r.action) },
+    { header: 'Montant', value: (r: AuditLogRow) => formatAuditAmount(extractAuditAmount(r)) },
     { header: 'Utilisateur', value: (r: AuditLogRow) => r.actorLogin ?? '—' },
     { header: 'Rôle', value: (r: AuditLogRow) => r.actorRole ?? '—' },
     { header: 'Résumé', value: (r: AuditLogRow) => r.summary ?? '—' },
@@ -215,9 +264,9 @@ export default function AuditLogs() {
 
   const handleExportExcel = () => {
     exportToExcel({
-      title: 'Historique des actions',
-      fileName: `audit_${new Date().toISOString().split('T')[0]}.xlsx`,
-      sheetName: 'Audit',
+      title: 'Historique des mouvements',
+      fileName: `mouvements_${new Date().toISOString().split('T')[0]}.xlsx`,
+      sheetName: 'Mouvements',
       filtersDescription: getFiltersDescription(),
       columns: auditColumns,
       rows,
@@ -227,11 +276,11 @@ export default function AuditLogs() {
 
   const handleExportPDF = () => {
     exportToPrintablePDF({
-      title: 'Historique des actions',
-      fileName: `audit_${new Date().toISOString().split('T')[0]}.pdf`,
+      title: 'Historique des mouvements',
+      fileName: `mouvements_${new Date().toISOString().split('T')[0]}.pdf`,
       filtersDescription: getFiltersDescription(),
-      headerColor: '#475569',
-      accentColor: '#475569',
+      headerColor: '#0f766e',
+      accentColor: '#0f766e',
       columns: auditColumns,
       rows,
     });
@@ -239,13 +288,35 @@ export default function AuditLogs() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" replace_all
+false
       <PageHeader
-        title="Historique des actions"
-        description="Journal des créations, modifications et suppressions (dépenses, caisse, crédits)."
+        title="Historique des mouvements"
+        description="Journal complet : banque, caisse, dépenses, factures, encaissements, crédits, commandes et livraisons. Chaque opération est enregistrée avec l’utilisateur et le montant."
         icon={History}
         actions={<ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Entrées affichées</p>
+            <p className="text-2xl font-semibold tabular-nums">{movementStats.total}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Mouvements financiers</p>
+            <p className="text-2xl font-semibold tabular-nums">{movementStats.movements}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Encaissements / remboursements</p>
+            <p className="text-2xl font-semibold tabular-nums">{movementStats.encaissements}</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="pb-3">
@@ -365,7 +436,7 @@ export default function AuditLogs() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Entrées ({rows.length})</CardTitle>
+          <CardTitle className="text-base">Mouvements enregistrés ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 pt-0">
             <Table>
@@ -374,6 +445,7 @@ export default function AuditLogs() {
                   <TableHead className="whitespace-nowrap">Date</TableHead>
                   <TableHead>Module</TableHead>
                   <TableHead>Action</TableHead>
+                  <TableHead className="text-right">Montant</TableHead>
                   <TableHead>Utilisateur</TableHead>
                   <TableHead>Résumé</TableHead>
                   <TableHead className="w-[100px]">Détails</TableHead>
@@ -382,7 +454,7 @@ export default function AuditLogs() {
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                       <Loader2 className="h-6 w-6 animate-spin inline mr-2" />
                       Chargement…
                     </TableCell>
@@ -390,22 +462,41 @@ export default function AuditLogs() {
                 )}
                 {!loading && rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                      Aucune entrée pour ces critères.
+                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                      Aucun mouvement pour ces critères. Les nouvelles opérations apparaîtront ici automatiquement.
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading &&
-                  rows.map((r) => (
-                    <TableRow key={r.id}>
+                  rows.map((r) => {
+                    const amount = extractAuditAmount(r);
+                    const isIn = r.action === 'ENCAISSEMENT' || r.action === 'REMBOURSEMENT' || r.module === 'caisse' && (r.afterData as { type?: string } | null)?.type === 'entree';
+                    return (
+                    <TableRow key={r.id} className={isMovementModule(r.module) ? '' : 'opacity-90'}>
                       <TableCell className="whitespace-nowrap text-xs font-mono">
                         {formatDateTime(r.createdAt)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{r.module}</Badge>
+                        <Badge variant={isMovementModule(r.module) ? 'default' : 'outline'}>
+                          {moduleLabel(r.module)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={actionBadgeVariant(r.action)}>{r.action}</Badge>
+                        <Badge variant={actionBadgeVariant(r.action)}>{actionLabel(r.action)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-sm font-medium tabular-nums whitespace-nowrap">
+                        {amount != null ? (
+                          <span className="inline-flex items-center justify-end gap-1">
+                            {isIn ? (
+                              <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : r.action === 'DELETE' ? null : (
+                              <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                            {formatAuditAmount(amount)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">
                         {r.actorLogin ?? '—'}
@@ -413,7 +504,7 @@ export default function AuditLogs() {
                           <span className="text-muted-foreground text-xs block">({r.actorRole})</span>
                         ) : null}
                       </TableCell>
-                      <TableCell className="max-w-[280px] text-sm">
+                      <TableCell className="max-w-[320px] text-sm">
                         <span className="line-clamp-2">{r.summary ?? '—'}</span>
                         {r.entityId ? (
                           <span className="text-[10px] text-muted-foreground font-mono block truncate">
@@ -430,7 +521,10 @@ export default function AuditLogs() {
                           </DialogTrigger>
                           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                             <DialogHeader>
-                              <DialogTitle>Détails audit</DialogTitle>
+                              <DialogTitle>Détail du mouvement</DialogTitle>
+                              <DialogDescription>
+                                Données avant / après enregistrement dans le journal.
+                              </DialogDescription>
                             </DialogHeader>
                             <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
                               {JSON.stringify(
@@ -443,7 +537,8 @@ export default function AuditLogs() {
                         </Dialog>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );
+                  })}
               </TableBody>
             </Table>
         </CardContent>

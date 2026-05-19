@@ -9,9 +9,17 @@ export interface AuditActor {
   role?: string;
 }
 
+export type AuditAction =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'REMBOURSEMENT'
+  | 'PAYMENT'
+  | 'ENCAISSEMENT';
+
 export interface AuditPayload {
   module: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'REMBOURSEMENT';
+  action: AuditAction;
   entityId?: string;
   summary?: string;
   beforeData?: Record<string, unknown> | null;

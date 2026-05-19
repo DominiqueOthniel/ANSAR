@@ -17,6 +17,7 @@ import { Article } from '../entities/article.entity';
 import { CreateSupplierLoadingDto } from './dto/create-supplier-loading.dto';
 import { UpdateSupplierLoadingDto } from './dto/update-supplier-loading.dto';
 import { SetLoadingAssignmentsDto } from './dto/set-loading-assignments.dto';
+import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class SupplierLoadingsService {
@@ -31,6 +32,7 @@ export class SupplierLoadingsService {
     private readonly orderRepo: Repository<ClientOrder>,
     @InjectRepository(Article)
     private readonly articleRepo: Repository<Article>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   private async assertFournisseur(fournisseurId: string): Promise<ThirdParty> {
@@ -80,7 +82,7 @@ export class SupplierLoadingsService {
     } as const;
   }
 
-  async create(dto: CreateSupplierLoadingDto): Promise<SupplierLoading> {
+  async create(dto: CreateSupplierLoadingDto, actor?: AuditActor): Promise<SupplierLoading> {
     await this.assertFournisseur(dto.fournisseurId);
 
     let designation = dto.designation.trim();
@@ -162,8 +164,13 @@ export class SupplierLoadingsService {
     return loading;
   }
 
-  async update(id: string, dto: UpdateSupplierLoadingDto): Promise<SupplierLoading> {
-    const loading = await this.findOne(id);
+  async update(
+    id: string,
+    dto: UpdateSupplierLoadingDto,
+    actor?: AuditActor,
+  ): Promise<SupplierLoading> {
+    const before = await this.findOne(id);
+    const loading = before;
     if (loading.statut === 'annule') {
       throw new BadRequestException('Un bon annulé ne peut plus être modifié.');
     }
@@ -204,17 +211,36 @@ export class SupplierLoadingsService {
     }
 
     await this.loadingRepo.save(loading);
-    return this.findOne(id);
+    const after = await this.findOne(id);
+    await this.auditLogsService.log({
+      module: 'supplier-loadings',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Modification bon de chargement ${after.numeroBon ?? after.designation}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 
-  async remove(id: string): Promise<void> {
-    const loading = await this.findOne(id);
-    await this.loadingRepo.remove(loading);
+  async remove(id: string, actor?: AuditActor): Promise<void> {
+    const before = await this.findOne(id);
+    await this.loadingRepo.remove(before);
+    await this.auditLogsService.log({
+      module: 'supplier-loadings',
+      action: 'DELETE',
+      entityId: id,
+      summary: `Suppression bon de chargement ${before.numeroBon ?? before.designation}`,
+      beforeData: before as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   async setAssignments(
     id: string,
     dto: SetLoadingAssignmentsDto,
+    actor?: AuditActor,
   ): Promise<SupplierLoading> {
     const loading = await this.findOne(id);
     if (loading.statut === 'annule') {
@@ -268,6 +294,15 @@ export class SupplierLoadingsService {
       await this.loadingRepo.save(refreshed);
     }
 
-    return this.findOne(id);
+    const after = await this.findOne(id);
+    await this.auditLogsService.log({
+      module: 'supplier-loadings',
+      action: 'UPDATE',
+      entityId: id,
+      summary: `Affectation commandes sur bon ${after.numeroBon ?? after.designation} (${dto.assignments.length} ligne(s))`,
+      afterData: after as unknown as Record<string, unknown>,
+      actor,
+    });
+    return after;
   }
 }

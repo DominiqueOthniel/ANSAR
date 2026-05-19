@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SupplierLoading } from '../entities/supplier-loading.entity';
 import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignment.entity';
 import { ThirdParty } from '../entities/third-party.entity';
@@ -17,6 +18,7 @@ import { SupplierLoadingsController } from './supplier-loadings.controller';
       ClientOrder,
       Article,
     ]),
+    AuditLogsModule,
   ],
   controllers: [SupplierLoadingsController],
   providers: [SupplierLoadingsService],

@@ -28,7 +28,7 @@ export function formatClientOrderStatusFr(s: ClientOrderStatus): string {
   return ORDER_STATUS_LABELS[s] ?? s;
 }
 
-/** Commande clôturée : plus de modification ni suppression. */
+/** Commande clôturée : plus de modification (suppression toujours possible si pas de facture liée). */
 export function isClientOrderLocked(statut: ClientOrderStatus): boolean {
   return statut === 'livree' || statut === 'annulee';
 }
@@ -38,8 +38,9 @@ export function isClientOrderEditable(statut: ClientOrderStatus): boolean {
   return !isClientOrderLocked(statut);
 }
 
-export function canDeleteClientOrder(statut: ClientOrderStatus): boolean {
-  return isClientOrderEditable(statut);
+/** Suppression autorisée quel que soit le statut (blocage côté API si facture liée). */
+export function canDeleteClientOrder(_statut: ClientOrderStatus): boolean {
+  return true;
 }
 
 export function formatClientDeliveryStatusFr(s: ClientDeliveryStatus): string {
