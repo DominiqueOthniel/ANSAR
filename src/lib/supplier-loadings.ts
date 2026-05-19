@@ -31,3 +31,33 @@ export function isLoadingUnassigned(
 ): boolean {
   return statut !== 'annule' && assignmentCount === 0;
 }
+
+/** Bon utilisable pour rattacher une nouvelle commande client. */
+export function canLinkClientOrderToLoading(statut: SupplierLoadingStatus): boolean {
+  return statut !== 'annule' && statut !== 'brouillon';
+}
+
+export function findSupplierLoadingForOrder(
+  loadings: { id: string; assignments?: { clientOrderId: string }[] }[],
+  orderId: string,
+) {
+  return loadings.find((l) => l.assignments?.some((a) => a.clientOrderId === orderId));
+}
+
+export function formatSupplierLoadingBonOption(l: {
+  numeroBon?: string;
+  designation: string;
+  fournisseurNom?: string;
+  dateChargement: string;
+  quantite?: number;
+  unite?: string;
+  statut: SupplierLoadingStatus;
+}): string {
+  const head = l.numeroBon?.trim() ? `Bon ${l.numeroBon.trim()} — ` : '';
+  const qty =
+    l.quantite != null && l.quantite > 0
+      ? ` · ${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
+      : '';
+  const four = l.fournisseurNom ? ` (${l.fournisseurNom})` : '';
+  return `${head}${l.designation}${qty} — ${formatSupplierLoadingStatusFr(l.statut)}${four}`;
+}

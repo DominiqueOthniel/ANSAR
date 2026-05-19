@@ -37,6 +37,12 @@ export class CreateSupplierLoadingDto {
   @MaxLength(64)
   unite?: string;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  montantBon?: number;
+
   @IsString()
   dateChargement: string;
 

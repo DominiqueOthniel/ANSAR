@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS supplier_loadings (
   designation VARCHAR(255) NOT NULL,
   quantite DECIMAL(12, 2),
   unite VARCHAR(64),
+  "montantBon" DECIMAL(14, 2),
   "dateChargement" DATE NOT NULL,
   statut VARCHAR(32) NOT NULL,
   lieu VARCHAR(255),

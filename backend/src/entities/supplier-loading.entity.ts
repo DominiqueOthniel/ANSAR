@@ -33,6 +33,10 @@ export class SupplierLoading {
   @Column({ type: 'varchar', length: 64, nullable: true })
   unite?: string;
 
+  /** Valeur totale du bon chez le fournisseur (FCFA). */
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  montantBon?: string;
+
   @Column({ type: 'date' })
   dateChargement: string;
 

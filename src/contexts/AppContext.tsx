@@ -280,6 +280,7 @@ export interface SupplierLoading {
   designation: string;
   quantite?: number;
   unite?: string;
+  montantBon?: number;
   dateChargement: string;
   statut: SupplierLoadingStatus;
   lieu?: string;
@@ -698,6 +699,7 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
     designation: String(r.designation ?? ''),
     quantite: r.quantite != null ? parseNum(r.quantite) : undefined,
     unite: r.unite ? String(r.unite) : undefined,
+    montantBon: r.montantBon != null ? parseNum(r.montantBon) : undefined,
     dateChargement: String(r.dateChargement ?? ''),
     statut: r.statut as SupplierLoadingStatus,
     lieu: r.lieu ? String(r.lieu) : undefined,

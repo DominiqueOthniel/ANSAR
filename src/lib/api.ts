@@ -460,6 +460,7 @@ export interface SupplierLoadingPayload {
   designation: string;
   quantite?: number;
   unite?: string;
+  montantBon?: number;
   dateChargement: string;
   statut?: SupplierLoadingStatusPayload;
   lieu?: string;

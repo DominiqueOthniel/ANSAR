@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useApp, ClientOrder, ClientDelivery } from '@/contexts/AppContext';
+import { useApp, ClientOrder, ClientDelivery, SupplierLoading } from '@/contexts/AppContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,11 @@ import {
   type ClientOrderStatus,
   type ClientDeliveryStatus,
 } from '@/lib/client-operations';
+import {
+  canLinkClientOrderToLoading,
+  findSupplierLoadingForOrder,
+  formatSupplierLoadingBonOption,
+} from '@/lib/supplier-loadings';
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -63,12 +68,14 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     drivers,
     trucks,
     thirdParties,
+    supplierLoadings,
     createClientOrder,
     updateClientOrder,
     deleteClientOrder,
     createClientDelivery,
     updateClientDelivery,
     deleteClientDelivery,
+    setSupplierLoadingAssignments,
   } = useApp();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -105,6 +112,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   );
 
   const [orderForm, setOrderForm] = useState({
+    supplierLoadingId: '',
     articleId: '',
     reference: '',
     designation: '',
@@ -118,6 +126,15 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     dateLivraisonSouhaitee: '',
     notes: '',
   });
+
+  const selectableLoadings = useMemo(
+    () =>
+      stableSort(
+        supplierLoadings.filter((l) => canLinkClientOrderToLoading(l.statut)),
+        (a, b) => b.dateChargement.localeCompare(a.dateChargement),
+      ),
+    [supplierLoadings],
+  );
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
     computeLineAmount(quantite, prixUnitaire);
@@ -143,6 +160,42 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       montant: calculated ?? p.montant,
     }));
     toast.info(`Tarif : ${pu.toLocaleString('fr-FR')} FCFA / ${article.unite}`);
+  };
+
+  const applyLoadingToOrderForm = (loading: SupplierLoading) => {
+    const article = loading.articleId
+      ? articles.find((a) => a.id === loading.articleId)
+      : undefined;
+    const pu = getArticleSaleUnitPrice(article);
+    const qty = loading.quantite;
+    const calculated =
+      pu != null && qty != null && qty > 0 ? recalcMontant(qty, pu) : undefined;
+    setOrderForm((p) => ({
+      ...p,
+      supplierLoadingId: loading.id,
+      articleId: loading.articleId ?? p.articleId,
+      reference: loading.numeroBon?.trim() || p.reference,
+      designation: loading.designation,
+      unite: loading.unite || p.unite,
+      quantite: qty ?? p.quantite,
+      prixUnitaire: pu ?? p.prixUnitaire,
+      montant: calculated ?? p.montant,
+    }));
+  };
+
+  const linkOrderToLoading = async (orderId: string, loadingId: string, qty?: number) => {
+    const loading = supplierLoadings.find((l) => l.id === loadingId);
+    if (!loading) return;
+    const existing = (loading.assignments ?? []).map((a) => ({
+      clientOrderId: a.clientOrderId,
+      quantiteAffectee: a.quantiteAffectee,
+      notes: a.notes,
+    }));
+    if (existing.some((a) => a.clientOrderId === orderId)) return;
+    await setSupplierLoadingAssignments(loading.id, [
+      ...existing,
+      { clientOrderId: orderId, quantiteAffectee: qty },
+    ]);
   };
 
   const invoiceForOrder = (order: ClientOrder) =>
@@ -175,6 +228,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
 
   const resetOrderForm = () => {
     setOrderForm({
+      supplierLoadingId: '',
       articleId: '',
       reference: '',
       designation: '',
@@ -197,8 +251,10 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   };
 
   const openEditOrder = (o: ClientOrder) => {
+    const linked = findSupplierLoadingForOrder(supplierLoadings, o.id);
     setEditingOrder(o);
     setOrderForm({
+      supplierLoadingId: linked?.id ?? '',
       articleId: o.articleId ?? '',
       reference: o.reference ?? '',
       designation: o.designation,
@@ -242,10 +298,34 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
         };
         if (editingOrder) {
           await updateClientOrder(editingOrder.id, payload);
+          const prevLoading = findSupplierLoadingForOrder(supplierLoadings, editingOrder.id);
+          const nextId = orderForm.supplierLoadingId.trim();
+          if (prevLoading && prevLoading.id !== nextId) {
+            const remaining = (prevLoading.assignments ?? [])
+              .filter((a) => a.clientOrderId !== editingOrder.id)
+              .map((a) => ({
+                clientOrderId: a.clientOrderId,
+                quantiteAffectee: a.quantiteAffectee,
+                notes: a.notes,
+              }));
+            await setSupplierLoadingAssignments(prevLoading.id, remaining);
+          }
+          if (nextId && (!prevLoading || prevLoading.id !== nextId)) {
+            await linkOrderToLoading(editingOrder.id, nextId, orderForm.quantite);
+          }
           toast.success('Commande mise à jour');
         } else {
-          await createClientOrder(payload);
-          toast.success('Commande enregistrée');
+          const created = await createClientOrder(payload);
+          if (orderForm.supplierLoadingId.trim()) {
+            await linkOrderToLoading(
+              created.id,
+              orderForm.supplierLoadingId.trim(),
+              orderForm.quantite,
+            );
+            toast.success('Commande enregistrée et liée au bon fournisseur');
+          } else {
+            toast.success('Commande enregistrée');
+          }
         }
         setOrderDialogOpen(false);
         resetOrderForm();
@@ -380,6 +460,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
           <ul className="space-y-2 max-h-52 overflow-y-auto pr-1">
             {orders.map((o) => {
               const dCount = deliveries.filter((d) => d.clientOrderId === o.id).length;
+              const linkedLoading = findSupplierLoadingForOrder(supplierLoadings, o.id);
               return (
                 <li key={o.id} className="rounded-lg border bg-card p-2.5 text-sm">
                   <div className="flex justify-between gap-2">
@@ -406,6 +487,18 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     )}
                     <span>{dCount} livraison{dCount !== 1 ? 's' : ''}</span>
                   </div>
+                  {linkedLoading && (
+                    <Link
+                      to="/chargements"
+                      className="inline-flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300 hover:underline mt-0.5"
+                    >
+                      Bon :{' '}
+                      {linkedLoading.numeroBon?.trim() || linkedLoading.designation}
+                      {linkedLoading.fournisseurNom
+                        ? ` (${linkedLoading.fournisseurNom})`
+                        : ''}
+                    </Link>
+                  )}
                   {invoiceForOrder(o) && (
                     <Link
                       to={`/factures?highlight=${invoiceForOrder(o)!.id}`}
@@ -529,6 +622,46 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
             <DialogTitle>{editingOrder ? 'Modifier la commande' : 'Nouvelle commande'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submitOrder} className="space-y-3">
+            {selectableLoadings.length > 0 ? (
+              <div className="space-y-1">
+                <Label>Bon de chargement existant</Label>
+                <Select
+                  value={orderForm.supplierLoadingId || '_none'}
+                  onValueChange={(v) => {
+                    if (v === '_none') {
+                      setOrderForm((p) => ({ ...p, supplierLoadingId: '' }));
+                      return;
+                    }
+                    const loading = selectableLoadings.find((l) => l.id === v);
+                    if (loading) applyLoadingToOrderForm(loading);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Aucun — saisie libre" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Aucun bon —</SelectItem>
+                    {selectableLoadings.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {formatSupplierLoadingBonOption(l)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Préremplit désignation, quantité et référence ; la commande sera affectée au bon
+                  à l’enregistrement.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
+                Aucun bon disponible. Créez-en un dans{' '}
+                <Link to="/chargements" className="text-primary font-medium hover:underline">
+                  Chargements
+                </Link>
+                .
+              </p>
+            )}
             <div>
               <Label>Réf. commande</Label>
               <Input

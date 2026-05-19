@@ -106,6 +106,7 @@ export class SupplierLoadingsService {
       designation,
       quantite: dto.quantite != null ? String(dto.quantite) : undefined,
       unite,
+      montantBon: dto.montantBon != null ? String(dto.montantBon) : undefined,
       dateChargement: dto.dateChargement,
       statut,
       lieu: dto.lieu?.trim() || undefined,
@@ -182,6 +183,9 @@ export class SupplierLoadingsService {
       loading.quantite = dto.quantite != null ? String(dto.quantite) : undefined;
     }
     if (dto.unite !== undefined) loading.unite = dto.unite?.trim() || undefined;
+    if (dto.montantBon !== undefined) {
+      loading.montantBon = dto.montantBon != null ? String(dto.montantBon) : undefined;
+    }
     if (dto.dateChargement != null) loading.dateChargement = dto.dateChargement;
     if (dto.lieu !== undefined) loading.lieu = dto.lieu?.trim() || undefined;
     if (dto.notes !== undefined) loading.notes = dto.notes?.trim() || undefined;

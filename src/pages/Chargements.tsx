@@ -46,6 +46,12 @@ import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import type { SupplierLoadingAssignmentPayload } from '@/lib/api';
+import {
+  computeLineAmount,
+  formatArticleSupplierPriceLabel,
+  getArticleSupplierUnitPrice,
+  listArticlesForSupplier,
+} from '@/lib/article-pricing';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -64,6 +70,9 @@ type LoadingFormState = {
   articleId: string;
   designation: string;
   quantite: number | undefined;
+  prixUnitaireFournisseur: number | undefined;
+  montantBon: number | undefined;
+  montantBonTouched: boolean;
   unite: string;
   dateChargement: string;
   lieu: string;
@@ -77,12 +86,19 @@ const emptyForm = (): LoadingFormState => ({
   articleId: '',
   designation: '',
   quantite: undefined,
+  prixUnitaireFournisseur: undefined,
+  montantBon: undefined,
+  montantBonTouched: false,
   unite: '',
   dateChargement: todayIso(),
   lieu: '',
   notes: '',
   statut: '',
 });
+
+function formatFcfa(n: number): string {
+  return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+}
 
 export default function Chargements() {
   const {
@@ -172,14 +188,43 @@ export default function Chargements() {
     setDialogOpen(true);
   };
 
+  const articlesForFournisseur = useMemo(
+    () => listArticlesForSupplier(articles, form.fournisseurId),
+    [articles, form.fournisseurId],
+  );
+
+  const syncBonValue = (
+    base: LoadingFormState,
+    patch: Partial<LoadingFormState>,
+  ): LoadingFormState => {
+    const next = { ...base, ...patch };
+    const art = next.articleId
+      ? articles.find((a) => a.id === next.articleId)
+      : undefined;
+    const pu =
+      next.prixUnitaireFournisseur ??
+      (next.fournisseurId ? getArticleSupplierUnitPrice(art, next.fournisseurId) : undefined);
+    const montantCalc = computeLineAmount(next.quantite, pu);
+    return {
+      ...next,
+      prixUnitaireFournisseur: pu,
+      montantBon: next.montantBonTouched ? next.montantBon : montantCalc ?? next.montantBon,
+    };
+  };
+
   const openEdit = (l: SupplierLoading) => {
     setEditing(l);
+    const art = l.articleId ? articles.find((a) => a.id === l.articleId) : undefined;
+    const pu = getArticleSupplierUnitPrice(art, l.fournisseurId);
     setForm({
       fournisseurId: l.fournisseurId,
       numeroBon: l.numeroBon ?? '',
       articleId: l.articleId ?? '',
       designation: l.designation,
       quantite: l.quantite,
+      prixUnitaireFournisseur: pu,
+      montantBon: l.montantBon,
+      montantBonTouched: l.montantBon != null,
       unite: l.unite ?? '',
       dateChargement: l.dateChargement,
       lieu: l.lieu ?? '',
@@ -191,12 +236,14 @@ export default function Chargements() {
 
   const onArticleChange = (articleId: string) => {
     const art = articles.find((a) => a.id === articleId);
-    setForm((f) => ({
-      ...f,
-      articleId,
-      designation: art ? art.libelle : f.designation,
-      unite: art ? art.unite : f.unite,
-    }));
+    setForm((f) =>
+      syncBonValue(f, {
+        articleId,
+        designation: art ? art.libelle : f.designation,
+        unite: art ? art.unite : f.unite,
+        montantBonTouched: false,
+      }),
+    );
   };
 
   const handleSave = () =>
@@ -221,6 +268,7 @@ export default function Chargements() {
         designation: form.designation.trim(),
         quantite: form.quantite,
         unite: form.unite.trim() || undefined,
+        montantBon: form.montantBon,
         dateChargement: form.dateChargement,
         lieu: form.lieu.trim() || undefined,
         notes: form.notes.trim() || undefined,
@@ -343,7 +391,14 @@ export default function Chargements() {
                   <ThirdPartyPicker
                     options={fournisseurs}
                     value={form.fournisseurId}
-                    onValueChange={(id) => setForm((f) => ({ ...f, fournisseurId: id }))}
+                    onValueChange={(id) =>
+                      setForm((f) =>
+                        syncBonValue(
+                          { ...f, fournisseurId: id, articleId: '', montantBonTouched: false },
+                          {},
+                        ),
+                      )
+                    }
                     placeholder="Choisir un fournisseur…"
                   />
                 </div>
@@ -366,13 +421,15 @@ export default function Chargements() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="_none">— Aucun —</SelectItem>
-                      {articles
-                        .filter((a) => a.actif)
-                        .map((a) => (
+                      {(form.fournisseurId ? articlesForFournisseur : articles.filter((a) => a.actif)).map(
+                        (a) => (
                           <SelectItem key={a.id} value={a.id}>
-                            {a.libelle} ({a.unite})
+                            {form.fournisseurId
+                              ? formatArticleSupplierPriceLabel(a, form.fournisseurId)
+                              : `${a.libelle} (${a.unite})`}
                           </SelectItem>
-                        ))}
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -388,8 +445,11 @@ export default function Chargements() {
                   <div className="space-y-2">
                     <Label>Quantité</Label>
                     <NumberInput
+                      allowEmpty
                       value={form.quantite}
-                      onValueChange={(v) => setForm((f) => ({ ...f, quantite: v }))}
+                      onChange={(v) =>
+                        setForm((f) => syncBonValue(f, { quantite: v, montantBonTouched: false }))
+                      }
                       min={0}
                     />
                   </div>
@@ -401,6 +461,45 @@ export default function Chargements() {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Prix unitaire fournisseur (FCFA)</Label>
+                    <NumberInput
+                      allowEmpty
+                      value={form.prixUnitaireFournisseur}
+                      onChange={(v) =>
+                        setForm((f) =>
+                          syncBonValue(f, {
+                            prixUnitaireFournisseur: v,
+                            montantBonTouched: false,
+                          }),
+                        )
+                      }
+                      min={0}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valeur du bon (FCFA)</Label>
+                    <NumberInput
+                      allowEmpty
+                      value={form.montantBon}
+                      onChange={(v) =>
+                        setForm((f) => ({ ...f, montantBon: v, montantBonTouched: true }))
+                      }
+                      min={0}
+                    />
+                  </div>
+                </div>
+                {form.quantite != null &&
+                  form.prixUnitaireFournisseur != null &&
+                  form.quantite > 0 &&
+                  form.prixUnitaireFournisseur > 0 && (
+                    <p className="text-xs text-muted-foreground -mt-2">
+                      Calcul auto : {form.quantite} ×{' '}
+                      {form.prixUnitaireFournisseur.toLocaleString('fr-FR')} ={' '}
+                      {formatFcfa(form.quantite * form.prixUnitaireFournisseur)}
+                    </p>
+                  )}
                 <div className="space-y-2">
                   <Label>Date chargement *</Label>
                   <Input
@@ -520,6 +619,7 @@ export default function Chargements() {
                   <TableHead>N° bon</TableHead>
                   <TableHead>Désignation</TableHead>
                   <TableHead>Qté</TableHead>
+                  <TableHead>Valeur bon</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>Commandes liées</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -528,7 +628,7 @@ export default function Chargements() {
               <TableBody>
                 {sortedLoadings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       Aucun bon de chargement.
                     </TableCell>
                   </TableRow>
@@ -550,6 +650,9 @@ export default function Chargements() {
                         {l.quantite != null
                           ? `${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
                           : '—'}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {l.montantBon != null ? formatFcfa(l.montantBon) : '—'}
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusBadgeVariant(l.statut)}>
@@ -658,8 +761,9 @@ export default function Chargements() {
                         <div className="w-28 space-y-1">
                           <Label className="text-xs">Qté affectée</Label>
                           <NumberInput
+                            allowEmpty
                             value={row?.quantiteAffectee}
-                            onValueChange={(v) => setAssignQty(o.id, v)}
+                            onChange={(v) => setAssignQty(o.id, v)}
                             min={0}
                           />
                         </div>
