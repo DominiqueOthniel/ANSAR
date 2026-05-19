@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useApp, Article } from '@/contexts/AppContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_ARTICLES_DESCRIPTION } from '@/lib/metier-activite';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -315,7 +314,6 @@ export default function Articles() {
     <div className="space-y-6">
       <PageHeader
         title="Articles"
-        description={PAGE_ARTICLES_DESCRIPTION}
         icon={Boxes}
         actions={
           <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />

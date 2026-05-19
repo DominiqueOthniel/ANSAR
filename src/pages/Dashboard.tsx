@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_DASHBOARD_DESCRIPTION } from '@/lib/metier-activite';
 import {
   calculatePaidAmountForParcelExpedition,
   calculatePaidAmountForTrip,
@@ -364,7 +363,6 @@ export default function Dashboard() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Tableau de Bord"
-        description={PAGE_DASHBOARD_DESCRIPTION}
         icon={LayoutDashboard}
         gradient="from-violet-500/20 via-fuchsia-500/10 to-transparent"
         stats={[

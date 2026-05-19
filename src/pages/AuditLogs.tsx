@@ -291,7 +291,6 @@ export default function AuditLogs() {
     <div className="space-y-6">
       <PageHeader
         title="Historique des mouvements"
-        description="Journal complet : banque, caisse, dépenses, factures, encaissements, crédits, commandes et livraisons. Chaque opération est enregistrée avec l’utilisateur et le montant."
         icon={History}
         actions={<ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />}
       />

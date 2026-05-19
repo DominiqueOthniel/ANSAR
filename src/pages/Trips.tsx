@@ -27,7 +27,6 @@ import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemaining
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import PageHeader from '@/components/PageHeader';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { PAGE_TRAJETS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -1216,7 +1215,6 @@ export default function Trips() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Trajets"
-        description={PAGE_TRAJETS_DESCRIPTION}
         icon={Route}
         gradient="from-green-500/20 via-cyan-500/10 to-transparent"
         stats={[

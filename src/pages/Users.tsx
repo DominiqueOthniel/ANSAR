@@ -132,7 +132,6 @@ export default function Users() {
     <div className="space-y-6 p-1">
       <PageHeader
         title="Utilisateurs"
-        description="Créez des comptes par rôle (ex. comptable1, comptable2, gestionnaire1). Chaque utilisateur change son mot de passe lui-même."
         icon={UsersIcon}
         gradient="from-violet-500/15 via-purple-500/10 to-transparent"
         actions={

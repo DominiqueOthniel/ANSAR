@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_FOURNISSEURS_DESCRIPTION } from '@/lib/metier-activite';
 import {
   buildGlobalSupplierFeed,
   buildSupplierSummaries,
@@ -269,7 +268,6 @@ export default function Fournisseurs() {
     <div className="space-y-6">
       <PageHeader
         title="Fournisseurs"
-        description={PAGE_FOURNISSEURS_DESCRIPTION}
         actions={
           <div className="flex flex-wrap gap-2">
             <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />

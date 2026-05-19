@@ -25,7 +25,6 @@ import {
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { PAGE_FACTURES_DESCRIPTION } from '@/lib/metier-activite';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import {
@@ -1147,7 +1146,6 @@ export default function Invoices() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Factures"
-        description={PAGE_FACTURES_DESCRIPTION}
         icon={FileText}
         gradient="from-indigo-500/20 via-blue-500/10 to-transparent"
         stats={[

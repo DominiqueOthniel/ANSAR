@@ -18,7 +18,6 @@ import {
   countTracteursJumeles,
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_TRUCKS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -478,7 +477,6 @@ export default function Trucks() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion de la Flotte"
-        description={PAGE_TRUCKS_DESCRIPTION}
         icon={TruckIcon}
         gradient="from-orange-500/20 via-red-500/10 to-transparent"
         stats={[

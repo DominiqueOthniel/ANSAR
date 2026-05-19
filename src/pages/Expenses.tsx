@@ -16,7 +16,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { PAGE_DEPENSES_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -717,7 +716,6 @@ export default function Expenses() {
       {/* En-tête professionnel */}
       <PageHeader
         title="Gestion des Dépenses"
-        description={PAGE_DEPENSES_DESCRIPTION}
         icon={Receipt}
         gradient="from-red-500/20 via-orange-500/10 to-transparent"
         stats={[

@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { useApp, SupplierLoading } from '@/contexts/AppContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_CHARGEMENTS_DESCRIPTION } from '@/lib/metier-activite';
 import {
   formatSupplierLoadingStatusFr,
   SUPPLIER_LOADING_STATUS_OPTIONS,
@@ -538,7 +537,6 @@ export default function Chargements() {
     <div className="space-y-6">
       <PageHeader
         title="Chargements"
-        description={PAGE_CHARGEMENTS_DESCRIPTION}
         actions={
           <div className="flex flex-wrap gap-2">
             <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />

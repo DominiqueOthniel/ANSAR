@@ -13,7 +13,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Edit, Building2, Users, Truck, Search, Filter, X, FileDown, FileText, Loader2, UserCircle2, PanelRight, CreditCard, Briefcase, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_CLIENTS_DESCRIPTION, PAGE_TIERS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import {
@@ -715,7 +714,6 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     <div className="space-y-6 p-1">
       <PageHeader
         title={isClientsScope ? 'Clients' : 'Gestion des Tiers'}
-        description={isClientsScope ? PAGE_CLIENTS_DESCRIPTION : PAGE_TIERS_DESCRIPTION}
         icon={isClientsScope ? UserCircle2 : Building2}
         gradient={
           isClientsScope

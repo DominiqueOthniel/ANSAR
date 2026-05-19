@@ -518,7 +518,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
 
   const submitDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deliveryForm.clientOrderId) {
+    const linkedOrderId =
+      deliveryForm.clientOrderId || editingDelivery?.clientOrderId || '';
+    if (!linkedOrderId) {
       toast.error('Sélectionnez la commande liée.');
       return;
     }
@@ -552,7 +554,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     await withGuard(async () => {
       try {
         const payload = {
-          clientOrderId: deliveryForm.clientOrderId,
+          clientOrderId: linkedOrderId,
           modeSortie: deliveryForm.modeSortie,
           lieuLivraison: deliveryForm.lieuLivraison.trim(),
           statut: deliveryForm.statut,
@@ -812,10 +814,6 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Préremplit désignation, quantité et référence ; la commande sera affectée au bon
-                  à l’enregistrement.
-                </p>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
@@ -1037,10 +1035,21 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
             <div>
               <Label>Commande liée *</Label>
               <Select
-                value={deliveryForm.clientOrderId}
+                value={deliveryForm.clientOrderId || undefined}
                 onValueChange={(v) => {
-                  resetDeliveryForm(v);
-                  setDeliveryForm((p) => ({ ...p, clientOrderId: v }));
+                  const order = orders.find((o) => o.id === v);
+                  const linked = findSupplierLoadingForOrder(supplierLoadings, v);
+                  const hub = linked?.hubArrivee?.trim() || HUB_PRESETS[0];
+                  setDeliveryForm((p) => ({
+                    ...p,
+                    clientOrderId: v,
+                    datePrevue: order?.dateLivraisonSouhaitee ?? p.datePrevue,
+                    lieuLivraison: deliveryLieuForExitMode(
+                      p.modeSortie,
+                      hub,
+                      order?.destination ?? defaultDestination ?? '',
+                    ),
+                  }));
                 }}
               >
                 <SelectTrigger>
@@ -1150,14 +1159,15 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               <Select
                 value={deliveryForm.chauffeurId || '__none__'}
                 onValueChange={(v) =>
-                  setDeliveryForm((p) =>
-                    linkDriverTruckSelection(
+                  setDeliveryForm((p) => ({
+                    ...p,
+                    ...linkDriverTruckSelection(
                       activeTrucks,
                       p,
                       'chauffeur',
                       v === '__none__' ? '' : v,
                     ),
-                  )
+                  }))
                 }
               >
                 <SelectTrigger>
@@ -1178,14 +1188,15 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               <Select
                 value={deliveryForm.tracteurId || '__none__'}
                 onValueChange={(v) =>
-                  setDeliveryForm((p) =>
-                    linkDriverTruckSelection(
+                  setDeliveryForm((p) => ({
+                    ...p,
+                    ...linkDriverTruckSelection(
                       activeTrucks,
                       p,
                       'tracteur',
                       v === '__none__' ? '' : v,
                     ),
-                  )
+                  }))
                 }
               >
                 <SelectTrigger>
@@ -1213,13 +1224,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     }))
                   }
                 />
-                <span className="text-sm leading-snug">
-                  <span className="font-medium">Transport sous-traité (fournisseur)</span>
-                  <span className="block text-xs text-muted-foreground mt-0.5">
-                    Le fournisseur vous facture le transport ; le montant refacturé au client est
-                    inclus sur la facture commande (FAC-CMD), détaillé par livraison.
-                  </span>
-                </span>
+                <span className="text-sm font-medium">Transport sous-traité (fournisseur)</span>
               </label>
               {deliveryForm.transportFactureParFournisseur && (
                 <>
@@ -1242,9 +1247,6 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       value={deliveryForm.montantTransport}
                       onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Ajouté au total de la facture commande (coût fournisseur + marge éventuelle).
-                    </p>
                   </div>
                 </>
               )}
@@ -1259,9 +1261,6 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     value={deliveryForm.montantTransport}
                     onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Flotte interne — inclus sur la facture commande du client.
-                  </p>
                 </div>
               )}
             </>

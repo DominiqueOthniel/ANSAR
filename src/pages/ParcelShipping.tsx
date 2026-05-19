@@ -50,7 +50,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
-import { PAGE_EXPEDITIONS_DESCRIPTION } from '@/lib/metier-activite';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   useApp,
@@ -696,7 +695,6 @@ export default function ParcelShipping() {
     <div className="space-y-6 p-1">
       <PageHeader
         title="Expéditions"
-        description={PAGE_EXPEDITIONS_DESCRIPTION}
         icon={Package}
         gradient="from-sky-500/20 via-cyan-500/10 to-transparent"
         actions={
