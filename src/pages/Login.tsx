@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -7,16 +7,34 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Shield, Eye, EyeOff, Lock } from 'lucide-react';
 import { AppLogo } from '@/components/AppLogo';
-import { useAuth, LOGIN_USER_OPTIONS } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { ROLE_META, formatRoleLabel } from '@/lib/auth-users';
 import { toast } from 'sonner';
 
 export default function Login() {
-  const [selectedUser, setSelectedUser] = useState<string>(LOGIN_USER_OPTIONS[0].login);
+  const { user, login: doLogin, users } = useAuth();
+  const [selectedUser, setSelectedUser] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { isSubmitting: loading, withGuard } = useSubmitGuard();
-  const { user, login: doLogin } = useAuth();
   const navigate = useNavigate();
+
+  const loginOptions = useMemo(
+    () =>
+      users.map((u) => ({
+        login: u.login,
+        roleLabel: formatRoleLabel(u.role),
+        description: ROLE_META[u.role].description,
+      })),
+    [users],
+  );
+
+  useEffect(() => {
+    if (users.length === 0) return;
+    if (!selectedUser || !users.some((u) => u.login === selectedUser)) {
+      setSelectedUser(users[0].login);
+    }
+  }, [users, selectedUser]);
 
   useEffect(() => {
     if (user) navigate('/', { replace: true });
@@ -43,7 +61,7 @@ export default function Login() {
     });
   };
 
-  const selectedOption = LOGIN_USER_OPTIONS.find(o => o.login === selectedUser);
+  const selectedOption = loginOptions.find((o) => o.login === selectedUser);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[#0f1117]">
@@ -93,14 +111,14 @@ export default function Login() {
                   <SelectValue placeholder="Choisir un utilisateur" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1d2e] border-white/10">
-                  {LOGIN_USER_OPTIONS.map((opt) => (
+                  {loginOptions.map((opt) => (
                     <SelectItem
                       key={opt.login}
                       value={opt.login}
-                      textValue={opt.label}
+                      textValue={opt.login}
                       className="text-white/80 focus:bg-violet-500/20 focus:text-white"
                     >
-                      {opt.label}
+                      {opt.login} — {opt.roleLabel}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -112,7 +130,9 @@ export default function Login() {
               <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-violet-400 flex-shrink-0" />
-                  <span className="text-violet-200 text-sm font-semibold">{selectedOption.label}</span>
+                  <span className="text-violet-200 text-sm font-semibold">
+                    {selectedOption.login} · {selectedOption.roleLabel}
+                  </span>
                 </div>
                 <p className="text-violet-200/80 text-xs leading-relaxed pl-6 border-l-2 border-violet-500/30 ml-1">
                   {selectedOption.description}

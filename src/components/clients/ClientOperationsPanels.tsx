@@ -1,0 +1,900 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useApp, ClientOrder, ClientDelivery } from '@/contexts/AppContext';
+import { useSubmitGuard } from '@/hooks/useSubmitGuard';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
+import { frCollator, stableSort } from '@/lib/list-sort';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Plus, Edit, Trash2, ClipboardList, Truck, Loader2, FileText } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  computeLineAmount,
+  formatArticleSalePriceLabel,
+  getArticleSaleUnitPrice,
+  listArticlesForClientOrders,
+} from '@/lib/article-pricing';
+import {
+  CLIENT_ORDER_STATUS_OPTIONS,
+  CLIENT_DELIVERY_STATUS_OPTIONS,
+  formatClientOrderStatusFr,
+  formatClientDeliveryStatusFr,
+  type ClientOrderStatus,
+  type ClientDeliveryStatus,
+} from '@/lib/client-operations';
+
+function formatFcfa(n: number): string {
+  return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+type Props = {
+  clientId: string;
+  defaultDestination?: string;
+};
+
+export function ClientOperationsPanels({ clientId, defaultDestination }: Props) {
+  const {
+    clientOrders,
+    clientDeliveries,
+    articles,
+    invoices,
+    drivers,
+    trucks,
+    thirdParties,
+    createClientOrder,
+    updateClientOrder,
+    deleteClientOrder,
+    createClientDelivery,
+    updateClientDelivery,
+    deleteClientDelivery,
+  } = useApp();
+  const { isSubmitting, withGuard } = useSubmitGuard();
+
+  const orders = useMemo(
+    () =>
+      clientOrders
+        .filter((o) => o.clientId === clientId)
+        .sort((a, b) => b.dateCommande.localeCompare(a.dateCommande)),
+    [clientOrders, clientId],
+  );
+
+  const deliveries = useMemo(
+    () =>
+      clientDeliveries
+        .filter((d) => d.clientId === clientId)
+        .sort((a, b) => (b.datePrevue ?? '').localeCompare(a.datePrevue ?? '')),
+    [clientDeliveries, clientId],
+  );
+
+  const fournisseurs = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'fournisseur' && tp.nom.trim()),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<ClientOrder | null>(null);
+  const catalogArticles = useMemo(
+    () => listArticlesForClientOrders(articles),
+    [articles],
+  );
+
+  const [orderForm, setOrderForm] = useState({
+    articleId: '',
+    reference: '',
+    designation: '',
+    destination: defaultDestination ?? '',
+    montant: undefined as number | undefined,
+    prixUnitaire: undefined as number | undefined,
+    quantite: undefined as number | undefined,
+    unite: '',
+    statut: 'confirmee' as ClientOrderStatus,
+    dateCommande: todayIso(),
+    dateLivraisonSouhaitee: '',
+    notes: '',
+  });
+
+  const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
+    computeLineAmount(quantite, prixUnitaire);
+
+  useEffect(() => {
+    const next = recalcMontant(orderForm.quantite, orderForm.prixUnitaire);
+    if (next != null) {
+      setOrderForm((p) => (p.montant === next ? p : { ...p, montant: next }));
+    }
+  }, [orderForm.quantite, orderForm.prixUnitaire]);
+
+  const applyArticleToOrder = (articleId: string) => {
+    const article = articles.find((a) => a.id === articleId);
+    const pu = getArticleSaleUnitPrice(article);
+    if (!article || pu == null) return;
+    const calculated = recalcMontant(orderForm.quantite, pu);
+    setOrderForm((p) => ({
+      ...p,
+      articleId,
+      designation: p.designation.trim() ? p.designation : article.libelle,
+      unite: article.unite || p.unite,
+      prixUnitaire: pu,
+      montant: calculated ?? p.montant,
+    }));
+    toast.info(`Tarif : ${pu.toLocaleString('fr-FR')} FCFA / ${article.unite}`);
+  };
+
+  const invoiceForOrder = (order: ClientOrder) =>
+    invoices.find(
+      (inv) => inv.id === order.invoiceId || inv.clientOrderId === order.id,
+    );
+
+  const invoiceForDelivery = (delivery: ClientDelivery) =>
+    invoices.find(
+      (inv) =>
+        inv.id === delivery.invoiceId ||
+        inv.clientDeliveryId === delivery.id,
+    );
+
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState<ClientDelivery | null>(null);
+  const [deliveryForm, setDeliveryForm] = useState({
+    clientOrderId: '',
+    lieuLivraison: defaultDestination ?? '',
+    statut: 'planifiee' as ClientDeliveryStatus,
+    datePrevue: '',
+    dateLivraison: '',
+    chauffeurId: '',
+    tracteurId: '',
+    montantTransport: undefined as number | undefined,
+    transportFactureParFournisseur: false,
+    transportFournisseurId: '',
+    notes: '',
+  });
+
+  const resetOrderForm = () => {
+    setOrderForm({
+      articleId: '',
+      reference: '',
+      designation: '',
+      destination: defaultDestination ?? '',
+      montant: undefined,
+      prixUnitaire: undefined,
+      quantite: undefined,
+      unite: '',
+      statut: 'confirmee',
+      dateCommande: todayIso(),
+      dateLivraisonSouhaitee: '',
+      notes: '',
+    });
+    setEditingOrder(null);
+  };
+
+  const openNewOrder = () => {
+    resetOrderForm();
+    setOrderDialogOpen(true);
+  };
+
+  const openEditOrder = (o: ClientOrder) => {
+    setEditingOrder(o);
+    setOrderForm({
+      articleId: o.articleId ?? '',
+      reference: o.reference ?? '',
+      designation: o.designation,
+      destination: o.destination ?? '',
+      montant: o.montant,
+      prixUnitaire: o.prixUnitaire,
+      quantite: o.quantite,
+      unite: o.unite ?? '',
+      statut: o.statut,
+      dateCommande: o.dateCommande,
+      dateLivraisonSouhaitee: o.dateLivraisonSouhaitee ?? '',
+      notes: o.notes ?? '',
+    });
+    setOrderDialogOpen(true);
+  };
+
+  const submitOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderForm.designation.trim()) {
+      toast.error('Désignation de la commande obligatoire.');
+      return;
+    }
+    await withGuard(async () => {
+      try {
+        const finalMontant =
+          recalcMontant(orderForm.quantite, orderForm.prixUnitaire) ?? orderForm.montant;
+        const payload = {
+          clientId,
+          articleId: orderForm.articleId || undefined,
+          reference: orderForm.reference.trim() || undefined,
+          designation: orderForm.designation.trim(),
+          destination: orderForm.destination.trim() || undefined,
+          montant: finalMontant,
+          prixUnitaire: orderForm.prixUnitaire,
+          quantite: orderForm.quantite,
+          unite: orderForm.unite.trim() || undefined,
+          statut: orderForm.statut,
+          dateCommande: orderForm.dateCommande,
+          dateLivraisonSouhaitee: orderForm.dateLivraisonSouhaitee || undefined,
+          notes: orderForm.notes.trim() || undefined,
+        };
+        if (editingOrder) {
+          await updateClientOrder(editingOrder.id, payload);
+          toast.success('Commande mise à jour');
+        } else {
+          await createClientOrder(payload);
+          toast.success('Commande enregistrée');
+        }
+        setOrderDialogOpen(false);
+        resetOrderForm();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur');
+      }
+    });
+  };
+
+  const resetDeliveryForm = (orderId?: string) => {
+    const order = orderId ? orders.find((o) => o.id === orderId) : undefined;
+    setDeliveryForm({
+      clientOrderId: orderId ?? '',
+      lieuLivraison: order?.destination ?? defaultDestination ?? '',
+      statut: 'planifiee',
+      datePrevue: order?.dateLivraisonSouhaitee ?? '',
+      dateLivraison: '',
+      chauffeurId: '',
+      tracteurId: '',
+      montantTransport: undefined,
+      transportFactureParFournisseur: false,
+      transportFournisseurId: '',
+      notes: '',
+    });
+    setEditingDelivery(null);
+  };
+
+  const openNewDelivery = (orderId?: string) => {
+    if (orders.length === 0) {
+      toast.error('Créez d’abord une commande pour ce client.');
+      return;
+    }
+    resetDeliveryForm(orderId ?? orders[0].id);
+    setDeliveryDialogOpen(true);
+  };
+
+  const openEditDelivery = (d: ClientDelivery) => {
+    setEditingDelivery(d);
+    setDeliveryForm({
+      clientOrderId: d.clientOrderId,
+      lieuLivraison: d.lieuLivraison,
+      statut: d.statut,
+      datePrevue: d.datePrevue ?? '',
+      dateLivraison: d.dateLivraison ?? '',
+      chauffeurId: d.chauffeurId ?? '',
+      tracteurId: d.tracteurId ?? '',
+      montantTransport: d.montantTransport,
+      transportFactureParFournisseur: d.transportFactureParFournisseur === true,
+      transportFournisseurId: d.transportFournisseurId ?? '',
+      notes: d.notes ?? '',
+    });
+    setDeliveryDialogOpen(true);
+  };
+
+  const submitDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deliveryForm.clientOrderId) {
+      toast.error('Sélectionnez la commande liée.');
+      return;
+    }
+    if (!deliveryForm.lieuLivraison.trim()) {
+      toast.error('Lieu de livraison obligatoire.');
+      return;
+    }
+    const billedBySupplier = deliveryForm.transportFactureParFournisseur;
+    const hasMission = !!(deliveryForm.chauffeurId || deliveryForm.tracteurId);
+    if (
+      !billedBySupplier &&
+      hasMission &&
+      (!deliveryForm.montantTransport || deliveryForm.montantTransport <= 0)
+    ) {
+      toast.error('Indiquez le montant du transport si un chauffeur ou un camion est attribué.');
+      return;
+    }
+    if (billedBySupplier && !deliveryForm.transportFournisseurId) {
+      toast.error('Indiquez le fournisseur qui facture le transport au client.');
+      return;
+    }
+    await withGuard(async () => {
+      try {
+        const payload = {
+          clientOrderId: deliveryForm.clientOrderId,
+          lieuLivraison: deliveryForm.lieuLivraison.trim(),
+          statut: deliveryForm.statut,
+          datePrevue: deliveryForm.datePrevue || undefined,
+          dateLivraison: deliveryForm.dateLivraison || undefined,
+          chauffeurId: deliveryForm.chauffeurId || undefined,
+          tracteurId: deliveryForm.tracteurId || undefined,
+          transportFactureParFournisseur: billedBySupplier,
+          transportFournisseurId: billedBySupplier
+            ? deliveryForm.transportFournisseurId
+            : undefined,
+          montantTransport:
+            !billedBySupplier && hasMission ? deliveryForm.montantTransport : undefined,
+          notes: deliveryForm.notes.trim() || undefined,
+        };
+        if (editingDelivery) {
+          await updateClientDelivery(editingDelivery.id, payload);
+          toast.success('Livraison mise à jour');
+        } else {
+          await createClientDelivery(payload);
+          toast.success('Livraison planifiée');
+        }
+        setDeliveryDialogOpen(false);
+        resetDeliveryForm();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur');
+      }
+    });
+  };
+
+  const activeTrucks = trucks.filter((t) => t.statut === 'actif');
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-violet-600" />
+            Commandes ({orders.length})
+          </h3>
+          <Button type="button" size="sm" variant="secondary" onClick={openNewOrder}>
+            <Plus className="h-3 w-3 mr-1" />
+            Nouvelle commande
+          </Button>
+        </div>
+        {orders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Aucune commande — enregistrez la demande du donneur d’ordre (produit, quantité, destination).
+          </p>
+        ) : (
+          <ul className="space-y-2 max-h-52 overflow-y-auto pr-1">
+            {orders.map((o) => {
+              const dCount = deliveries.filter((d) => d.clientOrderId === o.id).length;
+              return (
+                <li key={o.id} className="rounded-lg border bg-card p-2.5 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{o.designation}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {o.dateCommande}
+                        {o.reference ? ` · ${o.reference}` : ''}
+                        {o.destination ? ` · ${o.destination}` : ''}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 text-xs">
+                      {formatClientOrderStatusFr(o.statut)}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 mt-1 text-xs text-muted-foreground">
+                    {o.montant != null && o.montant > 0 && (
+                      <span>{formatFcfa(o.montant)}</span>
+                    )}
+                    {o.quantite != null && o.quantite > 0 && (
+                      <span>
+                        {o.quantite} {o.unite || 'u.'}
+                      </span>
+                    )}
+                    <span>{dCount} livraison{dCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  {invoiceForOrder(o) && (
+                    <Link
+                      to={`/factures?highlight=${invoiceForOrder(o)!.id}`}
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Facture {invoiceForOrder(o)!.numero}
+                    </Link>
+                  )}
+                  <div className="flex gap-1 mt-2">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => openEditOrder(o)}>
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openNewDelivery(o.id)}
+                    >
+                      <Truck className="h-3.5 w-3.5 mr-1" />
+                      Livrer
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => {
+                        if (confirm(`Supprimer la commande « ${o.designation} » ?`)) {
+                          void deleteClientOrder(o.id).then(() => toast.success('Commande supprimée'));
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Truck className="h-4 w-4 text-emerald-600" />
+            Livraisons ({deliveries.length})
+          </h3>
+          <Button type="button" size="sm" variant="outline" onClick={() => openNewDelivery()}>
+            <Plus className="h-3 w-3 mr-1" />
+            Planifier livraison
+          </Button>
+        </div>
+        {deliveries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Aucune livraison planifiée — rattachez chaque enlèvement / livraison à une commande.
+          </p>
+        ) : (
+          <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {deliveries.map((d) => {
+              const order = orders.find((o) => o.id === d.clientOrderId);
+              return (
+                <li key={d.id} className="rounded-lg border px-2.5 py-2 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-medium truncate">{d.lieuLivraison}</span>
+                    <Badge variant="secondary" className="text-xs shrink-0">
+                      {formatClientDeliveryStatusFr(d.statut)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {order?.designation ?? d.orderDesignation ?? 'Commande'}
+                    {d.datePrevue ? ` · prévu ${d.datePrevue}` : ''}
+                    {d.transportFactureParFournisseur ? (
+                      <span>
+                        {' '}
+                        · transport facturé par{' '}
+                        {d.transportFournisseurNom ?? 'fournisseur'} → client
+                      </span>
+                    ) : (
+                      d.montantTransport != null &&
+                      d.montantTransport > 0 && (
+                        <span> · transport {formatFcfa(d.montantTransport)}</span>
+                      )
+                    )}
+                  </p>
+                  {d.transportFactureParFournisseur && (
+                    <Badge variant="outline" className="text-xs mt-1">
+                      Pas de FAC-LIV (transport hors société)
+                    </Badge>
+                  )}
+                  {invoiceForDelivery(d) && !d.transportFactureParFournisseur && (
+                    <Link
+                      to={`/factures?highlight=${invoiceForDelivery(d)!.id}`}
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Facture {invoiceForDelivery(d)!.numero}
+                    </Link>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-1 h-7 px-2"
+                    onClick={() => openEditDelivery(d)}
+                  >
+                    <Edit className="h-3 w-3 mr-1" />
+                    Modifier
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingOrder ? 'Modifier la commande' : 'Nouvelle commande'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitOrder} className="space-y-3">
+            <div>
+              <Label>Réf. commande</Label>
+              <Input
+                value={orderForm.reference}
+                onChange={(e) => setOrderForm((p) => ({ ...p, reference: e.target.value }))}
+                placeholder="ATC-2026-042"
+              />
+            </div>
+            {catalogArticles.length > 0 && (
+              <div>
+                <Label>Article catalogue</Label>
+                <Select
+                  value={orderForm.articleId || '_none'}
+                  onValueChange={(v) => {
+                    if (v === '_none') {
+                      setOrderForm((p) => ({ ...p, articleId: '' }));
+                      return;
+                    }
+                    applyArticleToOrder(v);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir un article…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Saisie libre —</SelectItem>
+                    {catalogArticles.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {formatArticleSalePriceLabel(a)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Prix et montant prévu calculés depuis le tarif catalogue.
+                </p>
+              </div>
+            )}
+            <div>
+              <Label>Désignation *</Label>
+              <Input
+                value={orderForm.designation}
+                onChange={(e) => setOrderForm((p) => ({ ...p, designation: e.target.value }))}
+                placeholder="Ex. 200 sacs ciment"
+                required
+              />
+            </div>
+            <div>
+              <Label>Destination livraison</Label>
+              <Input
+                value={orderForm.destination}
+                onChange={(e) => setOrderForm((p) => ({ ...p, destination: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Quantité</Label>
+                <NumberInput
+                  min={0}
+                  value={orderForm.quantite}
+                  onChange={(v) => {
+                    const calculated = recalcMontant(v, orderForm.prixUnitaire);
+                    setOrderForm((p) => ({
+                      ...p,
+                      quantite: v,
+                      montant: calculated ?? p.montant,
+                    }));
+                  }}
+                />
+              </div>
+              <div>
+                <Label>Unité</Label>
+                <Input
+                  value={orderForm.unite}
+                  onChange={(e) => setOrderForm((p) => ({ ...p, unite: e.target.value }))}
+                  placeholder="sac, t…"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Prix unitaire (FCFA)</Label>
+              <NumberInput
+                min={0}
+                value={orderForm.prixUnitaire}
+                onChange={(v) => {
+                  const calculated = recalcMontant(orderForm.quantite, v);
+                  setOrderForm((p) => ({
+                    ...p,
+                    prixUnitaire: v,
+                    montant: calculated ?? p.montant,
+                  }));
+                }}
+              />
+            </div>
+            <div>
+              <Label>Montant prévu (FCFA)</Label>
+              <NumberInput
+                min={0}
+                value={orderForm.montant}
+                onChange={(v) => setOrderForm((p) => ({ ...p, montant: v }))}
+                disabled={
+                  orderForm.quantite != null &&
+                  orderForm.prixUnitaire != null &&
+                  orderForm.quantite > 0 &&
+                  orderForm.prixUnitaire > 0
+                }
+              />
+              {orderForm.quantite != null &&
+                orderForm.prixUnitaire != null &&
+                orderForm.quantite > 0 &&
+                orderForm.prixUnitaire > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Calculé : quantité × prix unitaire
+                  </p>
+                )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Date commande</Label>
+                <Input
+                  type="date"
+                  value={orderForm.dateCommande}
+                  onChange={(e) => setOrderForm((p) => ({ ...p, dateCommande: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Livraison souhaitée</Label>
+                <Input
+                  type="date"
+                  value={orderForm.dateLivraisonSouhaitee}
+                  onChange={(e) =>
+                    setOrderForm((p) => ({ ...p, dateLivraisonSouhaitee: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Statut</Label>
+              <Select
+                value={orderForm.statut}
+                onValueChange={(v) =>
+                  setOrderForm((p) => ({ ...p, statut: v as ClientOrderStatus }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLIENT_ORDER_STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {formatClientOrderStatusFr(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={orderForm.notes}
+                onChange={(e) => setOrderForm((p) => ({ ...p, notes: e.target.value }))}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOrderDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Enregistrer
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deliveryDialogOpen} onOpenChange={setDeliveryDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingDelivery ? 'Modifier la livraison' : 'Planifier une livraison'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitDelivery} className="space-y-3">
+            <div>
+              <Label>Commande liée *</Label>
+              <Select
+                value={deliveryForm.clientOrderId}
+                onValueChange={(v) => {
+                  resetDeliveryForm(v);
+                  setDeliveryForm((p) => ({ ...p, clientOrderId: v }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choisir…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {orders.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.designation} ({o.dateCommande})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Lieu de livraison *</Label>
+              <Input
+                value={deliveryForm.lieuLivraison}
+                onChange={(e) => setDeliveryForm((p) => ({ ...p, lieuLivraison: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Date prévue</Label>
+                <Input
+                  type="date"
+                  value={deliveryForm.datePrevue}
+                  onChange={(e) => setDeliveryForm((p) => ({ ...p, datePrevue: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>Date livrée</Label>
+                <Input
+                  type="date"
+                  value={deliveryForm.dateLivraison}
+                  onChange={(e) => setDeliveryForm((p) => ({ ...p, dateLivraison: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Statut</Label>
+              <Select
+                value={deliveryForm.statut}
+                onValueChange={(v) =>
+                  setDeliveryForm((p) => ({ ...p, statut: v as ClientDeliveryStatus }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLIENT_DELIVERY_STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {formatClientDeliveryStatusFr(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Chauffeur</Label>
+              <Select
+                value={deliveryForm.chauffeurId || '__none__'}
+                onValueChange={(v) =>
+                  setDeliveryForm((p) => ({ ...p, chauffeurId: v === '__none__' ? '' : v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Optionnel" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {drivers.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.prenom} {d.nom}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Camion</Label>
+              <Select
+                value={deliveryForm.tracteurId || '__none__'}
+                onValueChange={(v) =>
+                  setDeliveryForm((p) => ({ ...p, tracteurId: v === '__none__' ? '' : v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Optionnel" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {activeTrucks.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.immatriculation}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <Checkbox
+                  checked={deliveryForm.transportFactureParFournisseur}
+                  onCheckedChange={(c) =>
+                    setDeliveryForm((p) => ({
+                      ...p,
+                      transportFactureParFournisseur: c === true,
+                      transportFournisseurId: c === true ? p.transportFournisseurId : '',
+                      montantTransport: c === true ? undefined : p.montantTransport,
+                    }))
+                  }
+                />
+                <span className="text-sm leading-snug">
+                  <span className="font-medium">Transport facturé par le fournisseur au client</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    Le gros fournisseur envoie sa facture transport directement à votre client. Vous
+                    facturez uniquement la marchandise (FAC-CMD), pas de FAC-LIV.
+                  </span>
+                </span>
+              </label>
+              {deliveryForm.transportFactureParFournisseur && (
+                <div className="space-y-2">
+                  <Label>Fournisseur qui facture le transport *</Label>
+                  <ThirdPartyPicker
+                    options={fournisseurs}
+                    value={deliveryForm.transportFournisseurId}
+                    onValueChange={(id) =>
+                      setDeliveryForm((p) => ({ ...p, transportFournisseurId: id }))
+                    }
+                    placeholder="Choisir le fournisseur…"
+                  />
+                </div>
+              )}
+            </div>
+            {!deliveryForm.transportFactureParFournisseur &&
+              (deliveryForm.chauffeurId || deliveryForm.tracteurId) && (
+                <div className="space-y-2">
+                  <Label>Frais transport (FCFA) *</Label>
+                  <NumberInput
+                    min={0}
+                    value={deliveryForm.montantTransport}
+                    onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Facturé au client par votre société (FAC-LIV).
+                  </p>
+                </div>
+              )}
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={deliveryForm.notes}
+                onChange={(e) => setDeliveryForm((p) => ({ ...p, notes: e.target.value }))}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeliveryDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Enregistrer
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+

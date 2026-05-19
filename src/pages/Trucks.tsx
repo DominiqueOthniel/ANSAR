@@ -65,7 +65,7 @@ function tracteurImmatForForm(truck: Truck): string {
 }
 
 export default function Trucks() {
-  const { trucks, trips, parcelExpeditions, expenses, invoices, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
+  const { trucks, trips, parcelExpeditions, expenses, invoices, clientDeliveries, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
@@ -252,7 +252,7 @@ export default function Trucks() {
     }
 
     // Calculer les statistiques avant suppression
-    const stats = calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions);
+    const stats = calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
     
     if (confirm(
       `Êtes-vous sûr de vouloir supprimer ce camion ?\n\n` +
@@ -278,7 +278,7 @@ export default function Trucks() {
 
   // Calculer les statistiques pour chaque camion
   const trucksWithStats = trucks.map(truck => {
-    const stats = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions);
+    const stats = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
     return { truck, stats };
   });
 
@@ -329,7 +329,7 @@ export default function Trucks() {
 
   const sortedTrucks = useMemo(() => {
     const list = [...filteredTrucks];
-    const stats = (id: string) => calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions);
+    const stats = (id: string) => calculateTruckStats(id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
     switch (listSort) {
       case 'immat_desc':
         return stableSort(list, (a, b) => frCollator.compare(b.immatriculation, a.immatriculation));
@@ -398,11 +398,11 @@ export default function Trucks() {
           return chauffeur ? `${chauffeur.prenom} ${chauffeur.nom}` : '-';
         }},
         { header: 'Propriétaire', value: (t) => t.proprietaireId ? (thirdParties.find(tp => tp.id === t.proprietaireId)?.nom || '-') : '-' },
-        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount },
-        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount },
-        { header: 'Chiffre d’affaires (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue },
-        { header: 'Dépenses (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses },
-        { header: 'Bénéfice (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit },
+        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCount },
+        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCancelledCount },
+        { header: 'Chiffre d’affaires (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).revenue },
+        { header: 'Dépenses (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).expenses },
+        { header: 'Bénéfice (FCFA)', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).profit },
         { header: 'Mise en circulation', value: (t) => new Date(t.dateMiseEnCirculation).toLocaleDateString('fr-FR') },
       ],
       rows: sortedTrucks,
@@ -412,11 +412,11 @@ export default function Trucks() {
 
   const handleExportPDF = () => {
     // Calculer les totaux
-    const totalRecettes = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue, 0);
-    const totalDepenses = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses, 0);
+    const totalRecettes = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).revenue, 0);
+    const totalDepenses = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).expenses, 0);
     const totalBenefice = totalRecettes - totalDepenses;
-    const totalTrajetsTermines = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount, 0);
-    const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount, 0);
+    const totalTrajetsTermines = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCount, 0);
+    const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCancelledCount, 0);
 
     exportToPrintablePDF({
       title: 'Liste des Camions',
@@ -445,26 +445,26 @@ export default function Trucks() {
           return chauffeur ? `👤 ${chauffeur.prenom} ${chauffeur.nom}` : '-';
         }},
         { header: 'Propriétaire', value: (t) => t.proprietaireId ? (thirdParties.find(tp => tp.id === t.proprietaireId)?.nom || '-') : '-' },
-        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCount },
-        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).tripsCancelledCount },
+        { header: 'Trajets terminés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCount },
+        { header: 'Trajets annulés', value: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCancelledCount },
         { 
           header: 'Chiffre d’affaires (FCFA)', 
-          value: (t) => `+${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue.toLocaleString('fr-FR')}`,
-          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).revenue > 0 ? 'positive' : 'neutral'
+          value: (t) => `+${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).revenue.toLocaleString('fr-FR')}`,
+          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).revenue > 0 ? 'positive' : 'neutral'
         },
         { 
           header: 'Dépenses (FCFA)', 
-          value: (t) => `-${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses.toLocaleString('fr-FR')}`,
-          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).expenses > 0 ? 'negative' : 'neutral'
+          value: (t) => `-${calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).expenses.toLocaleString('fr-FR')}`,
+          cellStyle: (t) => calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).expenses > 0 ? 'negative' : 'neutral'
         },
         { 
           header: 'Bénéfice (FCFA)', 
           value: (t) => {
-            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit;
+            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).profit;
             return profit >= 0 ? `+${profit.toLocaleString('fr-FR')}` : profit.toLocaleString('fr-FR');
           },
           cellStyle: (t) => {
-            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions).profit;
+            const profit = calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).profit;
             return profit >= 0 ? 'positive' : 'negative';
           }
         },
@@ -1093,7 +1093,7 @@ export default function Trucks() {
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const st = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions);
+                      const st = calculateTruckStats(truck.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
                       return (
                         <div className="flex flex-col gap-0.5 text-sm">
                           <div className="flex items-center gap-2">
@@ -1220,7 +1220,7 @@ export default function Trucks() {
                 </div>
               </div>
               {viewingTruck && (() => {
-                const stats = calculateTruckStats(viewingTruck.id, trips, expenses, invoices, parcelExpeditions);
+                const stats = calculateTruckStats(viewingTruck.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
                 return (
                   <div className="col-span-2 space-y-3">
                     {/* Statistiques principales */}

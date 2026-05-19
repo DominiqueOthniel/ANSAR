@@ -11,9 +11,9 @@ export const PAGE_DASHBOARD_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Synthèse enca
 export const PAGE_TRAJETS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fil d’Ariane volontairement simple : enregistrez les fournisseurs de ramassage dans Tiers, puis enchaînez les arrêts « chargement » (un site fournisseur par ligne, dans l’ordre du camion) puis les « livraison ». Résumé origine / destination + liste d’arrêts = la mission lisible d’un coup d’œil ; plusieurs clients peuvent être facturés sur un même trajet.`;
 
 export const PAGE_FACTURES_DESCRIPTION =
-  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Plusieurs factures possibles sur une même mission lorsque plusieurs structures sont concernées.';
+  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Les factures FAC-CMD couvrent la marchandise ; les FAC-LIV le transport que vous facturez vous-même. Si un fournisseur facture le transport directement au client, aucune FAC-LIV n’est créée pour cette livraison.';
 
-export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, lien avec trajets, factures et envois colis.`;
+export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, commandes, livraisons, factures et envois colis. Sur une livraison, cochez « transport facturé par le fournisseur » lorsqu’un gros fournisseur facture le transport directement à votre client : vous ne générez alors pas de facture transport (FAC-LIV), seule la marchandise / marge (FAC-CMD) reste à votre charge.`;
 
 export const PAGE_TIERS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Propriétaires de camions, clients, fournisseurs (points de chargement / contacts site), et personnel siège (employés) pour lier les salaires hors chauffeurs — chaque fiche clarifie qui intervient sur la chaîne.`;
 
@@ -24,6 +24,13 @@ export const PAGE_TRUCKS_DESCRIPTION =
 
 export const PAGE_DEPENSES_DESCRIPTION =
   "Frais d'exploitation des missions et du siège : carburant, péages, achats chez fournisseurs, sous-traitance, charges courantes — rattachez le fournisseur quand c'est lui qui facture le poste.";
+
+export const PAGE_ARTICLES_DESCRIPTION =
+  'Catalogue des produits ou prestations achetés (ex. sac de ciment, tonne de gravier). Sous chaque article, déclarez le prix unitaire forfaitaire par fournisseur : lors des dépenses, le tarif se remplit automatiquement dès que vous choisissez l’article et le fournisseur.';
+
+export const PAGE_CHARGEMENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Enregistrez les bons de chargement chez vos fournisseurs (dépôts, usines, carrières…), puis affectez chaque bon aux commandes clients concernées pour suivre ce qui reste à livrer.`;
+
+export const PAGE_FOURNISSEURS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Vue centrée fournisseurs : état des sites (bons en attente, affectations), dépenses liées, transport facturé directement à vos clients et tarifs catalogue — pour suivre chaque interaction avec vos points de chargement.`;
 
 export const PAGE_CHAUFFEURS_DESCRIPTION =
   'Chauffeurs, documents et mouvements financiers liés aux missions de transport.';

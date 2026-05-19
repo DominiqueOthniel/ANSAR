@@ -11,6 +11,7 @@ import {
   Invoice,
   DriverTransaction,
   ParcelExpedition,
+  ClientDelivery,
 } from '@/contexts/AppContext';
 
 /** Libellé français du statut de trajet (exports, tableaux). */
@@ -107,6 +108,28 @@ export const calculatePaidAmountForParcelExpedition = (
   return invoices
     .filter((inv) => inv.parcelExpeditionId === expeditionId)
     .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
+};
+
+/** Montant encaissé sur une livraison client (facture transport FAC-LIV). */
+export const calculatePaidAmountForClientDelivery = (
+  deliveryId: string,
+  invoices: Invoice[],
+): number => {
+  return invoices
+    .filter((inv) => inv.clientDeliveryId === deliveryId)
+    .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
+};
+
+/** Montant d’apport / CA transport pour une livraison (encaissé ou montant transport prévu). */
+export const deliveryTransportApportAmount = (
+  delivery: ClientDelivery,
+  invoices: Invoice[],
+): number => {
+  if (invoices.length) {
+    const paid = calculatePaidAmountForClientDelivery(delivery.id, invoices);
+    if (paid > 0) return paid;
+  }
+  return Number(delivery.montantTransport ?? 0);
 };
 
 /**
@@ -239,7 +262,7 @@ export interface DriverTransactionDisplay {
   montant: number;
   date: string;
   description: string;
-  source: 'trajet' | 'depense' | 'manuel';
+  source: 'trajet' | 'depense' | 'manuel' | 'livraison';
 }
 
 /**
@@ -254,6 +277,7 @@ export const calculateDriverStatsFromTripsAndExpenses = (
   expenses: Expense[],
   expeditions: ParcelExpedition[] = [],
   invoices: Invoice[] = [],
+  clientDeliveries: ClientDelivery[] = [],
 ) => {
   const driverTrips = trips.filter(
     t => t.chauffeurId === driverId && t.statut === 'termine'
@@ -273,10 +297,21 @@ export const calculateDriverStatsFromTripsAndExpenses = (
         0,
       )
     : driverExpeditions.reduce((sum, ex) => sum + sumParcelExpeditionLotsCa(ex), 0);
+  const driverDeliveries = clientDeliveries.filter(
+    (d) =>
+      d.chauffeurId === driverId &&
+      d.statut !== 'annulee' &&
+      (d.chauffeurId || d.tracteurId),
+  );
+  const apportsFromDeliveries = driverDeliveries.reduce(
+    (sum, d) => sum + deliveryTransportApportAmount(d, invoices),
+    0,
+  );
   const apportsFromManual = driver.transactions
     .filter(t => t.type === 'apport')
     .reduce((sum, t) => sum + t.montant, 0);
-  const apports = apportsFromTrips + apportsFromExpeditions + apportsFromManual;
+  const apports =
+    apportsFromTrips + apportsFromExpeditions + apportsFromDeliveries + apportsFromManual;
 
   const sortiesFromExpenses = driverExpenses.reduce((sum, e) => sum + e.montant, 0);
   const sortiesFromManual = driver.transactions
@@ -312,6 +347,16 @@ export const calculateDriverStatsFromTripsAndExpenses = (
     description: `Expédition: ${ex.origine} → ${ex.destination}`,
     source: 'trajet',
   }));
+  const fromDeliveries: DriverTransactionDisplay[] = driverDeliveries
+    .filter((d) => deliveryTransportApportAmount(d, invoices) > 0)
+    .map((d) => ({
+      id: `delivery_${d.id}`,
+      type: 'apport' as const,
+      montant: deliveryTransportApportAmount(d, invoices),
+      date: d.dateLivraison || d.datePrevue || '',
+      description: `Transport livraison: ${d.orderDesignation ?? 'Commande'} → ${d.lieuLivraison}`,
+      source: 'livraison' as const,
+    }));
   const fromManual: DriverTransactionDisplay[] = driver.transactions.map(t => ({
     id: t.id,
     type: t.type,
@@ -324,6 +369,7 @@ export const calculateDriverStatsFromTripsAndExpenses = (
   const allTransactions: DriverTransactionDisplay[] = [
     ...fromTrips,
     ...fromExpeditions,
+    ...fromDeliveries,
     ...fromExpenses,
     ...fromManual,
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -334,6 +380,7 @@ export const calculateDriverStatsFromTripsAndExpenses = (
     balance,
     apportsFromTrips,
     apportsFromExpeditions,
+    apportsFromDeliveries,
     apportsFromManual,
     sortiesFromExpenses,
     sortiesFromManual,
@@ -369,6 +416,7 @@ export const calculateTruckStats = (
   expenses: Expense[],
   invoices?: Invoice[],
   expeditions: ParcelExpedition[] = [],
+  clientDeliveries: ClientDelivery[] = [],
 ) => {
   const allLinked = trips.filter(
     t => t.tracteurId === truckId || t.remorqueuseId === truckId,
@@ -391,15 +439,25 @@ export const calculateTruckStats = (
         0,
       )
     : expeditionsTerminees.reduce((sum, ex) => sum + sumParcelExpeditionLotsCa(ex), 0);
-  const revenue = revenueTrips + revenueExpeditions;
+  const truckDeliveries = clientDeliveries.filter(
+    (d) => d.tracteurId === truckId && d.statut !== 'annulee',
+  );
+  const deliveriesTerminees = truckDeliveries.filter((d) => d.statut === 'livree');
+  const invList = invoices ?? [];
+  const revenueDeliveries = truckDeliveries.reduce(
+    (sum, d) => sum + deliveryTransportApportAmount(d, invList),
+    0,
+  );
+  const revenue = revenueTrips + revenueExpeditions + revenueDeliveries;
 
   const truckExpenses = expenses
     .filter(e => e.camionId === truckId)
     .reduce((sum, e) => sum + e.montant, 0);
 
   const profit = revenue - truckExpenses;
-  /** Nombre de missions terminées (trajets + expéditions). */
-  const tripsCount = truckTripsTermines.length + expeditionsTerminees.length;
+  /** Nombre de missions terminées (trajets + expéditions + livraisons). */
+  const tripsCount =
+    truckTripsTermines.length + expeditionsTerminees.length + deliveriesTerminees.length;
 
   return {
     revenue,

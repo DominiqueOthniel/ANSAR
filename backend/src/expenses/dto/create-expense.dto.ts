@@ -36,6 +36,11 @@ export class CreateExpenseDto {
   @IsString()
   fournisseurId?: string;
 
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  articleId?: string;
+
   @IsNumber()
   montant: number;
 

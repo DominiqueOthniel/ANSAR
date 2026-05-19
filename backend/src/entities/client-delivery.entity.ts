@@ -1,0 +1,78 @@
+import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { ThirdParty } from './third-party.entity';
+import { ClientOrder } from './client-order.entity';
+import { Driver } from './driver.entity';
+import { Truck } from './truck.entity';
+
+export type ClientDeliveryStatus = 'planifiee' | 'en_cours' | 'livree' | 'annulee';
+
+/** Livraison chez le client (exécution d’une commande). */
+@Entity('client_deliveries')
+export class ClientDelivery {
+  @PrimaryColumn('uuid')
+  id: string;
+
+  @Column({ type: 'uuid' })
+  clientOrderId: string;
+
+  @Column({ type: 'uuid' })
+  clientId: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  invoiceId?: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  lieuLivraison: string;
+
+  @Column({ type: 'varchar', length: 32 })
+  statut: ClientDeliveryStatus;
+
+  @Column({ type: 'date', nullable: true })
+  datePrevue?: string;
+
+  @Column({ type: 'date', nullable: true })
+  dateLivraison?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  chauffeurId?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  tracteurId?: string;
+
+  /** Frais de transport facturés au client pour cette livraison. */
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  montantTransport?: number;
+
+  /**
+   * Le fournisseur (gros donneur d’ordre / dépôt) facture le transport directement au client final.
+   * Dans ce cas, pas de facture FAC-LIV émise par la société — seule la marchandise (FAC-CMD) l’est.
+   */
+  @Column({ type: 'boolean', default: false })
+  transportFactureParFournisseur: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  transportFournisseurId?: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
+
+  @ManyToOne(() => ClientOrder, (o) => o.deliveries, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'clientOrderId' })
+  order?: ClientOrder;
+
+  @ManyToOne(() => ThirdParty)
+  @JoinColumn({ name: 'clientId' })
+  client?: ThirdParty;
+
+  @ManyToOne(() => Driver, { nullable: true })
+  @JoinColumn({ name: 'chauffeurId' })
+  chauffeur?: Driver;
+
+  @ManyToOne(() => Truck, { nullable: true })
+  @JoinColumn({ name: 'tracteurId' })
+  tracteur?: Truck;
+
+  @ManyToOne(() => ThirdParty, { nullable: true })
+  @JoinColumn({ name: 'transportFournisseurId' })
+  transportFournisseur?: ThirdParty;
+}

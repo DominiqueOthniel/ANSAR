@@ -18,6 +18,14 @@ export class CreateInvoiceDto {
   @IsString()
   expenseId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  clientOrderId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  clientDeliveryId?: string;
+
   @IsString()
   @IsIn(['en_attente', 'payee'])
   statut: 'en_attente' | 'payee';

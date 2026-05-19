@@ -151,6 +151,7 @@ export interface ExpensePayload {
   categorie: string;
   sousCategorie?: string;
   fournisseurId?: string;
+  articleId?: string;
   montant: number;
   quantite?: number;
   prixUnitaire?: number;
@@ -163,6 +164,8 @@ export interface InvoicePayload {
   trajetId?: string;
   parcelExpeditionId?: string;
   expenseId?: string;
+  clientOrderId?: string;
+  clientDeliveryId?: string;
   statut: 'en_attente' | 'payee';
   montantHT: number;
   remise?: number;
@@ -209,6 +212,50 @@ export interface ThirdPartyPayload {
 
 export interface MerchandiseQualityPayload {
   libelle: string;
+}
+
+export interface ArticlePayload {
+  libelle: string;
+  unite?: string;
+  actif?: boolean;
+  prixVente?: number;
+}
+
+export interface ArticleSupplierPricePayload {
+  fournisseurId: string;
+  prixUnitaire: number;
+  notes?: string;
+}
+
+export interface ClientOrderPayload {
+  clientId: string;
+  articleId?: string;
+  reference?: string;
+  designation: string;
+  destination?: string;
+  montant?: number;
+  prixUnitaire?: number;
+  quantite?: number;
+  unite?: string;
+  statut?: 'brouillon' | 'confirmee' | 'en_preparation' | 'partiellement_livree' | 'livree' | 'annulee';
+  dateCommande: string;
+  dateLivraisonSouhaitee?: string;
+  notes?: string;
+}
+
+export interface ClientDeliveryPayload {
+  clientOrderId: string;
+  lieuLivraison: string;
+  statut?: 'planifiee' | 'en_cours' | 'livree' | 'annulee';
+  datePrevue?: string;
+  dateLivraison?: string;
+  chauffeurId?: string;
+  tracteurId?: string;
+  montantTransport?: number;
+  /** Transport facturé par le fournisseur directement au client (pas de FAC-LIV). */
+  transportFactureParFournisseur?: boolean;
+  transportFournisseurId?: string;
+  notes?: string;
 }
 
 export interface BankAccountPayload {
@@ -351,6 +398,105 @@ export const merchandiseQualitiesApi = {
   update: (id: string, data: Partial<MerchandiseQualityPayload>) =>
     request<any>(`/merchandise-qualities/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/merchandise-qualities/${id}`, { method: 'DELETE' }),
+};
+
+/** Catalogue articles et tarifs forfaitaires par fournisseur. */
+export const articlesApi = {
+  getAll: () => request<any[]>('/articles'),
+  getOne: (id: string) => request<any>(`/articles/${id}`),
+  create: (data: ArticlePayload) =>
+    request<any>('/articles', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ArticlePayload>) =>
+    request<any>(`/articles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/articles/${id}`, { method: 'DELETE' }),
+  createSupplierPrice: (articleId: string, data: ArticleSupplierPricePayload) =>
+    request<any>(`/articles/${articleId}/supplier-prices`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSupplierPrice: (priceId: string, data: Partial<ArticleSupplierPricePayload>) =>
+    request<any>(`/articles/supplier-prices/${priceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSupplierPrice: (priceId: string) =>
+    request<void>(`/articles/supplier-prices/${priceId}`, { method: 'DELETE' }),
+};
+
+/** Commandes et livraisons clients (intermédiation). */
+export const clientOrdersApi = {
+  getAll: (params?: { clientId?: string }) =>
+    request<any[]>(`/client-orders${buildQuery(params)}`),
+  getOne: (id: string) => request<any>(`/client-orders/${id}`),
+  create: (data: ClientOrderPayload) =>
+    request<any>('/client-orders', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ClientOrderPayload>) =>
+    request<any>(`/client-orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/client-orders/${id}`, { method: 'DELETE' }),
+};
+
+export const clientDeliveriesApi = {
+  getAll: (params?: { clientId?: string; clientOrderId?: string }) =>
+    request<any[]>(`/client-deliveries${buildQuery(params)}`),
+  getOne: (id: string) => request<any>(`/client-deliveries/${id}`),
+  create: (data: ClientDeliveryPayload) =>
+    request<any>('/client-deliveries', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ClientDeliveryPayload>) =>
+    request<any>(`/client-deliveries/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/client-deliveries/${id}`, { method: 'DELETE' }),
+};
+
+export type SupplierLoadingStatusPayload =
+  | 'brouillon'
+  | 'en_attente_affectation'
+  | 'partiellement_affecte'
+  | 'affecte'
+  | 'annule';
+
+export interface SupplierLoadingPayload {
+  fournisseurId: string;
+  numeroBon?: string;
+  articleId?: string;
+  designation: string;
+  quantite?: number;
+  unite?: string;
+  dateChargement: string;
+  statut?: SupplierLoadingStatusPayload;
+  lieu?: string;
+  notes?: string;
+}
+
+export interface SupplierLoadingAssignmentPayload {
+  clientOrderId: string;
+  quantiteAffectee?: number;
+  notes?: string;
+}
+
+/** Bons de chargement fournisseur et affectation aux commandes clients. */
+export const supplierLoadingsApi = {
+  getAll: (params?: {
+    fournisseurId?: string;
+    statut?: SupplierLoadingStatusPayload;
+    unassignedOnly?: boolean;
+  }) =>
+    request<any[]>(
+      `/supplier-loadings${buildQuery({
+        fournisseurId: params?.fournisseurId,
+        statut: params?.statut,
+        unassignedOnly: params?.unassignedOnly ? 'true' : undefined,
+      })}`,
+    ),
+  getOne: (id: string) => request<any>(`/supplier-loadings/${id}`),
+  create: (data: SupplierLoadingPayload) =>
+    request<any>('/supplier-loadings', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<SupplierLoadingPayload>) =>
+    request<any>(`/supplier-loadings/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/supplier-loadings/${id}`, { method: 'DELETE' }),
+  setAssignments: (id: string, assignments: SupplierLoadingAssignmentPayload[]) =>
+    request<any>(`/supplier-loadings/${id}/assignments`, {
+      method: 'PUT',
+      body: JSON.stringify({ assignments }),
+    }),
 };
 
 // --- Admin ---

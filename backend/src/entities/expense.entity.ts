@@ -25,6 +25,10 @@ export class Expense {
   @Column({ type: 'uuid', nullable: true })
   fournisseurId?: string;
 
+  /** Article catalogue (tarif forfaitaire fournisseur). */
+  @Column({ type: 'uuid', nullable: true })
+  articleId?: string;
+
   @Column({ type: 'decimal', precision: 15, scale: 2 })
   montant: number;
 

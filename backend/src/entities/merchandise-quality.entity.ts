@@ -9,6 +9,6 @@ export class MerchandiseQuality {
   @Column({ type: 'varchar', length: 255 })
   libelle: string;
 
-  @CreateDateColumn({ name: 'createdAt', type: 'timestamptz' })
+  @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 }

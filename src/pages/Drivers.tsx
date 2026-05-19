@@ -29,7 +29,7 @@ const DRIVER_SORT_OPTIONS = [
 ] as const;
 
 export default function Drivers() {
-  const { drivers, trips, parcelExpeditions, expenses, invoices, createDriver, updateDriver, deleteDriver } = useApp();
+  const { drivers, trips, parcelExpeditions, expenses, invoices, clientDeliveries, createDriver, updateDriver, deleteDriver } = useApp();
   const { canManageFleet } = useAuth();
   const [isAddDriverDialogOpen, setIsAddDriverDialogOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
@@ -170,6 +170,7 @@ export default function Drivers() {
       expenses,
       parcelExpeditions,
       invoices,
+      clientDeliveries,
     );
 
   const calculateBalance = (driver: Driver) => getDriverStats(driver).balance;

@@ -11,6 +11,10 @@ const PURGE_DELETE_ORDER = [
   'caisse_transactions',
   'invoices',
   'expenses',
+  'client_deliveries',
+  'client_orders',
+  'article_supplier_prices',
+  'articles',
   'parcel_expeditions',
   'trips',
   'driver_transactions',
@@ -71,6 +75,10 @@ export class AppController {
           caisse_transactions,
           invoices,
           expenses,
+          client_deliveries,
+          client_orders,
+          article_supplier_prices,
+          articles,
           trips,
           parcel_expeditions,
           driver_transactions,
@@ -120,6 +128,8 @@ export class AppController {
     const [
       thirdParties,
       merchandiseQualities,
+      articles,
+      articleSupplierPrices,
       drivers,
       driverTransactions,
       trucks,
@@ -129,9 +139,13 @@ export class AppController {
       bankAccounts,
       bankTransactions,
       parcelExpeditions,
+      clientOrders,
+      clientDeliveries,
     ] = await Promise.all([
       this.dataSource.query('SELECT * FROM third_parties'),
       this.dataSource.query('SELECT * FROM merchandise_qualities ORDER BY libelle ASC'),
+      this.dataSource.query('SELECT * FROM articles ORDER BY libelle ASC'),
+      this.dataSource.query('SELECT * FROM article_supplier_prices'),
       this.dataSource.query('SELECT * FROM drivers'),
       this.dataSource.query('SELECT * FROM driver_transactions ORDER BY date ASC'),
       this.dataSource.query('SELECT * FROM trucks'),
@@ -141,6 +155,8 @@ export class AppController {
       this.dataSource.query('SELECT * FROM bank_accounts'),
       this.dataSource.query('SELECT * FROM bank_transactions ORDER BY date ASC'),
       this.dataSource.query('SELECT * FROM parcel_expeditions ORDER BY "dateDepart" DESC'),
+      this.dataSource.query('SELECT * FROM client_orders ORDER BY "dateCommande" DESC'),
+      this.dataSource.query('SELECT * FROM client_deliveries'),
     ]);
 
     const backup = {
@@ -149,6 +165,8 @@ export class AppController {
       data: {
         thirdParties,
         merchandiseQualities,
+        articles,
+        articleSupplierPrices,
         drivers,
         driverTransactions,
         trucks,
@@ -158,6 +176,8 @@ export class AppController {
         bankAccounts,
         bankTransactions,
         parcelExpeditions,
+        clientOrders,
+        clientDeliveries,
       },
     };
 
@@ -187,6 +207,10 @@ export class AppController {
           caisse_transactions,
           invoices,
           expenses,
+          client_deliveries,
+          client_orders,
+          article_supplier_prices,
+          articles,
           trips,
           parcel_expeditions,
           driver_transactions,
@@ -215,6 +239,10 @@ export class AppController {
 
       await insert('third_parties', data.thirdParties);
       await insert('merchandise_qualities', data.merchandiseQualities ?? []);
+      await insert('articles', data.articles ?? []);
+      await insert('article_supplier_prices', data.articleSupplierPrices ?? []);
+      await insert('client_orders', data.clientOrders ?? []);
+      await insert('client_deliveries', data.clientDeliveries ?? []);
       await insert('drivers', data.drivers);
       await insert('driver_transactions', data.driverTransactions);
       await insert('trucks', data.trucks);
@@ -232,6 +260,10 @@ export class AppController {
         counts: {
           thirdParties: data.thirdParties?.length ?? 0,
           merchandiseQualities: data.merchandiseQualities?.length ?? 0,
+          articles: data.articles?.length ?? 0,
+          articleSupplierPrices: data.articleSupplierPrices?.length ?? 0,
+          clientOrders: data.clientOrders?.length ?? 0,
+          clientDeliveries: data.clientDeliveries?.length ?? 0,
           drivers: data.drivers?.length ?? 0,
           trucks: data.trucks?.length ?? 0,
           trips: data.trips?.length ?? 0,

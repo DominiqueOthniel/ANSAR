@@ -25,6 +25,12 @@ export class Invoice {
   @Column({ type: 'uuid', nullable: true })
   expenseId?: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  clientOrderId?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  clientDeliveryId?: string;
+
   @Column({ type: 'varchar', length: 20 })
   statut: InvoiceStatus;
 

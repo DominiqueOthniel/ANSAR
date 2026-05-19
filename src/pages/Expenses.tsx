@@ -23,6 +23,10 @@ import { EMOJI } from '@/lib/emoji-palette';
 import { removeCaisseLienDepense, upsertSortieFromExpense } from '@/lib/caisse-local';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
+import {
+  getArticleSupplierUnitPrice,
+  listArticlesForSupplier,
+} from '@/lib/article-pricing';
 
 const categories = ['Carburant', 'Maintenance', 'Péage', 'Assurance', 'Salaire', 'Don', 'Autre'];
 
@@ -58,7 +62,7 @@ function formatSalaireBeneficiaire(
 }
 
 export default function Expenses() {
-  const { expenses, trucks, drivers, thirdParties, subCategories, setSubCategories, invoices, trips, createExpense, updateExpense, deleteExpense, createInvoice, updateInvoice } = useApp();
+  const { expenses, trucks, drivers, thirdParties, articles, subCategories, setSubCategories, invoices, trips, createExpense, updateExpense, deleteExpense, createInvoice, updateInvoice } = useApp();
   const { canManageAccounting } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
@@ -110,6 +114,7 @@ export default function Expenses() {
     categorie: 'Carburant',
     sousCategorie: '',
     fournisseurId: '',
+    articleId: '',
     montant: 0,
     quantite: undefined as number | undefined,
     prixUnitaire: undefined as number | undefined,
@@ -131,6 +136,7 @@ export default function Expenses() {
       categorie: 'Carburant',
       sousCategorie: '',
       fournisseurId: '',
+      articleId: '',
       montant: 0,
       quantite: undefined,
       prixUnitaire: undefined,
@@ -190,6 +196,38 @@ export default function Expenses() {
     return undefined;
   };
 
+  const articlesForFournisseur = useMemo(
+    () => listArticlesForSupplier(articles, formData.fournisseurId),
+    [articles, formData.fournisseurId],
+  );
+
+  const selectedArticle = useMemo(
+    () => articles.find((a) => a.id === formData.articleId),
+    [articles, formData.articleId],
+  );
+
+  const getUniteLabel = () => {
+    if (selectedArticle?.unite) return selectedArticle.unite;
+    return getUnite(formData.categorie);
+  };
+
+  const applyArticleTarif = (articleId: string, fournisseurId: string) => {
+    const article = articles.find((a) => a.id === articleId);
+    const pu = getArticleSupplierUnitPrice(article, fournisseurId);
+    if (!article || pu == null) return;
+    setFormData((prev) => {
+      const calculatedMontant = calculateMontant(prev.quantite, pu);
+      return {
+        ...prev,
+        articleId,
+        prixUnitaire: pu,
+        description: prev.description.trim() ? prev.description : article.libelle,
+        montant: calculatedMontant !== undefined ? calculatedMontant : prev.montant,
+      };
+    });
+    toast.info(`Tarif forfaitaire : ${pu.toLocaleString('fr-FR')} FCFA / ${article.unite}`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -226,6 +264,8 @@ export default function Expenses() {
       categorie: formData.categorie,
       sousCategorie: formData.sousCategorie || undefined,
       fournisseurId: fournisseurPayload,
+      articleId:
+        formData.categorie !== 'Salaire' && formData.articleId ? formData.articleId : undefined,
       montant: finalMontant,
       quantite: formData.quantite,
       prixUnitaire: formData.prixUnitaire,
@@ -316,6 +356,7 @@ export default function Expenses() {
       categorie: expense.categorie,
       sousCategorie: expense.sousCategorie || '',
       fournisseurId: expense.fournisseurId || '',
+      articleId: expense.articleId || '',
       montant: expense.montant,
       quantite: expense.quantite,
       prixUnitaire: expense.prixUnitaire,
@@ -872,19 +913,63 @@ export default function Expenses() {
                   className="mt-1"
                   options={fournisseursFiches}
                   value={formData.fournisseurId}
-                  onValueChange={(id) => setFormData({ ...formData, fournisseurId: id })}
+                  onValueChange={(id) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      fournisseurId: id,
+                      articleId: '',
+                      prixUnitaire: undefined,
+                    }))
+                  }
                   placeholder="Rechercher un fournisseur…"
                   topChoices={[{ id: '', label: 'Aucun fournisseur', keywords: 'aucun sans' }]}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   Vous pouvez ajouter des fournisseurs dans la section "Tiers"
                 </p>
+                {formData.fournisseurId && articlesForFournisseur.length > 0 && (
+                  <div className="mt-3">
+                    <Label htmlFor="expense-article">Article (tarif forfaitaire)</Label>
+                    <Select
+                      value={formData.articleId || '__none__'}
+                      onValueChange={(v) => {
+                        if (v === '__none__') {
+                          setFormData((prev) => ({ ...prev, articleId: '', prixUnitaire: undefined }));
+                          return;
+                        }
+                        applyArticleTarif(v, formData.fournisseurId);
+                      }}
+                    >
+                      <SelectTrigger id="expense-article" className="mt-1">
+                        <SelectValue placeholder="Choisir un article du catalogue…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Saisie manuelle —</SelectItem>
+                        {articlesForFournisseur.map((a) => {
+                          const pu = getArticleSupplierUnitPrice(a, formData.fournisseurId)!;
+                          return (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.libelle} — {pu.toLocaleString('fr-FR')} FCFA / {a.unite}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tarifs définis dans{' '}
+                      <Link to="/articles" className="text-primary underline-offset-2 hover:underline">
+                        Articles
+                      </Link>
+                      . Le prix unitaire se remplit automatiquement.
+                    </p>
+                  </div>
+                )}
                   </>
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="quantite">Quantité ({getUnite(formData.categorie)})</Label>
+                  <Label htmlFor="quantite">Quantité ({getUniteLabel()})</Label>
                   <NumberInput
                     id="quantite"
                     min={0}

@@ -2,7 +2,6 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Truck,
-  Route,
   DollarSign,
   FileText,
   Users,
@@ -13,7 +12,8 @@ import {
   Loader2,
   AlertCircle,
   LogOut,
-  Package,
+  Boxes,
+  Container,
   Wallet,
   CreditCard,
   ChevronRight,
@@ -21,7 +21,10 @@ import {
   ChevronsRight,
   History,
   UserCircle2,
+  KeyRound,
 } from 'lucide-react';
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
+import { formatRoleLabel } from '@/lib/auth-users';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
@@ -44,12 +47,13 @@ const navigation = [
   { name: 'Clients',    href: '/clients',    icon: UserCircle2,     color: 'from-emerald-500 to-teal-500' },
   { name: 'Historique', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
   { name: 'Camions',    href: '/camions',    icon: Truck,           color: 'from-purple-500 to-pink-500' },
-  { name: 'Trajets',    href: '/trajets',    icon: Route,           color: 'from-emerald-500 to-teal-500' },
   { name: 'Dépenses',   href: '/depenses',   icon: DollarSign,      color: 'from-orange-500 to-red-500' },
   { name: 'Factures',   href: '/factures',   icon: FileText,        color: 'from-blue-500 to-cyan-500' },
   { name: 'Chauffeurs', href: '/chauffeurs', icon: Users,           color: 'from-cyan-500 to-sky-500' },
   { name: 'Tiers',      href: '/tiers',      icon: Building2,       color: 'from-violet-500 to-purple-500' },
-  { name: 'Expéditions', href: '/envoi-colis', icon: Package,       color: 'from-sky-500 to-cyan-500' },
+  { name: 'Fournisseurs', href: '/fournisseurs', icon: Building2,   color: 'from-orange-500 to-amber-500' },
+  { name: 'Chargements', href: '/chargements', icon: Container,     color: 'from-lime-500 to-green-500' },
+  { name: 'Articles',   href: '/articles',   icon: Boxes,           color: 'from-amber-500 to-orange-500' },
   { name: 'Caisse',     href: '/caisse',     icon: Wallet,          color: 'from-green-500 to-emerald-500' },
   { name: 'Suivi créances', href: '/credits', icon: CreditCard,      color: 'from-rose-500 to-pink-500' },
 ];
@@ -103,6 +107,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(readSidebarHidden);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const { isLoading, apiError } = useApp();
   const { user, logout } = useAuth();
 
@@ -138,9 +143,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const currentPage = navItems.find(item => item.href === location.pathname)?.name || 'Dashboard';
 
-  const roleLabel = user?.role === 'gestionnaire' ? 'Gestionnaire'
-    : user?.role === 'comptable' ? 'Comptable'
-    : 'Administrateur';
+  const roleLabel = user?.role ? formatRoleLabel(user.role) : '';
 
   const roleColor = user?.role === 'gestionnaire' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
     : user?.role === 'comptable' ? 'bg-blue-500/15 text-blue-400 border-blue-500/20'
@@ -249,6 +252,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <div className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
               {user?.login} · {roleLabel}
             </div>
+            <button
+              type="button"
+              onClick={() => setPasswordDialogOpen(true)}
+              title="Mon mot de passe"
+              aria-label="Mon mot de passe"
+              className="flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
+            <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
             <button
               onClick={logout}
               title="Déconnexion"

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Edit, Building2, Users, Truck, Search, Filter, X, FileDown, FileText, Loader2, Route, Package, UserCircle2, PanelRight, CreditCard, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Edit, Building2, Users, Truck, Search, Filter, X, FileDown, FileText, Loader2, UserCircle2, PanelRight, CreditCard, Briefcase, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
 import { PAGE_CLIENTS_DESCRIPTION, PAGE_TIERS_DESCRIPTION } from '@/lib/metier-activite';
@@ -21,29 +21,39 @@ import { frCollator, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
-import { formatTripStatusFr } from '@/lib/sync-utils';
-import { matchClientReference } from '@/lib/client-tier-match';
+import { ClientOperationsPanels } from '@/components/clients/ClientOperationsPanels';
 import { loadCreditsList } from '@/lib/load-credits-list';
 import type { CreditLike } from '@/lib/client-credit-plafond';
 import { sumEncoursPretsPourClient } from '@/lib/client-credit-plafond';
+import {
+  createClientInitialBalance,
+  getClientInitialBalanceMontant,
+  loadCreditsForPlafond,
+  thirdPartiesToClientTierLike,
+  upsertClientInitialBalance,
+} from '@/lib/client-initial-balance';
+import {
+  buildSupplierSummaries,
+  formatSupplierEtatFr,
+  supplierEtatBadgeVariant,
+} from '@/lib/supplier-activity';
 
 const THIRD_SORT_OPTIONS = [
-  { value: 'nom_asc', label: 'Nom A → Z' },
-  { value: 'nom_desc', label: 'Nom Z → A' },
-  { value: 'type_asc', label: 'Type (propriétaire → fournisseur)' },
-  { value: 'type_desc', label: 'Type (fournisseur → propriétaire)' },
+  { value: 'nom_asc', label: 'Nom A ? Z' },
+  { value: 'nom_desc', label: 'Nom Z ? A' },
+  { value: 'type_asc', label: 'Type (propri?taire ? fournisseur)' },
+  { value: 'type_desc', label: 'Type (fournisseur ? propri?taire)' },
 ] as const;
 
 const CLIENT_SORT_OPTIONS = [
-  { value: 'nom_asc', label: 'Nom A → Z' },
-  { value: 'nom_desc', label: 'Nom Z → A' },
+  { value: 'nom_asc', label: 'Nom A ? Z' },
+  { value: 'nom_desc', label: 'Nom Z ? A' },
   { value: 'plafond_desc', label: 'Plafond encours (du plus haut)' },
   { value: 'plafond_asc', label: 'Plafond encours (du plus bas, sans plafond en dernier)' },
 ] as const;
 
 type ClientPlafondFilter = 'all' | 'defined' | 'none';
-type ClientTripFilter = 'all' | 'yes' | 'no';
-type ClientParcelFilter = 'all' | 'yes' | 'no';
+type ClientOrderFilter = 'all' | 'yes' | 'no';
 type ClientContactFilter =
   | 'all'
   | 'phone_set'
@@ -60,7 +70,7 @@ function formatFcfa(n: number): string {
 }
 
 function invoiceStatutLabel(s: Invoice['statut']): string {
-  return s === 'payee' ? 'Payée' : 'En attente';
+  return s === 'payee' ? 'Pay?e' : 'En attente';
 }
 
 export type ThirdPartiesScope = 'all' | 'clients';
@@ -70,13 +80,17 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const {
     thirdParties,
     trucks,
-    trips,
     invoices,
     expenses,
-    parcelExpeditions,
+    clientOrders,
+    clientDeliveries,
+    supplierLoadings,
+    articles,
     createThirdParty,
     updateThirdParty,
     deleteThirdParty,
+    refreshClientOrders,
+    refreshClientDeliveries,
   } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -88,11 +102,11 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const [searchTerm, setSearchTerm] = useState('');
   const [listSort, setListSort] = useState<string>('nom_asc');
   const [clientFilterPlafond, setClientFilterPlafond] = useState<ClientPlafondFilter>('all');
-  const [clientFilterTrip, setClientFilterTrip] = useState<ClientTripFilter>('all');
-  const [clientFilterParcel, setClientFilterParcel] = useState<ClientParcelFilter>('all');
+  const [clientFilterOrder, setClientFilterOrder] = useState<ClientOrderFilter>('all');
   const [clientFilterContact, setClientFilterContact] = useState<ClientContactFilter>('all');
   const [detailClient, setDetailClient] = useState<ThirdParty | null>(null);
   const [creditsForPlafondSheet, setCreditsForPlafondSheet] = useState<CreditLike[]>([]);
+  const [detailSoldeInitial, setDetailSoldeInitial] = useState<number | null>(null);
 
   const [formData, setFormData] = useState({
     nom: '',
@@ -102,6 +116,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     type: 'proprietaire' as ThirdPartyType,
     notes: '',
     plafondCredit: '' as number | '',
+    soldeInitial: '' as number | '',
   });
 
   const resetForm = () => {
@@ -113,6 +128,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       type: scope === 'clients' ? 'client' : 'proprietaire',
       notes: '',
       plafondCredit: '',
+      soldeInitial: '',
     });
     setEditingThirdParty(null);
   };
@@ -147,22 +163,78 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
 
         if (editingThirdParty) {
           await updateThirdParty(editingThirdParty.id, payload);
-          toast.success(isClientsScope ? 'Client modifié avec succès' : 'Tier modifié avec succès');
+          if (effectiveType === 'client') {
+            const soldeInit =
+              formData.soldeInitial === '' || formData.soldeInitial == null
+                ? 0
+                : Math.round(Number(formData.soldeInitial));
+            const credits = await loadCreditsForPlafond();
+            const tiersForPlafond = thirdPartiesToClientTierLike(thirdParties);
+            await upsertClientInitialBalance({
+              clientId: editingThirdParty.id,
+              clientNom: payload.nom,
+              montant: soldeInit,
+              credits,
+              thirdParties: tiersForPlafond,
+            });
+            if (detailClient?.id === editingThirdParty.id) {
+              const list = await loadCreditsList();
+              setCreditsForPlafondSheet(list);
+            }
+          }
+          const soldeEditMsg =
+            effectiveType === 'client'
+              ? (() => {
+                  const v =
+                    formData.soldeInitial === '' || formData.soldeInitial == null
+                      ? 0
+                      : Math.round(Number(formData.soldeInitial));
+                  return v > 0
+                    ? ` Solde initial : ${v.toLocaleString('fr-FR')} FCFA.`
+                    : ' Solde initial retir?.';
+                })()
+              : '';
+          toast.success(
+            (isClientsScope ? 'Client modifi? avec succ?s' : 'Tier modifi? avec succ?s') + soldeEditMsg,
+          );
         } else {
-          await createThirdParty(payload);
+          const created = await createThirdParty(payload);
+          const soldeInit =
+            formData.soldeInitial === '' || formData.soldeInitial == null
+              ? 0
+              : Math.round(Number(formData.soldeInitial));
+
+          if (effectiveType === 'client' && soldeInit > 0) {
+            const credits = await loadCreditsForPlafond();
+            const tiersForPlafond = thirdPartiesToClientTierLike([
+              ...thirdParties.filter((tp) => tp.id !== created.id),
+              created,
+            ]);
+            await createClientInitialBalance({
+              clientId: created.id,
+              clientNom: created.nom,
+              montant: soldeInit,
+              credits,
+              thirdParties: tiersForPlafond,
+            });
+          }
+
           const clientListFiltersActive =
             isClientsScope &&
             (searchTerm.trim() !== '' ||
               clientFilterPlafond !== 'all' ||
-              clientFilterTrip !== 'all' ||
-              clientFilterParcel !== 'all' ||
+              clientFilterOrder !== 'all' ||
               clientFilterContact !== 'all');
+          const detteMsg =
+            effectiveType === 'client' && soldeInit > 0
+              ? ` Dette initiale : ${soldeInit.toLocaleString('fr-FR')} FCFA (suivi cr?ances).`
+              : '';
           toast.success(
-            isClientsScope
+            (isClientsScope
               ? clientListFiltersActive
-                ? 'Client ajouté. Si la fiche n’apparaît pas, les filtres actifs peuvent la masquer — cliquez sur « Réinitialiser ».'
-                : 'Client ajouté avec succès'
-              : 'Tier ajouté avec succès',
+                ? "Client ajout?. Si la fiche n'appara?t pas, les filtres actifs peuvent la masquer ? cliquez sur ? R?initialiser ?."
+                : 'Client ajout? avec succ?s'
+              : 'Tier ajout? avec succ?s') + detteMsg,
           );
         }
         setIsDialogOpen(false);
@@ -173,8 +245,17 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     });
   };
 
-  const handleEdit = (thirdParty: ThirdParty) => {
+  const handleEdit = async (thirdParty: ThirdParty) => {
     setEditingThirdParty(thirdParty);
+    let soldeInitial: number | '' = '';
+    if (thirdParty.type === 'client') {
+      try {
+        const m = await getClientInitialBalanceMontant(thirdParty.id, thirdParty.nom);
+        soldeInitial = m > 0 ? m : '';
+      } catch {
+        soldeInitial = '';
+      }
+    }
     setFormData({
       nom: thirdParty.nom,
       telephone: thirdParty.telephone || '',
@@ -183,6 +264,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       type: thirdParty.type,
       notes: thirdParty.notes || '',
       plafondCredit: thirdParty.plafondCredit != null ? Math.round(thirdParty.plafondCredit) : '',
+      soldeInitial,
     });
     setIsDialogOpen(true);
   };
@@ -194,7 +276,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     if (thirdParty.type === 'proprietaire') {
       const trucksUsingOwner = trucks.filter(t => t.proprietaireId === id);
       if (trucksUsingOwner.length > 0) {
-        toast.error(`Impossible de supprimer ce propriétaire : ${trucksUsingOwner.length} camion(s) lui sont associés`);
+        toast.error(`Impossible de supprimer ce propri?taire : ${trucksUsingOwner.length} camion(s) lui sont associ?s`);
         return;
       }
     }
@@ -203,35 +285,31 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       const depensesLiees = expenses.filter((e) => e.fournisseurId === id);
       if (depensesLiees.length > 0) {
         toast.error(
-          `Impossible de supprimer ce personnel : ${depensesLiees.length} dépense(s) y sont liées (salaires ou factures fournisseur). Retirez d’abord le lien sur les dépenses.`,
+          `Impossible de supprimer ce personnel : ${depensesLiees.length} d?pense(s) y sont li?es (salaires ou factures fournisseur). Retirez d'abord le lien sur les d?penses.`,
         );
         return;
       }
     }
 
-    if (confirm(`Êtes-vous sûr de vouloir supprimer ${thirdParty.nom} ?`)) {
+    if (confirm(`?tes-vous s?r de vouloir supprimer ${thirdParty.nom} ?`)) {
       try {
         await deleteThirdParty(id);
-        toast.success('Tier supprimé');
+        toast.success('Tier supprim?');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors de la suppression');
       }
     }
   };
 
-  const clientHasTripLink = (tp: ThirdParty) =>
-    tp.type === 'client' &&
-    trips.some(
-      (t) =>
-        matchClientReference(t.client, tp.nom) ||
-        (t.clientParticipants ?? []).some((p) => p.tierId === tp.id),
-    );
+  const clientHasOrderLink = (tp: ThirdParty) =>
+    tp.type === 'client' && clientOrders.some((o) => o.clientId === tp.id);
 
-  const clientHasParcelLink = (tp: ThirdParty) =>
-    tp.type === 'client' &&
-    parcelExpeditions.some((ex) =>
-      ex.lots.some((lot) => matchClientReference(lot.clients, tp.nom)),
-    );
+  useEffect(() => {
+    if (detailClient?.type === 'client') {
+      void refreshClientOrders(detailClient.id);
+      void refreshClientDeliveries(detailClient.id);
+    }
+  }, [detailClient?.id, detailClient?.type, refreshClientOrders, refreshClientDeliveries]);
 
   const filteredThirdParties = thirdParties.filter((tp) => {
     if (filterType !== 'all' && tp.type !== filterType) return false;
@@ -251,10 +329,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       const hasPlafond = tp.plafondCredit != null && Number.isFinite(tp.plafondCredit);
       if (clientFilterPlafond === 'defined' && !hasPlafond) return false;
       if (clientFilterPlafond === 'none' && hasPlafond) return false;
-      if (clientFilterTrip === 'yes' && !clientHasTripLink(tp)) return false;
-      if (clientFilterTrip === 'no' && clientHasTripLink(tp)) return false;
-      if (clientFilterParcel === 'yes' && !clientHasParcelLink(tp)) return false;
-      if (clientFilterParcel === 'no' && clientHasParcelLink(tp)) return false;
+      if (clientFilterOrder === 'yes' && !clientHasOrderLink(tp)) return false;
+      if (clientFilterOrder === 'no' && clientHasOrderLink(tp)) return false;
       const tel = (tp.telephone ?? '').trim();
       const em = (tp.email ?? '').trim();
       const adr = (tp.adresse ?? '').trim();
@@ -316,13 +392,13 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const getTypeLabel = (type: ThirdPartyType) => {
     switch (type) {
       case 'proprietaire':
-        return 'Propriétaire';
+        return 'Propri?taire';
       case 'client':
         return 'Client';
       case 'fournisseur':
         return 'Fournisseur';
       case 'employe':
-        return 'Personnel siège';
+        return 'Personnel si?ge';
     }
   };
 
@@ -342,6 +418,18 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const proprietairesCount = thirdParties.filter(tp => tp.type === 'proprietaire').length;
   const clientsCount = thirdParties.filter(tp => tp.type === 'client').length;
   const fournisseursCount = thirdParties.filter(tp => tp.type === 'fournisseur').length;
+
+  const supplierSummaryById = useMemo(() => {
+    const fournisseurs = thirdParties.filter((tp) => tp.type === 'fournisseur');
+    const list = buildSupplierSummaries({
+      fournisseurs,
+      supplierLoadings,
+      expenses,
+      clientDeliveries,
+      articles,
+    });
+    return new Map(list.map((s) => [s.fournisseurId, s]));
+  }, [thirdParties, supplierLoadings, expenses, clientDeliveries, articles]);
   const employesCount = thirdParties.filter((tp) => tp.type === 'employe').length;
 
   const clientTiers = useMemo(
@@ -349,76 +437,28 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     [thirdParties],
   );
 
-  const tripsWithRegisteredClient = useMemo(
-    () =>
-      trips.filter(
-        (t) => t.client && clientTiers.some((c) => matchClientReference(t.client, c.nom)),
-      ).length,
-    [trips, clientTiers],
-  );
-
-  const parcelExpWithRegisteredClient = useMemo(
-    () =>
-      parcelExpeditions.filter((ex) =>
-        ex.lots.some((lot) =>
-          clientTiers.some((c) => matchClientReference(lot.clients, c.nom)),
-        ),
-      ).length,
-    [parcelExpeditions, clientTiers],
-  );
-
-  const clientDetailInsights = useMemo(() => {
-    if (!detailClient || detailClient.type !== 'client') return null;
-    const nom = detailClient.nom;
-    const tripInvolvesClient = (t: (typeof trips)[0]) =>
-      matchClientReference(t.client, nom) ||
-      (t.clientParticipants ?? []).some((p) => p.tierId === detailClient.id);
-
-    const relatedTrips = trips
-      .filter((t) => tripInvolvesClient(t))
-      .sort((a, b) => new Date(b.dateDepart).getTime() - new Date(a.dateDepart).getTime());
-    const tripIds = new Set(relatedTrips.map((t) => t.id));
-    const tripInvoices = invoices.filter((inv) => {
-      if (!inv.trajetId || !tripIds.has(inv.trajetId)) return false;
-      if (inv.clientTierId === detailClient.id) return true;
-      if (
-        (inv.paiementsEncaissements ?? []).some(
-          (s) =>
-            s.clientTierId === detailClient.id ||
-            (s.payeurLibelle?.trim() && matchClientReference(s.payeurLibelle, nom)),
-        )
-      )
-        return true;
-      if (!inv.clientTierId && inv.factureClientLibelle?.trim()) {
-        return matchClientReference(inv.factureClientLibelle, nom);
-      }
-      const tr = trips.find((t) => t.id === inv.trajetId);
-      return matchClientReference(tr?.client, nom);
-    });
-    const relatedParcelEx = parcelExpeditions.filter((ex) =>
-      ex.lots.some((lot) => matchClientReference(lot.clients, nom)),
-    );
-    const parcelIds = new Set(relatedParcelEx.map((ex) => ex.id));
-    const parcelInvoices = invoices.filter(
-      (inv) => inv.parcelExpeditionId && parcelIds.has(inv.parcelExpeditionId),
-    );
-    const recetteTrips = relatedTrips.reduce((s, t) => s + t.recette, 0);
-    return { relatedTrips, tripInvoices, relatedParcelEx, parcelInvoices, recetteTrips };
-  }, [detailClient, trips, invoices, parcelExpeditions]);
+  const clientsWithOrders = useMemo(() => {
+    const ids = new Set(clientOrders.map((o) => o.clientId));
+    return ids.size;
+  }, [clientOrders]);
 
   useEffect(() => {
     if (!detailClient || detailClient.type !== 'client') {
       setCreditsForPlafondSheet([]);
+      setDetailSoldeInitial(null);
       return;
     }
     let cancelled = false;
     loadCreditsList().then((list) => {
       if (!cancelled) setCreditsForPlafondSheet(list);
     });
+    getClientInitialBalanceMontant(detailClient.id, detailClient.nom).then((m) => {
+      if (!cancelled) setDetailSoldeInitial(m);
+    });
     return () => {
       cancelled = true;
     };
-  }, [detailClient?.id, detailClient?.type]);
+  }, [detailClient?.id, detailClient?.type, detailClient?.nom]);
 
   const encoursPretsFicheClient = useMemo(() => {
     if (!detailClient || detailClient.type !== 'client') return 0;
@@ -435,26 +475,21 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
 
   const clientPlafondFilterLabel: Record<ClientPlafondFilter, string> = {
     all: '',
-    defined: 'Plafond encours défini',
+    defined: 'Plafond encours d?fini',
     none: 'Sans plafond encours',
   };
-  const clientTripFilterLabel: Record<ClientTripFilter, string> = {
+  const clientOrderFilterLabel: Record<ClientOrderFilter, string> = {
     all: '',
-    yes: 'Au moins un trajet relié',
-    no: 'Aucun trajet relié',
-  };
-  const clientParcelFilterLabel: Record<ClientParcelFilter, string> = {
-    all: '',
-    yes: 'Au moins une expédition colis',
-    no: 'Aucune expédition colis',
+    yes: 'Au moins une commande',
+    no: 'Sans commande',
   };
   const clientContactFilterLabel: Record<ClientContactFilter, string> = {
     all: '',
-    phone_set: 'Téléphone renseigné',
-    phone_missing: 'Téléphone absent',
-    email_set: 'Email renseigné',
+    phone_set: 'T?l?phone renseign?',
+    phone_missing: 'T?l?phone absent',
+    email_set: 'Email renseign?',
     email_missing: 'Email absent',
-    coords_incomplete: 'Coordonnées incomplètes (tél., email ou adresse manquant)',
+    coords_incomplete: 'Coordonn?es incompl?tes (t?l., email ou adresse manquant)',
   };
 
   const getFiltersDescription = () => {
@@ -463,13 +498,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     if (isClientsScope) {
       filters.push('Vue clients');
       if (clientFilterPlafond !== 'all') filters.push(clientPlafondFilterLabel[clientFilterPlafond]);
-      if (clientFilterTrip !== 'all') filters.push(clientTripFilterLabel[clientFilterTrip]);
-      if (clientFilterParcel !== 'all') filters.push(clientParcelFilterLabel[clientFilterParcel]);
+      if (clientFilterOrder !== 'all') filters.push(clientOrderFilterLabel[clientFilterOrder]);
       if (clientFilterContact !== 'all') filters.push(clientContactFilterLabel[clientFilterContact]);
     } else if (filterType !== 'all') filters.push(`Type: ${getTypeLabel(filterType)}`);
     const sortLabel = listSortOptions.find((o) => o.value === listSort)?.label;
     if (sortLabel) filters.push(`Tri: ${sortLabel}`);
-    return filters.length > 0 ? `Filtres appliqués: ${filters.join(', ')}` : sortLabel ? `Tri: ${sortLabel}` : undefined;
+    return filters.length > 0 ? `Filtres appliqu?s: ${filters.join(', ')}` : sortLabel ? `Tri: ${sortLabel}` : undefined;
   };
 
   // Fonctions d'export
@@ -483,7 +517,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       columns: [
         { header: 'Nom', value: (tp) => tp.nom },
         { header: 'Type', value: (tp) => getTypeLabel(tp.type) },
-        { header: 'Téléphone', value: (tp) => tp.telephone || '-' },
+        { header: 'T?l?phone', value: (tp) => tp.telephone || '-' },
         { header: 'Email', value: (tp) => tp.email || '-' },
         { header: 'Adresse', value: (tp) => tp.adresse || '-' },
         { header: 'Plafond encours clients (FCFA)', value: (tp) => (tp.type === 'client' && tp.plafondCredit != null ? String(Math.round(tp.plafondCredit)) : '-') },
@@ -491,7 +525,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       ],
       rows: sortedThirdParties,
     });
-    toast.success('Export Excel généré avec succès');
+    toast.success('Export Excel g?n?r? avec succ?s');
   };
 
   const handleExportPDF = () => {
@@ -514,32 +548,31 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       accentColor: headerColor,
       totals: isClientsScope
         ? [
-            { label: 'Clients', value: filteredThirdParties.length, style: 'positive' as const, icon: '👥' },
-            { label: 'Trajets reliés', value: tripsWithRegisteredClient, style: 'neutral' as const, icon: EMOJI.liste },
-            { label: 'Expéditions colis', value: parcelExpWithRegisteredClient, style: 'neutral' as const, icon: '📦' },
+            { label: 'Clients', value: filteredThirdParties.length, style: 'positive' as const, icon: '?x?' },
+            { label: 'Clients avec commandes', value: clientsWithOrders, style: 'neutral' as const, icon: EMOJI.liste },
           ]
         : [
             { label: 'Total Tiers', value: filteredThirdParties.length, style: 'neutral', icon: EMOJI.liste },
-            { label: 'Propriétaires', value: totalProprietaires, style: 'neutral', icon: '🏢' },
-            { label: 'Clients', value: totalClients, style: 'positive', icon: '👥' },
-            { label: 'Fournisseurs', value: totalFournisseurs, style: 'neutral', icon: '🏭' },
-            { label: 'Personnel siège', value: totalEmployes, style: 'neutral', icon: '💼' },
+            { label: 'Propri?taires', value: totalProprietaires, style: 'neutral', icon: '?x??' },
+            { label: 'Clients', value: totalClients, style: 'positive', icon: '?x?' },
+            { label: 'Fournisseurs', value: totalFournisseurs, style: 'neutral', icon: '?x??' },
+            { label: 'Personnel si?ge', value: totalEmployes, style: 'neutral', icon: '?x?' },
           ],
       columns: [
         { header: 'Nom', value: (tp) => tp.nom },
         { header: 'Type', value: (tp) => {
           const icons: Record<string, string> = {
-            'proprietaire': '🏢',
-            'client': '👥',
-            'fournisseur': '🏭',
-            employe: '💼',
+            'proprietaire': '?x??',
+            'client': '?x?',
+            'fournisseur': '?x??',
+            employe: '?x?',
           };
-          return `${icons[tp.type] || '📋'} ${getTypeLabel(tp.type)}`;
+          return `${icons[tp.type] || '?x9'} ${getTypeLabel(tp.type)}`;
         }},
-        { header: 'Téléphone', value: (tp) => tp.telephone ? `${EMOJI.telephone} ${tp.telephone}` : '-' },
+        { header: 'T?l?phone', value: (tp) => tp.telephone ? `${EMOJI.telephone} ${tp.telephone}` : '-' },
         { header: 'Email', value: (tp) => tp.email ? `${EMOJI.email} ${tp.email}` : '-' },
         { header: 'Adresse', value: (tp) => tp.adresse ? `${EMOJI.adresse} ${tp.adresse}` : '-' },
-        { header: 'Plafond encours', value: (tp) => (tp.type === 'client' && tp.plafondCredit != null ? `${Math.round(tp.plafondCredit)} F` : '—') },
+        { header: 'Plafond encours', value: (tp) => (tp.type === 'client' && tp.plafondCredit != null ? `${Math.round(tp.plafondCredit)} F` : '?') },
       ],
       rows: sortedThirdParties,
     });
@@ -566,21 +599,15 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   color: 'text-emerald-600 dark:text-emerald-400',
                 },
                 {
-                  label: 'Trajets reliés',
-                  value: tripsWithRegisteredClient,
-                  icon: <Route className="h-4 w-4" />,
+                  label: 'Clients avec commandes',
+                  value: clientsWithOrders,
+                  icon: <ClipboardList className="h-4 w-4" />,
                   color: 'text-teal-600 dark:text-teal-400',
-                },
-                {
-                  label: 'Expéditions colis',
-                  value: parcelExpWithRegisteredClient,
-                  icon: <Package className="h-4 w-4" />,
-                  color: 'text-cyan-600 dark:text-cyan-400',
                 },
               ]
             : [
                 {
-                  label: 'Propriétaires',
+                  label: 'Propri?taires',
                   value: proprietairesCount,
                   icon: <Truck className="h-4 w-4" />,
                   color: 'text-blue-600 dark:text-blue-400',
@@ -598,7 +625,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   color: 'text-orange-600 dark:text-orange-400',
                 },
                 {
-                  label: 'Personnel siège',
+                  label: 'Personnel si?ge',
                   value: employesCount,
                   icon: <Briefcase className="h-4 w-4" />,
                   color: 'text-violet-600 dark:text-violet-400',
@@ -658,10 +685,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="proprietaire">Propriétaire de camion</SelectItem>
+                      <SelectItem value="proprietaire">Propri?taire de camion</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
                       <SelectItem value="fournisseur">Fournisseur (chargements, achats site)</SelectItem>
-                      <SelectItem value="employe">Personnel siège (salaires, hors chauffeurs)</SelectItem>
+                      <SelectItem value="employe">Personnel si?ge (salaires, hors chauffeurs)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -680,7 +707,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="telephone">Téléphone</Label>
+                    <Label htmlFor="telephone">T?l?phone</Label>
                     <Input
                       id="telephone"
                       value={formData.telephone}
@@ -706,7 +733,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     id="adresse"
                     value={formData.adresse}
                     onChange={(e) => setFormData({ ...formData, adresse: e.target.value })}
-                    placeholder="Adresse complète"
+                    placeholder="Adresse compl?te"
                   />
                 </div>
 
@@ -716,16 +743,47 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Informations complémentaires..."
+                    placeholder="Informations compl?mentaires..."
                     rows={3}
                   />
                 </div>
 
                 {(formData.type === 'client' || isClientsScope) && (
-                  <div>
-                    <Label htmlFor="plafond-credit">Plafond encours clients — commandes non payées (FCFA)</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="solde-initial">Dette / solde initial d? (FCFA)</Label>
                     <p className="text-xs text-muted-foreground mt-1 mb-2">
-                      Montant maximal cumulé autorisé pour ce client dans le suivi créances (lignes « commande sans paiement »). Vide = pas de limite.
+                      {editingThirdParty
+                        ? 'Modifiez le montant d? ? l?ouverture (suivi cr?ances). Vide ou 0 pour retirer la ligne, sauf si des remboursements sont d?j? enregistr?s.'
+                        : 'Montant que le client vous doit d?j? ? l?ouverture (hors futures commandes). Enregistr? dans le suivi cr?ances.'}
+                    </p>
+                    <Input
+                      id="solde-initial"
+                      type="number"
+                      min={0}
+                      step={1}
+                      className="mt-1"
+                      value={formData.soldeInitial === '' ? '' : formData.soldeInitial}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') setFormData({ ...formData, soldeInitial: '' });
+                        else {
+                          const n = Math.round(Number(v));
+                          setFormData({
+                            ...formData,
+                            soldeInitial: Number.isFinite(n) && n >= 0 ? n : '',
+                          });
+                        }
+                      }}
+                      placeholder="Ex. 500 000 ? vide si aucune dette"
+                    />
+                  </div>
+                )}
+
+                {(formData.type === 'client' || isClientsScope) && (
+                  <div>
+                    <Label htmlFor="plafond-credit">Plafond encours clients ? commandes non pay?es (FCFA)</Label>
+                    <p className="text-xs text-muted-foreground mt-1 mb-2">
+                      Montant maximal cumul? autoris? pour ce client dans le suivi cr?ances (lignes ? commande sans paiement ?). Vide = pas de limite.
                     </p>
                     <Input
                       id="plafond-credit"
@@ -771,8 +829,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               (!isClientsScope && filterType !== 'all') ||
               (isClientsScope &&
                 (clientFilterPlafond !== 'all' ||
-                  clientFilterTrip !== 'all' ||
-                  clientFilterParcel !== 'all' ||
+                  clientFilterOrder !== 'all' ||
                   clientFilterContact !== 'all'))) && (
               <Button
                 variant="outline"
@@ -784,15 +841,14 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   else {
                     setFilterType('client');
                     setClientFilterPlafond('all');
-                    setClientFilterTrip('all');
-                    setClientFilterParcel('all');
+                    setClientFilterOrder('all');
                     setClientFilterContact('all');
                   }
                 }}
                 className="text-xs"
               >
                 <X className="h-3 w-3 mr-1" />
-                Réinitialiser
+                R?initialiser
               </Button>
             )}
           </div>
@@ -801,7 +857,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
           <div className="space-y-4">
             {isClientsScope ? (
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-                <span>Propriétaires et fournisseurs se gèrent depuis</span>
+                <span>Propri?taires et fournisseurs se g?rent depuis</span>
                 <Link to="/tiers" className="text-primary font-medium underline-offset-4 hover:underline">
                   Tiers
                 </Link>
@@ -809,17 +865,17 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               </p>
             ) : (
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-                <span>Vue centrée sur les clients :</span>
+                <span>Vue centr?e sur les clients :</span>
                 <Link to="/clients" className="text-primary font-medium underline-offset-4 hover:underline">
                   Clients
                 </Link>
               </p>
             )}
-            {/* Recherche générale */}
+            {/* Recherche g?n?rale */}
             <div>
               <Label htmlFor="search-third-parties" className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
                 <Search className="h-4 w-4" />
-                Recherche générale
+                Recherche g?n?rale
               </Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -827,8 +883,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   id="search-third-parties"
                   placeholder={
                     isClientsScope
-                      ? 'Nom, téléphone, email, adresse, notes ou montant de plafond…'
-                      : 'Nom, téléphone, email, adresse ou notes…'
+                      ? 'Nom, t?l?phone, email, adresse, notes ou montant de plafond?'
+                      : 'Nom, t?l?phone, email, adresse ou notes?'
                   }
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -856,8 +912,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
 
             {isClientsScope &&
               (clientFilterPlafond !== 'all' ||
-                clientFilterTrip !== 'all' ||
-                clientFilterParcel !== 'all' ||
+                clientFilterOrder !== 'all' ||
                 clientFilterContact !== 'all') && (
                 <div className="flex flex-wrap gap-2 pb-2">
                   {clientFilterPlafond !== 'all' && (
@@ -874,29 +929,15 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       </button>
                     </Badge>
                   )}
-                  {clientFilterTrip !== 'all' && (
+                  {clientFilterOrder !== 'all' && (
                     <Badge variant="secondary" className="bg-teal-500/10 text-teal-800 dark:text-teal-300 border-teal-500/20 px-3 py-1.5">
-                      {clientTripFilterLabel[clientFilterTrip]}
+                      {clientOrderFilterLabel[clientFilterOrder]}
                       <button
                         type="button"
-                        onClick={() => setClientFilterTrip('all')}
+                        onClick={() => setClientFilterOrder('all')}
                         className="ml-2 hover:bg-teal-500/20 rounded-full p-0.5"
-                        aria-label="Retirer le filtre trajets"
-                        title="Retirer le filtre trajets"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  )}
-                  {clientFilterParcel !== 'all' && (
-                    <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-800 dark:text-cyan-300 border-cyan-500/20 px-3 py-1.5">
-                      {clientParcelFilterLabel[clientFilterParcel]}
-                      <button
-                        type="button"
-                        onClick={() => setClientFilterParcel('all')}
-                        className="ml-2 hover:bg-cyan-500/20 rounded-full p-0.5"
-                        aria-label="Retirer le filtre colis"
-                        title="Retirer le filtre colis"
+                        aria-label="Retirer le filtre commandes"
+                        title="Retirer le filtre commandes"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -909,8 +950,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         type="button"
                         onClick={() => setClientFilterContact('all')}
                         className="ml-2 hover:bg-slate-500/20 rounded-full p-0.5"
-                        aria-label="Retirer le filtre coordonnées"
-                        title="Retirer le filtre coordonnées"
+                        aria-label="Retirer le filtre coordonn?es"
+                        title="Retirer le filtre coordonn?es"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -919,7 +960,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 </div>
               )}
 
-            {/* Sélecteurs de filtres */}
+            {/* S?lecteurs de filtres */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <ListSortSelect
                 id="sort-third-parties"
@@ -936,10 +977,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tous les types</SelectItem>
-                    <SelectItem value="proprietaire">Propriétaires</SelectItem>
+                    <SelectItem value="proprietaire">Propri?taires</SelectItem>
                     <SelectItem value="client">Clients</SelectItem>
                     <SelectItem value="fournisseur">Fournisseurs</SelectItem>
-                    <SelectItem value="employe">Personnel siège</SelectItem>
+                    <SelectItem value="employe">Personnel si?ge</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -962,65 +1003,47 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     onValueChange={(v) => setClientFilterPlafond(v as ClientPlafondFilter)}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Indifférent" />
+                      <SelectValue placeholder="Indiff?rent" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Indifférent</SelectItem>
-                      <SelectItem value="defined">Plafond défini</SelectItem>
+                      <SelectItem value="all">Indiff?rent</SelectItem>
+                      <SelectItem value="defined">Plafond d?fini</SelectItem>
                       <SelectItem value="none">Sans plafond</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground mb-2">Lien trajets</Label>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Commandes</Label>
                   <Select
-                    value={clientFilterTrip}
-                    onValueChange={(v) => setClientFilterTrip(v as ClientTripFilter)}
+                    value={clientFilterOrder}
+                    onValueChange={(v) => setClientFilterOrder(v as ClientOrderFilter)}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Indifférent" />
+                      <SelectValue placeholder="Indiff?rent" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Indifférent</SelectItem>
-                      <SelectItem value="yes">Au moins un trajet relié</SelectItem>
-                      <SelectItem value="no">Aucun trajet relié</SelectItem>
+                      <SelectItem value="all">Indiff?rent</SelectItem>
+                      <SelectItem value="yes">Au moins une commande</SelectItem>
+                      <SelectItem value="no">Sans commande</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">Nom sur mission ou participant structuré.</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground mb-2">Lien expéditions colis</Label>
-                  <Select
-                    value={clientFilterParcel}
-                    onValueChange={(v) => setClientFilterParcel(v as ClientParcelFilter)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Indifférent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Indifférent</SelectItem>
-                      <SelectItem value="yes">Au moins une expédition</SelectItem>
-                      <SelectItem value="no">Aucune expédition</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">Client mentionné sur une ligne colis.</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground mb-2">Coordonnées</Label>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Coordonn?es</Label>
                   <Select
                     value={clientFilterContact}
                     onValueChange={(v) => setClientFilterContact(v as ClientContactFilter)}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Indifférent" />
+                      <SelectValue placeholder="Indiff?rent" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Indifférent</SelectItem>
-                      <SelectItem value="phone_set">Téléphone renseigné</SelectItem>
-                      <SelectItem value="phone_missing">Téléphone absent</SelectItem>
-                      <SelectItem value="email_set">Email renseigné</SelectItem>
+                      <SelectItem value="all">Indiff?rent</SelectItem>
+                      <SelectItem value="phone_set">T?l?phone renseign?</SelectItem>
+                      <SelectItem value="phone_missing">T?l?phone absent</SelectItem>
+                      <SelectItem value="email_set">Email renseign?</SelectItem>
                       <SelectItem value="email_missing">Email absent</SelectItem>
-                      <SelectItem value="coords_incomplete">Fiche incomplète (tél., email ou adresse manquant)</SelectItem>
+                      <SelectItem value="coords_incomplete">Fiche incompl?te (t?l., email ou adresse manquant)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1038,15 +1061,14 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               (!isClientsScope && filterType !== 'all') ||
               (isClientsScope &&
                 (clientFilterPlafond !== 'all' ||
-                  clientFilterTrip !== 'all' ||
-                  clientFilterParcel !== 'all' ||
+                  clientFilterOrder !== 'all' ||
                   clientFilterContact !== 'all'))
                 ? isClientsScope
-                  ? 'Aucun client ne correspond aux filtres ou à la recherche'
-                  : 'Aucun tier ne correspond à votre recherche'
+                  ? 'Aucun client ne correspond aux filtres ou ? la recherche'
+                  : 'Aucun tier ne correspond ? votre recherche'
                 : isClientsScope
-                  ? 'Aucun client enregistré'
-                  : 'Aucun tier enregistré'}
+                  ? 'Aucun client enregistr?'
+                  : 'Aucun tier enregistr?'}
             </p>
           </div>
         ) : (
@@ -1070,6 +1092,25 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                           {trucksCount} camion{trucksCount > 1 ? 's' : ''}
                         </Badge>
                       )}
+                      {thirdParty.type === 'fournisseur' && (() => {
+                        const s = supplierSummaryById.get(thirdParty.id);
+                        if (!s) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            <Badge variant={supplierEtatBadgeVariant(s.etat)} className="text-xs">
+                              {formatSupplierEtatFr(s.etat)}
+                            </Badge>
+                            {s.chargementsEnAttente > 0 && (
+                              <Badge variant="destructive" className="text-xs">
+                                {s.chargementsEnAttente} bon(s) ? affecter
+                              </Badge>
+                            )}
+                            <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
+                              <Link to={`/fournisseurs?id=${thirdParty.id}`}>Mouvements</Link>
+                            </Button>
+                          </div>
+                        );
+                      })()}
                     </div>
                     {(thirdParty.type === 'client' || canManageFleet) && (
                     <div className="flex flex-wrap gap-1 justify-end">
@@ -1081,7 +1122,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                           className="opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity duration-300"
                         >
                           <PanelRight className="h-4 w-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Détails</span>
+                          <span className="hidden sm:inline">D?tails</span>
                         </Button>
                       )}
                       {canManageFleet && (
@@ -1124,7 +1165,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                     )}
                     {thirdParty.adresse && (
                       <div className="flex items-start gap-2 text-sm">
-                        <span className="text-muted-foreground">📍</span>
+                        <span className="text-muted-foreground">?x?</span>
                         <span className="flex-1">{thirdParty.adresse}</span>
                       </div>
                     )}
@@ -1151,22 +1192,21 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
 
       <Sheet open={!!detailClient} onOpenChange={(open) => { if (!open) setDetailClient(null); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          {detailClient && clientDetailInsights && (
+          {detailClient && detailClient.type === 'client' && (
             <>
               <SheetHeader>
                 <SheetTitle className="pr-8">{detailClient.nom}</SheetTitle>
                 <SheetDescription>
-                  Partenaire commercial : trajets et colis reliés par le nom sur la mission ou les lots ; factures
-                  trajet reliées par la fiche, le libellé « facturé à », ou à défaut le client renseigné sur le trajet.
+                  Commandes du donneur d&apos;ordre, livraisons et cr?ances pour ce client.
                 </SheetDescription>
               </SheetHeader>
 
               <div className="mt-6 space-y-6">
                 <section>
-                  <h3 className="text-sm font-semibold text-foreground mb-2">Coordonnées</h3>
+                  <h3 className="text-sm font-semibold text-foreground mb-2">Coordonn?es</h3>
                   <div className="space-y-2 text-sm rounded-lg border bg-muted/30 p-3">
                     {detailClient.telephone && (
-                      <p><span className="text-muted-foreground">Tél. </span>{detailClient.telephone}</p>
+                      <p><span className="text-muted-foreground">T?l. </span>{detailClient.telephone}</p>
                     )}
                     {detailClient.email && (
                       <p className="break-all"><span className="text-muted-foreground">Email </span>{detailClient.email}</p>
@@ -1175,7 +1215,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       <p><span className="text-muted-foreground">Adresse </span>{detailClient.adresse}</p>
                     )}
                     {!detailClient.telephone && !detailClient.email && !detailClient.adresse && (
-                      <p className="text-muted-foreground">Aucune coordonnée renseignée.</p>
+                      <p className="text-muted-foreground">Aucune coordonn?e renseign?e.</p>
                     )}
                     {detailClient.notes && (
                       <div className="pt-2 border-t border-dashed mt-2">
@@ -1191,17 +1231,33 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 <section>
                   <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
                     <CreditCard className="h-4 w-4 text-rose-600" />
-                    Plafond et encours (commandes non payées)
+                    Plafond et encours (commandes non pay?es)
                   </h3>
                   <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+                    <p>
+                      <span className="text-muted-foreground">Dette / solde initial :</span>{' '}
+                      <span className="font-semibold">
+                        {detailSoldeInitial != null && detailSoldeInitial > 0
+                          ? formatFcfa(detailSoldeInitial)
+                          : 'Aucun'}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 ml-2 text-xs"
+                        onClick={() => void handleEdit(detailClient)}
+                      >
+                        Modifier
+                      </Button>
+                    </p>
                     {detailClient.plafondCredit != null ? (
                       <>
                         <p>
-                          <span className="text-muted-foreground">Plafond fixé :</span>{' '}
+                          <span className="text-muted-foreground">Plafond fix? :</span>{' '}
                           <span className="font-semibold">{formatFcfa(Math.round(detailClient.plafondCredit))}</span>
                         </p>
                         <p>
-                          <span className="text-muted-foreground">Encours créances (estimé) :</span>{' '}
+                          <span className="text-muted-foreground">Encours cr?ances (estim?) :</span>{' '}
                           <span className="font-medium">{formatFcfa(Math.round(encoursPretsFicheClient))}</span>
                         </p>
                         <p>
@@ -1218,136 +1274,32 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         </p>
                         {encoursPretsFicheClient > detailClient.plafondCredit + 0.01 && (
                           <p className="text-xs text-destructive">
-                            L’encours dépasse le plafond : régularisez les commandes non payées ou le plafond dans la fiche client.
+                            L?"encours d?passe le plafond : r?gularisez les commandes non pay?es ou le plafond dans la fiche client.
                           </p>
                         )}
                       </>
                     ) : (
                       <p className="text-muted-foreground">
-                        Aucun plafond défini. Vous pouvez en fixer un via « Modifier » sur cette fiche.
+                        Aucun plafond d?fini. Vous pouvez en fixer un via ? Modifier ? sur cette fiche.
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-2">
-                      Les montants viennent du suivi créances : lignes « commande sans paiement »
-                      <span className="font-medium"> rattachées à cette fiche</span> par identifiant, sinon celles dont le nom client correspond au texte saisi sur la ligne.
+                      Les montants viennent du suivi cr?ances : lignes ? commande sans paiement ?
+                      <span className="font-medium"> rattach?es ? cette fiche</span> par identifiant, sinon celles dont le nom client correspond au texte saisi sur la ligne.
                     </p>
                     <Link to="/credits" className="inline-block text-xs text-primary hover:underline pt-1">
-                      Ouvrir le registre Créances
+                      Ouvrir le registre Cr?ances
                     </Link>
                   </div>
                 </section>
 
                 <Separator />
 
-                <section>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Route className="h-4 w-4 text-emerald-600" />
-                      Trajets ({clientDetailInsights.relatedTrips.length})
-                    </h3>
-                    <Link to="/trajets" className="text-xs text-primary hover:underline shrink-0">
-                      Ouvrir les trajets
-                    </Link>
-                  </div>
-                  {clientDetailInsights.relatedTrips.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Aucun trajet ne référence ce client (champ « Client » du trajet).</p>
-                  ) : (
-                    <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                      {clientDetailInsights.relatedTrips.slice(0, 14).map((t) => (
-                        <li key={t.id} className="rounded-lg border bg-card p-2.5 text-sm">
-                          <div className="flex justify-between gap-2 font-medium">
-                            <span>{t.origine} → {t.destination}</span>
-                            <span className="shrink-0 text-muted-foreground">{t.dateDepart}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
-                            <span>{formatTripStatusFr(t.statut)}</span>
-                            <span>Recette {formatFcfa(t.recette)}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {clientDetailInsights.relatedTrips.length > 14 && (
-                    <p className="text-xs text-muted-foreground mt-2">+ {clientDetailInsights.relatedTrips.length - 14} autre(s) trajet(s).</p>
-                  )}
-                  {clientDetailInsights.recetteTrips > 0 && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Somme des recettes déclarées sur ces trajets : {formatFcfa(clientDetailInsights.recetteTrips)}
-                    </p>
-                  )}
-                </section>
+                <ClientOperationsPanels
+                  clientId={detailClient.id}
+                  defaultDestination={detailClient.adresse}
+                />
 
-                <Separator />
-
-                <section>
-                  <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-600" />
-                    Factures — trajets ({clientDetailInsights.tripInvoices.length})
-                  </h3>
-                  {clientDetailInsights.tripInvoices.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Aucune facture trajet attribuée à ce client (fiche, libellé facture ou client du trajet).
-                    </p>
-                  ) : (
-                    <ul className="space-y-2 text-sm max-h-40 overflow-y-auto">
-                      {clientDetailInsights.tripInvoices.map((inv) => (
-                        <li key={inv.id} className="flex justify-between gap-2 rounded-md border px-2 py-1.5">
-                          <span className="font-mono text-xs">{inv.numero}</span>
-                          <span className="shrink-0">{formatFcfa(inv.montantTTC)} — {invoiceStatutLabel(inv.statut)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <Link to="/factures" className="inline-block text-xs text-primary hover:underline mt-2">
-                    Voir les factures
-                  </Link>
-                </section>
-
-                <Separator />
-
-                <section>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Package className="h-4 w-4 text-cyan-600" />
-                      Expéditions colis ({clientDetailInsights.relatedParcelEx.length})
-                    </h3>
-                    <Link to="/envoi-colis" className="text-xs text-primary hover:underline shrink-0">
-                      Expéditions
-                    </Link>
-                  </div>
-                  {clientDetailInsights.relatedParcelEx.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Aucune expédition ne mentionne ce client sur une ligne colis.</p>
-                  ) : (
-                    <ul className="space-y-2 text-sm max-h-40 overflow-y-auto">
-                      {clientDetailInsights.relatedParcelEx.slice(0, 12).map((ex) => (
-                        <li key={ex.id} className="rounded-lg border bg-card p-2.5">
-                          <div className="font-medium">{ex.reference || 'Sans réf.'}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5">{ex.origine} → {ex.destination}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <Separator />
-
-                <section>
-                  <h3 className="text-sm font-semibold text-foreground mb-2">
-                    Factures — colis ({clientDetailInsights.parcelInvoices.length})
-                  </h3>
-                  {clientDetailInsights.parcelInvoices.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Aucune facture colis pour ces expéditions.</p>
-                  ) : (
-                    <ul className="space-y-2 text-sm max-h-32 overflow-y-auto">
-                      {clientDetailInsights.parcelInvoices.map((inv) => (
-                        <li key={inv.id} className="flex justify-between gap-2 rounded-md border px-2 py-1.5">
-                          <span className="font-mono text-xs">{inv.numero}</span>
-                          <span className="shrink-0">{formatFcfa(inv.montantTTC)} — {invoiceStatutLabel(inv.statut)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
               </div>
             </>
           )}
