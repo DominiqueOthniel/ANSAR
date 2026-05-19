@@ -30,4 +30,22 @@ export class CreateThirdPartyDto {
   @IsNumber()
   @Min(0)
   plafondCredit?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['homme', 'femme', 'autre'])
+  sexe?: 'homme' | 'femme' | 'autre' | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['particulier', 'professionnel', 'gros_compte', 'institution'])
+  segmentClient?: 'particulier' | 'professionnel' | 'gros_compte' | 'institution' | null;
+
+  @IsOptional()
+  @IsString()
+  ville?: string | null;
+
+  @IsOptional()
+  @IsString()
+  dateNaissance?: string | null;
 }

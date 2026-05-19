@@ -208,6 +208,10 @@ export interface ThirdPartyPayload {
   type: 'proprietaire' | 'client' | 'fournisseur' | 'employe';
   notes?: string;
   plafondCredit?: number | null;
+  sexe?: 'homme' | 'femme' | 'autre' | null;
+  segmentClient?: 'particulier' | 'professionnel' | 'gros_compte' | 'institution' | null;
+  ville?: string | null;
+  dateNaissance?: string | null;
 }
 
 export interface MerchandiseQualityPayload {
@@ -252,7 +256,7 @@ export interface ClientDeliveryPayload {
   chauffeurId?: string;
   tracteurId?: string;
   montantTransport?: number;
-  /** Transport facturé par le fournisseur directement au client (pas de FAC-LIV). */
+  /** Transport sous-traité : le fournisseur facture la société, refacturation client via FAC-LIV. */
   transportFactureParFournisseur?: boolean;
   transportFournisseurId?: string;
   notes?: string;

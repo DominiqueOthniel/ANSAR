@@ -182,7 +182,17 @@ export class ClientOperationsService {
   }
 
   private assertTransportBilling(delivery: ClientDelivery): void {
-    if (this.isTransportBilledBySupplier(delivery)) return;
+    if (this.isTransportBilledBySupplier(delivery)) {
+      if (!delivery.transportFournisseurId) {
+        throw new BadRequestException('Indiquez le fournisseur qui vous facture le transport.');
+      }
+      if (this.deliveryTransportMontant(delivery) <= 0) {
+        throw new BadRequestException(
+          'Indiquez le montant transport refacturé au client (FAC-LIV) lorsque le fournisseur vous facture le transport.',
+        );
+      }
+      return;
+    }
     if (this.hasTransportMission(delivery) && this.deliveryTransportMontant(delivery) <= 0) {
       throw new BadRequestException(
         'Indiquez le montant du transport lorsqu’un chauffeur ou un camion est attribué à la livraison.',
@@ -190,7 +200,7 @@ export class ClientOperationsService {
     }
   }
 
-  /** Supprime la FAC-LIV si le transport passe en facturation directe fournisseur → client. */
+  /** Supprime la FAC-LIV lorsqu’il n’y a plus de montant transport à facturer au client. */
   private async clearDeliveryTransportInvoice(delivery: ClientDelivery): Promise<void> {
     if (!delivery.invoiceId) return;
     const inv = await this.invoiceRepo.findOne({ where: { id: delivery.invoiceId } });
@@ -204,6 +214,10 @@ export class ClientOperationsService {
       `Transport — ${delivery.lieuLivraison}`,
       `Commande : ${order.designation}`,
     ];
+    const fournisseur = delivery.transportFournisseur;
+    if (fournisseur?.nom) {
+      parts.push(`Transport fournisseur : ${fournisseur.nom}`);
+    }
     const ch = delivery.chauffeur;
     const tr = delivery.tracteur;
     if (ch) parts.push(`Chauffeur : ${ch.prenom} ${ch.nom}`.trim());
@@ -216,12 +230,16 @@ export class ClientOperationsService {
     delivery: ClientDelivery,
     order: ClientOrder,
   ): Promise<void> {
-    if (this.isTransportBilledBySupplier(delivery)) {
+    const montant = this.deliveryTransportMontant(delivery);
+    if (montant <= 0) {
       await this.clearDeliveryTransportInvoice(delivery);
       return;
     }
-    const montant = this.deliveryTransportMontant(delivery);
-    if (!this.hasTransportMission(delivery) || montant <= 0) return;
+    const bySupplier = this.isTransportBilledBySupplier(delivery);
+    if (!bySupplier && !this.hasTransportMission(delivery)) {
+      await this.clearDeliveryTransportInvoice(delivery);
+      return;
+    }
 
     const full = await this.findDelivery(delivery.id);
     const libelle = `${order.designation} — transport`;
@@ -453,11 +471,8 @@ export class ClientOperationsService {
         statut === 'livree' ? dto.dateLivraison || dto.datePrevue || undefined : dto.dateLivraison,
       chauffeurId: dto.chauffeurId || undefined,
       tracteurId: dto.tracteurId || undefined,
-      montantTransport: transportFactureParFournisseur
-        ? undefined
-        : dto.montantTransport != null
-          ? Number(dto.montantTransport)
-          : undefined,
+      montantTransport:
+        dto.montantTransport != null ? Number(dto.montantTransport) : undefined,
       transportFactureParFournisseur,
       transportFournisseurId: transportFactureParFournisseur
         ? dto.transportFournisseurId || undefined
@@ -534,7 +549,6 @@ export class ClientOperationsService {
     if (dto.notes !== undefined) patch.notes = dto.notes.trim() || undefined;
     if (dto.transportFactureParFournisseur === true) {
       await this.assertTransportFournisseur(dto.transportFournisseurId ?? existing.transportFournisseurId);
-      patch.montantTransport = undefined;
     }
     if (dto.transportFactureParFournisseur === false) {
       patch.transportFournisseurId = undefined;

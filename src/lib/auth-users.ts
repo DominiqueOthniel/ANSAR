@@ -7,12 +7,12 @@ export const ROLE_META: Record<
   gestionnaire: {
     label: 'Gestionnaire',
     description:
-      'Flotte : camions, clients, chauffeurs, tiers, commandes et livraisons. Pas dépenses, facturation, caisse ni suivi créances.',
+      'Flotte : camions, clients, chauffeurs, tiers, commandes et livraisons. Pas dépenses, facturation ni caisse.',
   },
   comptable: {
     label: 'Comptable',
     description:
-      'Comptabilité : dépenses, factures, caisse et suivi créances. Consultation du reste (lecture seule hors ces modules).',
+      'Comptabilité : dépenses, factures et caisse. Consultation du reste (lecture seule hors ces modules).',
   },
   admin: {
     label: 'Administrateur',

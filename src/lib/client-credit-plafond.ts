@@ -48,6 +48,46 @@ export function sumEncoursPretsPourClient(
     .reduce((s, c) => s + getResteCredit(c), 0);
 }
 
+export type InvoiceEncoursLike = {
+  clientTierId?: string;
+  montantTTC: number;
+  montantPaye?: number;
+};
+
+/** Reste à encaisser sur une facture client (FAC-CMD, FAC-LIV, etc.). */
+export function getResteFactureClient(inv: InvoiceEncoursLike): number {
+  const reste = inv.montantTTC - (inv.montantPaye ?? 0);
+  return reste > 0 ? reste : 0;
+}
+
+/** Encours issu des factures impayées liées à la fiche client (commandes, livraisons…). */
+export function sumEncoursFacturesPourClient(
+  clientId: string,
+  invoices: InvoiceEncoursLike[],
+): number {
+  return invoices
+    .filter((inv) => inv.clientTierId === clientId)
+    .reduce((s, inv) => s + getResteFactureClient(inv), 0);
+}
+
+/** Encours total pour le plafond : registre créances + factures client impayées. */
+export function sumEncoursClientPourPlafond(params: {
+  credits: CreditLike[];
+  client: { id: string; nom: string };
+  invoices?: InvoiceEncoursLike[];
+  excludeCreditId?: string;
+}): { total: number; factures: number; credits: number } {
+  const creditsSum = sumEncoursPretsPourClient(
+    params.credits,
+    params.client,
+    params.excludeCreditId,
+  );
+  const facturesSum = params.invoices
+    ? sumEncoursFacturesPourClient(params.client.id, params.invoices)
+    : 0;
+  return { total: creditsSum + facturesSum, factures: facturesSum, credits: creditsSum };
+}
+
 /**
  * Trouve la fiche client à partir du texte saisi (nom client / contrepartie).
  * Priorité : égalité normalisée, puis correspondance large.
@@ -87,6 +127,8 @@ export function checkPretAccordePlafond(params: {
   montantTotal: number;
   tauxInteret?: number;
   excludeCreditId?: string;
+  /** Factures client impayées (commandes FAC-CMD, transport FAC-LIV…) — comptées dans l’encours. */
+  invoices?: InvoiceEncoursLike[];
 }): { ok: true } | { ok: false; message: string } {
   const client = params.clientTierId
     ? params.thirdParties.find((tp) => tp.type === 'client' && tp.id === params.clientTierId)
@@ -94,11 +136,12 @@ export function checkPretAccordePlafond(params: {
   if (!client || client.plafondCredit == null) return { ok: true };
   const plafond = Number(client.plafondCredit);
   if (!Number.isFinite(plafond) || plafond < 0) return { ok: true };
-  const encours = sumEncoursPretsPourClient(
-    params.credits,
-    { id: client.id, nom: client.nom },
-    params.excludeCreditId,
-  );
+  const encours = sumEncoursClientPourPlafond({
+    credits: params.credits,
+    client: { id: client.id, nom: client.nom },
+    invoices: params.invoices,
+    excludeCreditId: params.excludeCreditId,
+  }).total;
   const newCible = getMontantCibleCredit({
     montantTotal: params.montantTotal,
     tauxInteret: params.tauxInteret ?? 0,

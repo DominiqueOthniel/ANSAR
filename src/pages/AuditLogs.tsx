@@ -177,7 +177,7 @@ export default function AuditLogs() {
       if (errors.length) {
         toast.error(errors.join(' · '));
       } else {
-        toast.message('Parcourez Dashboard, Trajets, Clients, Expéditions, Factures, Caisse et Suivi créances pour voir les cas de figure.');
+        toast.message('Parcourez Dashboard, Clients, Factures, Caisse, etc. pour voir les cas de figure.');
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Échec du rechargement démo');
@@ -204,10 +204,10 @@ export default function AuditLogs() {
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>
             <span className="font-medium text-foreground">Supprimer</span> vide la base et les caches locaux (banque,
-            caisse, créances), sans recréer de données.
+            caisse), sans recréer de données.
             <span className="font-medium text-foreground"> Recharger le jeu de démo</span> efface puis recrée un
             scénario riche : clients avec plafonds, trajets variés, expéditions colis, factures, banque, caisse et
-            créances.
+            caches locaux.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button

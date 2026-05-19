@@ -186,7 +186,7 @@ export default function Fournisseurs() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Transports → client</p>
+            <p className="text-xs text-muted-foreground">Transports sous-traités</p>
             <p className="text-2xl font-bold">{kpis.transports}</p>
             <p className="text-xs text-muted-foreground">facturés par le fournisseur</p>
           </CardContent>
@@ -321,7 +321,7 @@ export default function Fournisseurs() {
                             <span>{s.depensesRecentes} dépense(s)</span>
                           )}
                           {s.transportsDirectClient > 0 && (
-                            <span>{s.transportsDirectClient} transport → client</span>
+                            <span>{s.transportsDirectClient} transport sous-traité</span>
                           )}
                         </div>
                       </button>
@@ -341,7 +341,7 @@ export default function Fournisseurs() {
             <CardContent>
               {!selected ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
-                  Choisissez un fournisseur pour voir ses bons, dépenses, transports facturés au
+                  Choisissez un fournisseur pour voir ses bons, dépenses, transports sous-traités
                   client et tarifs articles.
                 </p>
               ) : (
@@ -363,7 +363,7 @@ export default function Fournisseurs() {
                     </div>
                     <div className="rounded-lg border p-2">
                       <p className="text-lg font-bold">{selected.transportsDirectClient}</p>
-                      <p className="text-xs text-muted-foreground">Transport → client</p>
+                      <p className="text-xs text-muted-foreground">Transport sous-traité</p>
                     </div>
                   </div>
 

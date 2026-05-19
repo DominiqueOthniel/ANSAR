@@ -14,10 +14,14 @@ export class ThirdPartiesService {
   ) {}
 
   async create(dto: CreateThirdPartyDto): Promise<ThirdParty> {
-    const { plafondCredit, ...rest } = dto;
+    const { plafondCredit, sexe, segmentClient, ville, dateNaissance, ...rest } = dto;
     const payload: DeepPartial<ThirdParty> = {
       id: uuidv4(),
       ...rest,
+      sexe: sexe ?? undefined,
+      segmentClient: segmentClient ?? undefined,
+      ville: ville?.trim() || undefined,
+      dateNaissance: dateNaissance || undefined,
     };
     if (plafondCredit != null) {
       payload.plafondCredit = String(plafondCredit);
@@ -40,7 +44,7 @@ export class ThirdPartiesService {
 
   async update(id: string, dto: UpdateThirdPartyDto): Promise<ThirdParty> {
     await this.findOne(id);
-    const { plafondCredit, ...rest } = dto;
+    const { plafondCredit, sexe, segmentClient, ville, dateNaissance, ...rest } = dto;
     const patch: Partial<ThirdParty> = { ...rest };
     if ('plafondCredit' in dto) {
       if (plafondCredit === null) {
@@ -49,6 +53,10 @@ export class ThirdPartiesService {
         patch.plafondCredit = String(plafondCredit);
       }
     }
+    if ('sexe' in dto) patch.sexe = sexe ?? undefined;
+    if ('segmentClient' in dto) patch.segmentClient = segmentClient ?? undefined;
+    if ('ville' in dto) patch.ville = ville?.trim() || undefined;
+    if ('dateNaissance' in dto) patch.dateNaissance = dateNaissance || undefined;
     if (Object.keys(patch).length) {
       await this.thirdPartyRepository.update(id, patch);
     }

@@ -70,7 +70,7 @@ export function supplierEtatBadgeVariant(
 const KIND_LABELS: Record<SupplierActivityKind, string> = {
   chargement: 'Bon de chargement',
   depense: 'Dépense',
-  transport_client: 'Transport → client',
+  transport_client: 'Transport sous-traité',
   tarif_article: 'Tarif article',
 };
 

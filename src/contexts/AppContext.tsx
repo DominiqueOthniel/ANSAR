@@ -192,6 +192,9 @@ export interface Driver {
 
 export type ThirdPartyType = 'proprietaire' | 'client' | 'fournisseur' | 'employe';
 
+export type ClientSexe = 'homme' | 'femme' | 'autre';
+export type ClientSegment = 'particulier' | 'professionnel' | 'gros_compte' | 'institution';
+
 export interface ThirdParty {
   id: string;
   nom: string;
@@ -202,6 +205,10 @@ export interface ThirdParty {
   notes?: string;
   /** Encours max. commandes clients sans paiement (FCFA), fiches client uniquement. */
   plafondCredit?: number;
+  sexe?: ClientSexe;
+  segmentClient?: ClientSegment;
+  ville?: string;
+  dateNaissance?: string;
 }
 
 /** Libellé enregistré pour le champ marchandise / qualité des trajets. */
@@ -605,6 +612,19 @@ function normalizeThirdParty(r: Record<string, unknown>): ThirdParty {
       r.plafondCredit != null && String(r.plafondCredit) !== ''
         ? parseNum(r.plafondCredit)
         : undefined,
+    sexe:
+      r.sexe === 'homme' || r.sexe === 'femme' || r.sexe === 'autre'
+        ? (r.sexe as ClientSexe)
+        : undefined,
+    segmentClient:
+      r.segmentClient === 'particulier' ||
+      r.segmentClient === 'professionnel' ||
+      r.segmentClient === 'gros_compte' ||
+      r.segmentClient === 'institution'
+        ? (r.segmentClient as ClientSegment)
+        : undefined,
+    ville: r.ville ? String(r.ville).trim() : undefined,
+    dateNaissance: r.dateNaissance ? String(r.dateNaissance).slice(0, 10) : undefined,
   };
 }
 

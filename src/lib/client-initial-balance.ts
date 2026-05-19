@@ -5,6 +5,7 @@ import {
   normalizeCreditLike,
   type ClientTierLike,
   type CreditLike,
+  type InvoiceEncoursLike,
 } from '@/lib/client-credit-plafond';
 
 const USE_CREDITS_API = Boolean(import.meta.env.VITE_API_URL?.trim());
@@ -18,6 +19,8 @@ export type CreateClientInitialBalanceParams = {
   montant: number;
   credits: CreditLike[];
   thirdParties: ClientTierLike[];
+  /** Factures client impayées (commandes, livraisons) — pour le contrôle de plafond. */
+  invoices?: InvoiceEncoursLike[];
 };
 
 function parseNum(v: unknown): number {
@@ -82,6 +85,7 @@ export async function createClientInitialBalance(
     clientTierId: params.clientId,
     montantTotal: montant,
     tauxInteret: 0,
+    invoices: params.invoices,
   });
   if (!chk.ok) throw new Error(chk.message);
 
@@ -159,6 +163,7 @@ async function updateClientInitialBalanceCredit(
     montantTotal: montant,
     tauxInteret: 0,
     excludeCreditId: String(existing.id),
+    invoices: params.invoices,
   });
   if (!chk.ok) throw new Error(chk.message);
 

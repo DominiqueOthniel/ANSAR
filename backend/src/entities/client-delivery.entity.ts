@@ -44,8 +44,7 @@ export class ClientDelivery {
   montantTransport?: number;
 
   /**
-   * Le fournisseur (gros donneur d’ordre / dépôt) facture le transport directement au client final.
-   * Dans ce cas, pas de facture FAC-LIV émise par la société — seule la marchandise (FAC-CMD) l’est.
+   * Transport sous-traité : le fournisseur facture la société, qui refacture le client (FAC-LIV).
    */
   @Column({ type: 'boolean', default: false })
   transportFactureParFournisseur: boolean;

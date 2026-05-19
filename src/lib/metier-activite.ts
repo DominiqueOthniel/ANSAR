@@ -11,9 +11,9 @@ export const PAGE_DASHBOARD_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Synthèse enca
 export const PAGE_TRAJETS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fil d’Ariane volontairement simple : enregistrez les fournisseurs de ramassage dans Tiers, puis enchaînez les arrêts « chargement » (un site fournisseur par ligne, dans l’ordre du camion) puis les « livraison ». Résumé origine / destination + liste d’arrêts = la mission lisible d’un coup d’œil ; plusieurs clients peuvent être facturés sur un même trajet.`;
 
 export const PAGE_FACTURES_DESCRIPTION =
-  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Les factures FAC-CMD couvrent la marchandise ; les FAC-LIV le transport que vous facturez vous-même. Si un fournisseur facture le transport directement au client, aucune FAC-LIV n’est créée pour cette livraison.';
+  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Les factures FAC-CMD couvrent la marchandise ; les FAC-LIV le transport refacturé au client (flotte interne ou transport sous-traité chez un fournisseur).';
 
-export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, commandes, livraisons, factures et envois colis. Sur une livraison, cochez « transport facturé par le fournisseur » lorsqu’un gros fournisseur facture le transport directement à votre client : vous ne générez alors pas de facture transport (FAC-LIV), seule la marchandise / marge (FAC-CMD) reste à votre charge.`;
+export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, commandes, livraisons, factures et envois colis. Sur une livraison, cochez « transport sous-traité (fournisseur) » lorsque le fournisseur vous facture le transport : indiquez le fournisseur et le montant refacturé au client — une FAC-LIV est générée en plus de la FAC-CMD marchandise.`;
 
 export const PAGE_TIERS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Propriétaires de camions, clients, fournisseurs (points de chargement / contacts site), et personnel siège (employés) pour lier les salaires hors chauffeurs — chaque fiche clarifie qui intervient sur la chaîne.`;
 
@@ -30,12 +30,10 @@ export const PAGE_ARTICLES_DESCRIPTION =
 
 export const PAGE_CHARGEMENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Enregistrez les bons de chargement chez vos fournisseurs (dépôts, usines, carrières…), puis affectez chaque bon aux commandes clients concernées pour suivre ce qui reste à livrer.`;
 
-export const PAGE_FOURNISSEURS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Vue centrée fournisseurs : état des sites (bons en attente, affectations), dépenses liées, transport facturé directement à vos clients et tarifs catalogue — pour suivre chaque interaction avec vos points de chargement.`;
+export const PAGE_FOURNISSEURS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Vue centrée fournisseurs : état des sites (bons en attente, affectations), dépenses liées, transports sous-traités (fournisseur → société → client) et tarifs catalogue — pour suivre chaque interaction avec vos points de chargement.`;
 
 export const PAGE_CHAUFFEURS_DESCRIPTION =
   'Chauffeurs, documents et mouvements financiers liés aux missions de transport.';
 
 export const PAGE_CAISSE_DESCRIPTION =
   'Entrées et sorties de caisse. Pour une entrée, cochez « Financement » si le montant ne doit pas compter comme encaissement d’activité (le tableau de bord reste basé sur les factures et dépenses).';
-
-export const PAGE_CREDITS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Emprunts réels et commandes clients sans paiement immédiat (créances) — isolés de la caisse et du tableau de bord.`;

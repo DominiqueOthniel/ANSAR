@@ -15,7 +15,6 @@ import {
   Boxes,
   Container,
   Wallet,
-  CreditCard,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
@@ -55,7 +54,6 @@ const navigation = [
   { name: 'Chargements', href: '/chargements', icon: Container,     color: 'from-lime-500 to-green-500' },
   { name: 'Articles',   href: '/articles',   icon: Boxes,           color: 'from-amber-500 to-orange-500' },
   { name: 'Caisse',     href: '/caisse',     icon: Wallet,          color: 'from-green-500 to-emerald-500' },
-  { name: 'Suivi créances', href: '/credits', icon: CreditCard,      color: 'from-rose-500 to-pink-500' },
 ];
 
 function NavItem({

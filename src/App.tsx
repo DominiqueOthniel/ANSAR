@@ -15,7 +15,6 @@ import Drivers from "./pages/Drivers";
 import ThirdParties from "./pages/ThirdParties";
 import Clients from "./pages/Clients";
 import Caisse from "./pages/Caisse";
-import Credits from "./pages/Credits";
 import AuditLogs from "./pages/AuditLogs";
 import Articles from "./pages/Articles";
 import Chargements from "./pages/Chargements";
@@ -62,7 +61,7 @@ const App = () => (
               <Route path="/envoi-colis" element={<Navigate to="/clients" replace />} />
               <Route path="/banque" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
               <Route path="/caisse" element={<ProtectedRoute><Layout><Caisse /></Layout></ProtectedRoute>} />
-              <Route path="/credits" element={<ProtectedRoute><Layout><Credits /></Layout></ProtectedRoute>} />
+              <Route path="/credits" element={<Navigate to="/factures" replace />} />
               <Route path="/historique" element={<ProtectedRoute><Layout><AuditLogs /></Layout></ProtectedRoute>} />
               <Route path="/utilisateurs" element={<AdminRoute><Layout><UsersPage /></Layout></AdminRoute>} />
               <Route path="*" element={<NotFound />} />

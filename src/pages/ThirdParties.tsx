@@ -24,7 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { ClientOperationsPanels } from '@/components/clients/ClientOperationsPanels';
 import { loadCreditsList } from '@/lib/load-credits-list';
 import type { CreditLike } from '@/lib/client-credit-plafond';
-import { sumEncoursPretsPourClient } from '@/lib/client-credit-plafond';
+import { sumEncoursClientPourPlafond } from '@/lib/client-credit-plafond';
 import {
   createClientInitialBalance,
   getClientInitialBalanceMontant,
@@ -37,6 +37,27 @@ import {
   formatSupplierEtatFr,
   supplierEtatBadgeVariant,
 } from '@/lib/supplier-activity';
+import {
+  CLIENT_AGE_FILTER_LABELS,
+  CLIENT_ENCOURS_FILTER_LABELS,
+  CLIENT_ACTIVITY_FILTER_LABELS,
+  CLIENT_LIVRAISON_FILTER_LABELS,
+  CLIENT_SEGMENT_FILTER_LABELS,
+  CLIENT_SEGMENT_OPTIONS,
+  CLIENT_SEXE_FILTER_LABELS,
+  CLIENT_SEXE_OPTIONS,
+  EMPTY_CLIENT_FILTERS,
+  collectClientVilles,
+  formatClientSegmentFr,
+  formatClientSexeFr,
+  getClientAgeYears,
+  getEncoursClient,
+  hasActiveClientFilters,
+  matchesClientAdvancedFilters,
+  type ClientFilterState,
+  type ClientSexe,
+  type ClientSegment,
+} from '@/lib/client-profile';
 
 const THIRD_SORT_OPTIONS = [
   { value: 'nom_asc', label: 'Nom A → Z' },
@@ -104,6 +125,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const [clientFilterPlafond, setClientFilterPlafond] = useState<ClientPlafondFilter>('all');
   const [clientFilterOrder, setClientFilterOrder] = useState<ClientOrderFilter>('all');
   const [clientFilterContact, setClientFilterContact] = useState<ClientContactFilter>('all');
+  const [clientAdvancedFilters, setClientAdvancedFilters] =
+    useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
   const [detailClient, setDetailClient] = useState<ThirdParty | null>(null);
   const [creditsForPlafondSheet, setCreditsForPlafondSheet] = useState<CreditLike[]>([]);
   const [detailSoldeInitial, setDetailSoldeInitial] = useState<number | null>(null);
@@ -117,7 +140,18 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     notes: '',
     plafondCredit: '' as number | '',
     soldeInitial: '' as number | '',
+    sexe: '' as ClientSexe | '',
+    segmentClient: '' as ClientSegment | '',
+    ville: '',
+    dateNaissance: '',
   });
+
+  const resetClientFilters = () => {
+    setClientFilterPlafond('all');
+    setClientFilterOrder('all');
+    setClientFilterContact('all');
+    setClientAdvancedFilters(EMPTY_CLIENT_FILTERS);
+  };
 
   const resetForm = () => {
     setFormData({
@@ -129,6 +163,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       notes: '',
       plafondCredit: '',
       soldeInitial: '',
+      sexe: '',
+      segmentClient: '',
+      ville: '',
+      dateNaissance: '',
     });
     setEditingThirdParty(null);
   };
@@ -155,9 +193,19 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   formData.plafondCredit === '' || formData.plafondCredit == null
                     ? null
                     : Math.max(0, Math.round(Number(formData.plafondCredit))),
+                sexe: formData.sexe || null,
+                segmentClient: formData.segmentClient || null,
+                ville: formData.ville.trim() || null,
+                dateNaissance: formData.dateNaissance || null,
               }
             : editingThirdParty
-              ? { plafondCredit: null }
+              ? {
+                  plafondCredit: null,
+                  sexe: null,
+                  segmentClient: null,
+                  ville: null,
+                  dateNaissance: null,
+                }
               : {}),
         };
 
@@ -176,6 +224,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               montant: soldeInit,
               credits,
               thirdParties: tiersForPlafond,
+              invoices,
             });
             if (detailClient?.id === editingThirdParty.id) {
               const list = await loadCreditsList();
@@ -216,18 +265,15 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               montant: soldeInit,
               credits,
               thirdParties: tiersForPlafond,
+              invoices,
             });
           }
 
           const clientListFiltersActive =
-            isClientsScope &&
-            (searchTerm.trim() !== '' ||
-              clientFilterPlafond !== 'all' ||
-              clientFilterOrder !== 'all' ||
-              clientFilterContact !== 'all');
+            isClientsScope && (searchTerm.trim() !== '' || anyClientFilterActive);
           const detteMsg =
             effectiveType === 'client' && soldeInit > 0
-              ? ` Dette initiale : ${soldeInit.toLocaleString('fr-FR')} FCFA (suivi créances).`
+              ? ` Dette initiale : ${soldeInit.toLocaleString('fr-FR')} FCFA (comptée dans l'encours).`
               : '';
           toast.success(
             (isClientsScope
@@ -265,6 +311,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       notes: thirdParty.notes || '',
       plafondCredit: thirdParty.plafondCredit != null ? Math.round(thirdParty.plafondCredit) : '',
       soldeInitial,
+      sexe: thirdParty.sexe ?? '',
+      segmentClient: thirdParty.segmentClient ?? '',
+      ville: thirdParty.ville ?? '',
+      dateNaissance: thirdParty.dateNaissance ?? '',
     });
     setIsDialogOpen(true);
   };
@@ -321,11 +371,22 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         (tp.email && tp.email.toLowerCase().includes(search)) ||
         (tp.adresse && tp.adresse.toLowerCase().includes(search)) ||
         (tp.notes && tp.notes.toLowerCase().includes(search)) ||
+        (tp.ville && tp.ville.toLowerCase().includes(search)) ||
         (tp.plafondCredit != null &&
           String(Math.round(tp.plafondCredit)).includes(search.replace(/\s/g, '')));
       if (!matchSearch) return false;
     }
     if (isClientsScope && tp.type === 'client') {
+      if (
+        !matchesClientAdvancedFilters(tp, clientAdvancedFilters, {
+          invoices,
+          credits: creditsForPlafondSheet,
+          clientOrders,
+          clientDeliveries,
+        })
+      ) {
+        return false;
+      }
       const hasPlafond = tp.plafondCredit != null && Number.isFinite(tp.plafondCredit);
       if (clientFilterPlafond === 'defined' && !hasPlafond) return false;
       if (clientFilterPlafond === 'none' && hasPlafond) return false;
@@ -437,6 +498,19 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     [thirdParties],
   );
 
+  const clientVilles = useMemo(() => collectClientVilles(clientTiers), [clientTiers]);
+
+  useEffect(() => {
+    if (!isClientsScope) return;
+    let cancelled = false;
+    loadCreditsForPlafond().then((list) => {
+      if (!cancelled) setCreditsForPlafondSheet(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isClientsScope]);
+
   const clientsWithOrders = useMemo(() => {
     const ids = new Set(clientOrders.map((o) => o.clientId));
     return ids.size;
@@ -460,13 +534,16 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     };
   }, [detailClient?.id, detailClient?.type, detailClient?.nom]);
 
-  const encoursPretsFicheClient = useMemo(() => {
-    if (!detailClient || detailClient.type !== 'client') return 0;
-    return sumEncoursPretsPourClient(creditsForPlafondSheet, {
-      id: detailClient.id,
-      nom: detailClient.nom,
+  const encoursFicheClient = useMemo(() => {
+    if (!detailClient || detailClient.type !== 'client') {
+      return { total: 0, factures: 0, credits: 0 };
+    }
+    return sumEncoursClientPourPlafond({
+      credits: creditsForPlafondSheet,
+      client: { id: detailClient.id, nom: detailClient.nom },
+      invoices,
     });
-  }, [detailClient, creditsForPlafondSheet]);
+  }, [detailClient, creditsForPlafondSheet, invoices]);
 
   const listSortOptions = useMemo(
     () => (isClientsScope ? [...CLIENT_SORT_OPTIONS] : [...THIRD_SORT_OPTIONS]),
@@ -492,6 +569,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     coords_incomplete: 'Coordonnées incomplètes (tél., email ou adresse manquant)',
   };
 
+  const anyClientFilterActive =
+    clientFilterPlafond !== 'all' ||
+    clientFilterOrder !== 'all' ||
+    clientFilterContact !== 'all' ||
+    hasActiveClientFilters(clientAdvancedFilters);
+
   const getFiltersDescription = () => {
     const filters: string[] = [];
     if (searchTerm) filters.push(`Recherche: "${searchTerm}"`);
@@ -500,6 +583,20 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       if (clientFilterPlafond !== 'all') filters.push(clientPlafondFilterLabel[clientFilterPlafond]);
       if (clientFilterOrder !== 'all') filters.push(clientOrderFilterLabel[clientFilterOrder]);
       if (clientFilterContact !== 'all') filters.push(clientContactFilterLabel[clientFilterContact]);
+      if (clientAdvancedFilters.sexe !== 'all')
+        filters.push(CLIENT_SEXE_FILTER_LABELS[clientAdvancedFilters.sexe]);
+      if (clientAdvancedFilters.segment !== 'all')
+        filters.push(CLIENT_SEGMENT_FILTER_LABELS[clientAdvancedFilters.segment]);
+      if (clientAdvancedFilters.ville !== 'all')
+        filters.push(`Ville: ${clientAdvancedFilters.ville}`);
+      if (clientAdvancedFilters.age !== 'all')
+        filters.push(CLIENT_AGE_FILTER_LABELS[clientAdvancedFilters.age]);
+      if (clientAdvancedFilters.encours !== 'all')
+        filters.push(CLIENT_ENCOURS_FILTER_LABELS[clientAdvancedFilters.encours]);
+      if (clientAdvancedFilters.activity !== 'all')
+        filters.push(CLIENT_ACTIVITY_FILTER_LABELS[clientAdvancedFilters.activity]);
+      if (clientAdvancedFilters.livraison !== 'all')
+        filters.push(CLIENT_LIVRAISON_FILTER_LABELS[clientAdvancedFilters.livraison]);
     } else if (filterType !== 'all') filters.push(`Type: ${getTypeLabel(filterType)}`);
     const sortLabel = listSortOptions.find((o) => o.value === listSort)?.label;
     if (sortLabel) filters.push(`Tri: ${sortLabel}`);
@@ -749,12 +846,88 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 </div>
 
                 {(formData.type === 'client' || isClientsScope) && (
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                    <p className="text-sm font-medium">Profil client</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Sexe</Label>
+                        <Select
+                          value={formData.sexe || '_none'}
+                          onValueChange={(v) =>
+                            setFormData({
+                              ...formData,
+                              sexe: v === '_none' ? '' : (v as ClientSexe),
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Non renseigné" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Non renseigné</SelectItem>
+                            {CLIENT_SEXE_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Segment</Label>
+                        <Select
+                          value={formData.segmentClient || '_none'}
+                          onValueChange={(v) =>
+                            setFormData({
+                              ...formData,
+                              segmentClient: v === '_none' ? '' : (v as ClientSegment),
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Non renseigné" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Non renseigné</SelectItem>
+                            {CLIENT_SEGMENT_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ville-client">Ville / quartier</Label>
+                        <Input
+                          id="ville-client"
+                          value={formData.ville}
+                          onChange={(e) => setFormData({ ...formData, ville: e.target.value })}
+                          placeholder="Ex. Douala, Akwa…"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="date-naissance">Date de naissance</Label>
+                        <Input
+                          id="date-naissance"
+                          type="date"
+                          value={formData.dateNaissance}
+                          onChange={(e) =>
+                            setFormData({ ...formData, dateNaissance: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(formData.type === 'client' || isClientsScope) && (
                   <div className="space-y-2">
                     <Label htmlFor="solde-initial">Dette / solde initial dû (FCFA)</Label>
                     <p className="text-xs text-muted-foreground mt-1 mb-2">
                       {editingThirdParty
-                        ? "Modifiez le montant dû à l'ouverture (suivi créances). Vide ou 0 pour retirer la ligne, sauf si des remboursements sont déjà enregistrés."
-                        : "Montant que le client vous doit déjà à l'ouverture (hors futures commandes). Enregistré dans le suivi créances."}
+                        ? "Modifiez le montant dû à l'ouverture. Vide ou 0 pour retirer, sauf si déjà partiellement soldé via factures."
+                        : "Montant que le client vous doit déjà à l'ouverture (hors futures commandes). Compté dans l'encours client."}
                     </p>
                     <Input
                       id="solde-initial"
@@ -783,7 +956,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   <div>
                     <Label htmlFor="plafond-credit">Plafond encours clients (« commandes non payées ») (FCFA)</Label>
                     <p className="text-xs text-muted-foreground mt-1 mb-2">
-                      Montant maximal cumulé autorisé pour ce client dans le suivi créances (lignes « commande sans paiement »). Vide = pas de limite.
+                      Montant maximal cumulé autorisé (factures impayées + solde initial). Vide = pas de limite.
                     </p>
                     <Input
                       id="plafond-credit"
@@ -827,10 +1000,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             </CardTitle>
             {(searchTerm ||
               (!isClientsScope && filterType !== 'all') ||
-              (isClientsScope &&
-                (clientFilterPlafond !== 'all' ||
-                  clientFilterOrder !== 'all' ||
-                  clientFilterContact !== 'all'))) && (
+              (isClientsScope && anyClientFilterActive)) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -840,9 +1010,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   if (!isClientsScope) setFilterType('all');
                   else {
                     setFilterType('client');
-                    setClientFilterPlafond('all');
-                    setClientFilterOrder('all');
-                    setClientFilterContact('all');
+                    resetClientFilters();
                   }
                 }}
                 className="text-xs"
@@ -883,7 +1051,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   id="search-third-parties"
                   placeholder={
                     isClientsScope
-                      ? 'Nom, téléphone, email, adresse, notes ou montant de plafond…'
+                      ? 'Nom, téléphone, email, ville, adresse, notes ou plafond…'
                       : 'Nom, téléphone, email, adresse ou notes…'
                   }
                   value={searchTerm}
@@ -910,10 +1078,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               </div>
             )}
 
-            {isClientsScope &&
-              (clientFilterPlafond !== 'all' ||
-                clientFilterOrder !== 'all' ||
-                clientFilterContact !== 'all') && (
+            {isClientsScope && anyClientFilterActive && (
                 <div className="flex flex-wrap gap-2 pb-2">
                   {clientFilterPlafond !== 'all' && (
                     <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/20 px-3 py-1.5">
@@ -952,6 +1117,111 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         className="ml-2 hover:bg-slate-500/20 rounded-full p-0.5"
                         aria-label="Retirer le filtre coordonnées"
                         title="Retirer le filtre coordonnées"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.sexe !== 'all' && (
+                    <Badge variant="secondary" className="bg-violet-500/10 text-violet-800 dark:text-violet-300 border-violet-500/20 px-3 py-1.5">
+                      {CLIENT_SEXE_FILTER_LABELS[clientAdvancedFilters.sexe]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, sexe: 'all' }))
+                        }
+                        className="ml-2 hover:bg-violet-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre sexe"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.segment !== 'all' && (
+                    <Badge variant="secondary" className="bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 border-indigo-500/20 px-3 py-1.5">
+                      {CLIENT_SEGMENT_FILTER_LABELS[clientAdvancedFilters.segment]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, segment: 'all' }))
+                        }
+                        className="ml-2 hover:bg-indigo-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre segment"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.ville !== 'all' && (
+                    <Badge variant="secondary" className="bg-sky-500/10 text-sky-800 dark:text-sky-300 border-sky-500/20 px-3 py-1.5">
+                      Ville : {clientAdvancedFilters.ville}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, ville: 'all' }))
+                        }
+                        className="ml-2 hover:bg-sky-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre ville"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.age !== 'all' && (
+                    <Badge variant="secondary" className="bg-pink-500/10 text-pink-800 dark:text-pink-300 border-pink-500/20 px-3 py-1.5">
+                      {CLIENT_AGE_FILTER_LABELS[clientAdvancedFilters.age]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, age: 'all' }))
+                        }
+                        className="ml-2 hover:bg-pink-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre âge"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.encours !== 'all' && (
+                    <Badge variant="secondary" className="bg-amber-500/10 text-amber-900 dark:text-amber-300 border-amber-500/20 px-3 py-1.5">
+                      {CLIENT_ENCOURS_FILTER_LABELS[clientAdvancedFilters.encours]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, encours: 'all' }))
+                        }
+                        className="ml-2 hover:bg-amber-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre encours"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.activity !== 'all' && (
+                    <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-900 dark:text-cyan-300 border-cyan-500/20 px-3 py-1.5">
+                      {CLIENT_ACTIVITY_FILTER_LABELS[clientAdvancedFilters.activity]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, activity: 'all' }))
+                        }
+                        className="ml-2 hover:bg-cyan-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre activité"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {clientAdvancedFilters.livraison !== 'all' && (
+                    <Badge variant="secondary" className="bg-lime-500/10 text-lime-900 dark:text-lime-300 border-lime-500/20 px-3 py-1.5">
+                      {CLIENT_LIVRAISON_FILTER_LABELS[clientAdvancedFilters.livraison]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setClientAdvancedFilters((f) => ({ ...f, livraison: 'all' }))
+                        }
+                        className="ml-2 hover:bg-lime-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre livraison"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -1049,6 +1319,182 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 </div>
               </div>
             )}
+
+            {isClientsScope && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-2 border-t border-dashed">
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Sexe</Label>
+                  <Select
+                    value={clientAdvancedFilters.sexe}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        sexe: v as ClientFilterState['sexe'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(CLIENT_SEXE_FILTER_LABELS) as ClientFilterState['sexe'][]).map(
+                        (k) => (
+                          <SelectItem key={k} value={k}>
+                            {CLIENT_SEXE_FILTER_LABELS[k]}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Segment</Label>
+                  <Select
+                    value={clientAdvancedFilters.segment}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        segment: v as ClientFilterState['segment'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        Object.keys(CLIENT_SEGMENT_FILTER_LABELS) as ClientFilterState['segment'][]
+                      ).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {CLIENT_SEGMENT_FILTER_LABELS[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Ville</Label>
+                  <Select
+                    value={clientAdvancedFilters.ville}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({ ...f, ville: v }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les villes</SelectItem>
+                      {clientVilles.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Tranche d&apos;âge</Label>
+                  <Select
+                    value={clientAdvancedFilters.age}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        age: v as ClientFilterState['age'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(CLIENT_AGE_FILTER_LABELS) as ClientFilterState['age'][]).map(
+                        (k) => (
+                          <SelectItem key={k} value={k}>
+                            {CLIENT_AGE_FILTER_LABELS[k]}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Encours / dette</Label>
+                  <Select
+                    value={clientAdvancedFilters.encours}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        encours: v as ClientFilterState['encours'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        Object.keys(CLIENT_ENCOURS_FILTER_LABELS) as ClientFilterState['encours'][]
+                      ).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {CLIENT_ENCOURS_FILTER_LABELS[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Activité commandes</Label>
+                  <Select
+                    value={clientAdvancedFilters.activity}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        activity: v as ClientFilterState['activity'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        Object.keys(CLIENT_ACTIVITY_FILTER_LABELS) as ClientFilterState['activity'][]
+                      ).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {CLIENT_ACTIVITY_FILTER_LABELS[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Livraisons</Label>
+                  <Select
+                    value={clientAdvancedFilters.livraison}
+                    onValueChange={(v) =>
+                      setClientAdvancedFilters((f) => ({
+                        ...f,
+                        livraison: v as ClientFilterState['livraison'],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        Object.keys(CLIENT_LIVRAISON_FILTER_LABELS) as ClientFilterState['livraison'][]
+                      ).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {CLIENT_LIVRAISON_FILTER_LABELS[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1059,10 +1505,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             <p className="text-muted-foreground">
               {searchTerm ||
               (!isClientsScope && filterType !== 'all') ||
-              (isClientsScope &&
-                (clientFilterPlafond !== 'all' ||
-                  clientFilterOrder !== 'all' ||
-                  clientFilterContact !== 'all'))
+              (isClientsScope && anyClientFilterActive)
                 ? isClientsScope
                   ? 'Aucun client ne correspond aux filtres ou à la recherche'
                   : 'Aucun tier ne correspond à votre recherche'
@@ -1087,6 +1530,43 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         <span className="mr-1">{getTypeIcon(thirdParty.type)}</span>
                         {getTypeLabel(thirdParty.type)}
                       </Badge>
+                      {thirdParty.type === 'client' && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {thirdParty.sexe && (
+                            <Badge variant="outline" className="text-xs">
+                              {formatClientSexeFr(thirdParty.sexe)}
+                            </Badge>
+                          )}
+                          {thirdParty.segmentClient && (
+                            <Badge variant="outline" className="text-xs">
+                              {formatClientSegmentFr(thirdParty.segmentClient)}
+                            </Badge>
+                          )}
+                          {thirdParty.ville && (
+                            <Badge variant="outline" className="text-xs">
+                              📍 {thirdParty.ville}
+                            </Badge>
+                          )}
+                          {getClientAgeYears(thirdParty.dateNaissance) != null && (
+                            <Badge variant="outline" className="text-xs">
+                              {getClientAgeYears(thirdParty.dateNaissance)} ans
+                            </Badge>
+                          )}
+                          {(() => {
+                            const enc = getEncoursClient(
+                              thirdParty,
+                              invoices,
+                              creditsForPlafondSheet,
+                            );
+                            if (enc <= 0.01) return null;
+                            return (
+                              <Badge variant="secondary" className="text-xs">
+                                Encours {formatFcfa(Math.round(enc))}
+                              </Badge>
+                            );
+                          })()}
+                        </div>
+                      )}
                       {thirdParty.type === 'proprietaire' && trucksCount > 0 && (
                         <Badge variant="outline" className="ml-2">
                           {trucksCount} camion{trucksCount > 1 ? 's' : ''}
@@ -1229,6 +1709,32 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 <Separator />
 
                 <section>
+                  <h3 className="text-sm font-semibold text-foreground mb-2">Profil</h3>
+                  <div className="rounded-lg border bg-muted/30 p-3 text-sm grid grid-cols-2 gap-2">
+                    <p>
+                      <span className="text-muted-foreground">Sexe :</span>{' '}
+                      {formatClientSexeFr(detailClient.sexe)}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Segment :</span>{' '}
+                      {formatClientSegmentFr(detailClient.segmentClient)}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Ville :</span>{' '}
+                      {detailClient.ville?.trim() || '—'}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Âge :</span>{' '}
+                      {getClientAgeYears(detailClient.dateNaissance) != null
+                        ? `${getClientAgeYears(detailClient.dateNaissance)} ans`
+                        : detailClient.dateNaissance || '—'}
+                    </p>
+                  </div>
+                </section>
+
+                <Separator />
+
+                <section>
                   <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
                     <CreditCard className="h-4 w-4 text-rose-600" />
                     Plafond et encours (commandes non payées)
@@ -1258,21 +1764,34 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         </p>
                         <p>
                           <span className="text-muted-foreground">Encours créances (estimé) :</span>{' '}
-                          <span className="font-medium">{formatFcfa(Math.round(encoursPretsFicheClient))}</span>
+                          <span className="font-medium">{formatFcfa(Math.round(encoursFicheClient.total))}</span>
                         </p>
+                        {(encoursFicheClient.factures > 0 || encoursFicheClient.credits > 0) && (
+                          <p className="text-xs text-muted-foreground">
+                            Dont factures impayées (commandes / livraisons) :{' '}
+                            {formatFcfa(Math.round(encoursFicheClient.factures))}
+                            {encoursFicheClient.credits > 0 && (
+                              <>
+                                {' '}
+                                · solde initial / autres :{' '}
+                                {formatFcfa(Math.round(encoursFicheClient.credits))}
+                              </>
+                            )}
+                          </p>
+                        )}
                         <p>
                           <span className="text-muted-foreground">Marge sous plafond :</span>{' '}
                           <span
                             className={
-                              encoursPretsFicheClient > detailClient.plafondCredit + 0.01
+                              encoursFicheClient.total > detailClient.plafondCredit + 0.01
                                 ? 'font-semibold text-destructive'
                                 : 'font-medium text-emerald-700 dark:text-emerald-400'
                             }
                           >
-                            {formatFcfa(Math.round(Math.max(0, detailClient.plafondCredit - encoursPretsFicheClient)))}
+                            {formatFcfa(Math.round(Math.max(0, detailClient.plafondCredit - encoursFicheClient.total)))}
                           </span>
                         </p>
-                        {encoursPretsFicheClient > detailClient.plafondCredit + 0.01 && (
+                        {encoursFicheClient.total > detailClient.plafondCredit + 0.01 && (
                           <p className="text-xs text-destructive">
                             L'encours dépasse le plafond : régularisez les commandes non payées ou le plafond dans la fiche client.
                           </p>
@@ -1284,11 +1803,10 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-2">
-                      Les montants viennent du suivi créances : lignes « commande sans paiement »
-                      <span className="font-medium"> rattachées à cette fiche</span> par identifiant, sinon celles dont le nom client correspond au texte saisi sur la ligne.
+                      Basé sur les <span className="font-medium">factures impayées</span> (FAC-CMD, FAC-LIV…) et le solde initial saisi sur la fiche.
                     </p>
-                    <Link to="/credits" className="inline-block text-xs text-primary hover:underline pt-1">
-                      Ouvrir le registre Créances
+                    <Link to="/factures" className="inline-block text-xs text-primary hover:underline pt-1">
+                      Voir les factures
                     </Link>
                   </div>
                 </section>

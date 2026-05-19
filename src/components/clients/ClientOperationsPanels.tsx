@@ -45,6 +45,11 @@ import {
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
 } from '@/lib/supplier-loadings';
+import { checkPretAccordePlafond } from '@/lib/client-credit-plafond';
+import {
+  loadCreditsForPlafond,
+  thirdPartiesToClientTierLike,
+} from '@/lib/client-initial-balance';
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -315,6 +320,23 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
           }
           toast.success('Commande mise à jour');
         } else {
+          const client = thirdParties.find((tp) => tp.id === clientId && tp.type === 'client');
+          const montantCmd = finalMontant ?? 0;
+          if (client?.plafondCredit != null && montantCmd > 0) {
+            const credits = await loadCreditsForPlafond();
+            const chk = checkPretAccordePlafond({
+              credits,
+              thirdParties: thirdPartiesToClientTierLike(thirdParties),
+              preteur: client.nom,
+              clientTierId: clientId,
+              montantTotal: montantCmd,
+              invoices,
+            });
+            if (!chk.ok) {
+              toast.error(chk.message);
+              return;
+            }
+          }
           const created = await createClientOrder(payload);
           if (orderForm.supplierLoadingId.trim()) {
             await linkOrderToLoading(
@@ -401,7 +423,14 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       return;
     }
     if (billedBySupplier && !deliveryForm.transportFournisseurId) {
-      toast.error('Indiquez le fournisseur qui facture le transport au client.');
+      toast.error('Indiquez le fournisseur qui vous facture le transport.');
+      return;
+    }
+    if (
+      billedBySupplier &&
+      (!deliveryForm.montantTransport || deliveryForm.montantTransport <= 0)
+    ) {
+      toast.error('Indiquez le montant transport refacturé au client (FAC-LIV).');
       return;
     }
     await withGuard(async () => {
@@ -419,7 +448,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
             ? deliveryForm.transportFournisseurId
             : undefined,
           montantTransport:
-            !billedBySupplier && hasMission ? deliveryForm.montantTransport : undefined,
+            billedBySupplier || hasMission ? deliveryForm.montantTransport : undefined,
           notes: deliveryForm.notes.trim() || undefined,
         };
         if (editingDelivery) {
@@ -575,8 +604,10 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     {d.transportFactureParFournisseur ? (
                       <span>
                         {' '}
-                        · transport facturé par{' '}
-                        {d.transportFournisseurNom ?? 'fournisseur'} → client
+                        · transport via {d.transportFournisseurNom ?? 'fournisseur'}
+                        {d.montantTransport != null && d.montantTransport > 0
+                          ? ` · refacturé client ${formatFcfa(d.montantTransport)}`
+                          : ''}
                       </span>
                     ) : (
                       d.montantTransport != null &&
@@ -585,12 +616,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       )
                     )}
                   </p>
-                  {d.transportFactureParFournisseur && (
-                    <Badge variant="outline" className="text-xs mt-1">
-                      Pas de FAC-LIV (transport hors société)
-                    </Badge>
-                  )}
-                  {invoiceForDelivery(d) && !d.transportFactureParFournisseur && (
+                  {invoiceForDelivery(d) && (
                     <Link
                       to={`/factures?highlight=${invoiceForDelivery(d)!.id}`}
                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
@@ -966,30 +992,43 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       ...p,
                       transportFactureParFournisseur: c === true,
                       transportFournisseurId: c === true ? p.transportFournisseurId : '',
-                      montantTransport: c === true ? undefined : p.montantTransport,
                     }))
                   }
                 />
                 <span className="text-sm leading-snug">
-                  <span className="font-medium">Transport facturé par le fournisseur au client</span>
+                  <span className="font-medium">Transport sous-traité (fournisseur)</span>
                   <span className="block text-xs text-muted-foreground mt-0.5">
-                    Le gros fournisseur envoie sa facture transport directement à votre client. Vous
-                    facturez uniquement la marchandise (FAC-CMD), pas de FAC-LIV.
+                    Le fournisseur vous facture le transport ; vous le refacturez ensuite au client
+                    (FAC-LIV), en plus de la marchandise (FAC-CMD).
                   </span>
                 </span>
               </label>
               {deliveryForm.transportFactureParFournisseur && (
-                <div className="space-y-2">
-                  <Label>Fournisseur qui facture le transport *</Label>
-                  <ThirdPartyPicker
-                    options={fournisseurs}
-                    value={deliveryForm.transportFournisseurId}
-                    onValueChange={(id) =>
-                      setDeliveryForm((p) => ({ ...p, transportFournisseurId: id }))
-                    }
-                    placeholder="Choisir le fournisseur…"
-                  />
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label>Fournisseur qui vous facture le transport *</Label>
+                    <ThirdPartyPicker
+                      options={fournisseurs}
+                      value={deliveryForm.transportFournisseurId}
+                      onValueChange={(id) =>
+                        setDeliveryForm((p) => ({ ...p, transportFournisseurId: id }))
+                      }
+                      placeholder="Choisir le fournisseur…"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Montant refacturé au client (FCFA) *</Label>
+                    <NumberInput
+                      allowEmpty
+                      min={0}
+                      value={deliveryForm.montantTransport}
+                      onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Génère une FAC-LIV pour le client (coût fournisseur + marge éventuelle).
+                    </p>
+                  </div>
+                </>
               )}
             </div>
             {!deliveryForm.transportFactureParFournisseur &&
@@ -997,12 +1036,13 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 <div className="space-y-2">
                   <Label>Frais transport (FCFA) *</Label>
                   <NumberInput
+                    allowEmpty
                     min={0}
                     value={deliveryForm.montantTransport}
                     onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Facturé au client par votre société (FAC-LIV).
+                    Flotte interne — facturé au client par votre société (FAC-LIV).
                   </p>
                 </div>
               )}
