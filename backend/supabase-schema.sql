@@ -160,6 +160,10 @@ CREATE INDEX IF NOT EXISTS idx_invoices_trajet ON invoices("trajetId");
 CREATE INDEX IF NOT EXISTS idx_invoices_expense ON invoices("expenseId");
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "parcelExpeditionId" UUID;
 CREATE INDEX IF NOT EXISTS idx_invoices_parcel_expedition ON invoices("parcelExpeditionId");
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "clientOrderId" UUID;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS "clientDeliveryId" UUID;
+CREATE INDEX IF NOT EXISTS idx_invoices_client_order ON invoices("clientOrderId") WHERE "clientOrderId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_invoices_client_delivery ON invoices("clientDeliveryId") WHERE "clientDeliveryId" IS NOT NULL;
 
 -- 8. bank_accounts (aucune FK)
 CREATE TABLE IF NOT EXISTS bank_accounts (

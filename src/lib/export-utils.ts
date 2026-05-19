@@ -1,5 +1,11 @@
 import * as XLSX from 'xlsx';
 import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
+import {
+  buildPdfBrandHtml,
+  escapePdfHtml,
+  formatPdfDateTime,
+  openPdfPrintWindow,
+} from '@/lib/pdf-print';
 
 export interface ExportColumnDef<T> {
   header: string;
@@ -195,47 +201,27 @@ export function exportDocumentToPDF(options: PDFDocumentOptions): void {
           .join('')}</div></div>`
       : '';
 
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) return;
-  const currentDate = new Date().toLocaleString('fr-FR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const currentDate = formatPdfDateTime();
 
-  printWindow.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"/><title>${escapeHtml(options.title)}</title>
-<style>
-body{font-family:system-ui,sans-serif;padding:24px;color:#111827;margin:0}
-h1{font-size:22px;color:${accentColor};margin:0 0 8px}
-.date{font-size:12px;color:#6b7280;margin-bottom:20px}
-.filters-box{background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px}
-table{width:100%;border-collapse:collapse;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-thead th{padding:10px;text-align:left;font-size:11px;background:${headerColor};color:${options.headerTextColor ?? '#fff'}}
-tbody td{padding:8px;font-size:12px;border-bottom:1px solid #e5e7eb}
-.detail-block{margin-top:16px}
-.detail-block-title{font-size:12px;font-weight:600;color:#4b5563;margin:0 0 8px;text-transform:uppercase}
-.totals-section{margin-top:24px;padding:16px;border:2px solid ${accentColor};border-radius:12px}
-.totals-grid{display:flex;flex-wrap:wrap;gap:12px}
-.total-item{padding:12px 20px;border-radius:8px;text-align:center;min-width:140px}
-.total-item.neutral{background:#f3f4f6;border:1px solid #9ca3af}
-.total-item.positive{background:#dcfce7;border:1px solid #22c55e}
-.total-label{font-size:11px;color:#6b7280}
-.total-value{font-size:18px;font-weight:700}
-</style></head><body>
-<h1>${escapeHtml(options.title)}</h1>
-<p class="date">Document généré le ${currentDate}</p>
-${filtersBlock}
-<h2 style="font-size:14px;color:${accentColor}">${escapeHtml(options.summary.title)}</h2>
-<table><thead><tr>${summaryHeaders}</tr></thead><tbody>${summaryRows}</tbody></table>
-${detailHtml}
-${totalsHtml}
-<p style="margin-top:24px;font-size:11px;color:#9ca3af;text-align:center">TruckTrack · ${currentDate}</p>
-</body></html>`);
-  printWindow.document.close();
-  setTimeout(() => printWindow.print(), 250);
+  openPdfPrintWindow({
+    title: options.title,
+    variant: 'report',
+    accentColor,
+    bodyHtml: `
+      <div class="pdf-doc-header">
+        <h1 class="pdf-doc-title">${escapePdfHtml(options.title)}</h1>
+        <p class="pdf-doc-date">Document généré le ${currentDate}</p>
+      </div>
+      ${filtersBlock.replaceAll('filters-box', 'pdf-filters')}
+      <h2 class="pdf-section-title">${escapePdfHtml(options.summary.title)}</h2>
+      <div class="pdf-table-wrap">
+        <table class="pdf-table"><thead><tr>${summaryHeaders}</tr></thead><tbody>${summaryRows}</tbody></table>
+      </div>
+      ${detailHtml}
+      ${totalsHtml}
+      <div class="pdf-footer">Truck Track · ${currentDate}</div>
+    `,
+  });
 }
 
 // Interface pour les totaux à afficher dans l'export
@@ -273,11 +259,24 @@ export function exportToPrintablePDFWithDetails<T>(options: PDFExportOptions<T>)
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return escapePdfHtml(text);
+}
+
+function buildPdfTotalsHtml(totals: ExportTotal[]): string {
+  if (totals.length === 0) return '';
+  return `<div class="pdf-totals">
+    <p class="pdf-totals-title">Récapitulatif</p>
+    <div class="pdf-totals-grid">
+      ${totals
+        .map(
+          (t) => `<div class="pdf-total-chip ${t.style ?? 'neutral'}">
+            <div class="pdf-total-label">${t.icon ?? ''} ${escapePdfHtml(t.label)}</div>
+            <div class="pdf-total-value">${escapePdfHtml(String(t.value))}</div>
+          </div>`,
+        )
+        .join('')}
+    </div>
+  </div>`;
 }
 
 function buildPdfDetailBlockHtml(block: ExportDetailBlock, accentColor: string): string {
@@ -654,16 +653,24 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
             border-bottom: 1px solid #e5e7eb;
             vertical-align: top;
           }
+          @page {
+            size: A4 portrait;
+            margin: 10mm 12mm;
+          }
           @media print {
-            body {
+            html, body {
               padding: 0;
+              margin: 0;
+              font-size: 9pt;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-            .no-print {
-              display: none;
-            }
-            tbody tr:hover {
-              background-color: inherit !important;
-            }
+            .no-print { display: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+            tbody tr:hover { background-color: inherit !important; }
+            table { box-shadow: none; }
+            .totals-section, .pdf-brand, .client-detail-card { page-break-inside: avoid; }
           }
         </style>
       </head>
@@ -734,5 +741,6 @@ function adjustColor(color: string, amount: number): string {
   const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount));
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
+
 
 

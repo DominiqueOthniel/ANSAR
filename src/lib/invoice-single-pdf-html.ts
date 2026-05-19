@@ -1,15 +1,35 @@
 import type { Expense, Invoice, ParcelExpedition, Trip } from '@/contexts/AppContext';
-import { COMPANY_CONTACT, COMPANY_NAME, COMPANY_TAGLINE, TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
+import {
+  COMPANY_CONTACT,
+  COMPANY_NAME,
+  COMPANY_TAGLINE,
+  TRUCK_LOGO_SVG_MARK,
+} from '@/lib/invoice-branding';
+import { escapePdfHtml, formatPdfDate } from '@/lib/pdf-print';
 import { formatTripStatusFr } from '@/lib/sync-utils';
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const S = {
+  muted: '#64748b',
+  border: '#e2e8f0',
+  ink: '#0f172a',
+  accent: '#2563eb',
+};
+
+function fcfa(n: number, max = 0): string {
+  return n.toLocaleString('fr-FR', { maximumFractionDigits: max });
 }
 
 function parcelClientsSummary(pe: ParcelExpedition): string {
   const raw = pe.lots.map((l) => l.clients?.trim()).filter(Boolean) as string[];
   const uniq = [...new Set(raw)];
   return uniq.length ? uniq.join(', ') : '—';
+}
+
+function totalsLine(label: string, value: string, bold = false, color?: string): string {
+  return `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:9pt;${bold ? 'font-weight:700;font-size:10pt;padding-top:6px;margin-top:4px;border-top:1px solid ${S.border};' : ''}">
+    <span style="color:${S.muted};">${label}</span>
+    <span style="color:${color ?? S.ink};font-weight:${bold ? 700 : 600};white-space:nowrap;">${value}</span>
+  </div>`;
 }
 
 export function buildSingleInvoicePdfInnerHtml(opts: {
@@ -21,10 +41,21 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
   parcelExpedition?: ParcelExpedition | null;
   driver?: { prenom: string; nom: string; telephone?: string } | null;
   fournisseurNom?: string | null;
+  clientLabel?: string | null;
   getTruckLabel: (id: string) => string;
 }): string {
-  const { invoice, dejaPaye, resteAPayer, trip, expense, parcelExpedition, driver, fournisseurNom, getTruckLabel } =
-    opts;
+  const {
+    invoice,
+    dejaPaye,
+    resteAPayer,
+    trip,
+    expense,
+    parcelExpedition,
+    driver,
+    fournisseurNom,
+    clientLabel,
+    getTruckLabel,
+  } = opts;
 
   const statusLabel =
     resteAPayer <= 0.01 ? 'Payée' : dejaPaye > 0 ? 'Paiement partiel' : 'En attente';
@@ -33,248 +64,181 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
 
   const partyLabel = expense ? 'Fournisseur' : 'Client';
   const partyName = expense
-    ? fournisseurNom || '—'
-    : trip
-      ? trip.client || '—'
-      : parcelExpedition
-        ? parcelClientsSummary(parcelExpedition)
-        : '—';
+    ? escapePdfHtml(fournisseurNom || '—')
+    : escapePdfHtml(
+        clientLabel ||
+          invoice.factureClientLibelle ||
+          (trip ? trip.client : null) ||
+          (parcelExpedition ? parcelClientsSummary(parcelExpedition) : null) ||
+          '—',
+      );
 
-  let detailBlock = '';
+  let prestationTitle = 'Prestation';
+  let prestationMain = '—';
+  let prestationSub = '';
+  let extraRows = '';
+
   if (trip) {
-    detailBlock = `
-                <div class="mb-8">
-                  <h3 class="font-bold text-lg mb-4 uppercase" style="letter-spacing:0.06em;font-size:13px;color:#475569;">Détails du transport</h3>
-                  <div class="border rounded-lg overflow-hidden" style="border-color:#e2e8f0;">
-                    <table class="w-full">
-                      <thead class="bg-gray-100">
-                        <tr>
-                          <th class="p-3 text-left font-bold text-sm">Prestation</th>
-                          <th class="p-3 text-right font-bold text-sm">Montant TTC</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr class="border-t border-gray-200">
-                          <td class="p-3">
-                            <div>
-                              <p class="font-semibold">Transport ${trip.origine} → ${trip.destination}</p>
-                              ${driver ? `<p class="text-xs text-gray-600">Chauffeur : ${driver.prenom} ${driver.nom}</p>` : ''}
-                              ${trip.marchandise ? `<p class="text-xs text-gray-600">Marchandise : ${trip.marchandise}</p>` : ''}
-                              ${trip.description ? `<p class="text-xs text-gray-600">${escapeHtml(trip.description)}</p>` : ''}
-                            </div>
-                          </td>
-                          <td class="p-3 text-right font-bold">
-                            ${invoice.montantTTC.toLocaleString('fr-FR')} FCFA
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div class="mb-8 grid grid-cols-2 gap-6">
-                  <div>
-                    <p class="font-semibold mb-2">Informations complémentaires</p>
-                    <div class="text-sm space-y-1">
-                      ${driver ? `<p class="text-gray-600">Chauffeur : <span class="text-black">${driver.prenom} ${driver.nom}</span></p>` : ''}
-                      ${trip.tracteurId ? `<p class="text-gray-600">Tracteur : <span class="text-black">${getTruckLabel(trip.tracteurId)}</span></p>` : ''}
-                      ${trip.remorqueuseId ? `<p class="text-gray-600">Remorque : <span class="text-black">${getTruckLabel(trip.remorqueuseId)}</span></p>` : ''}
-                      <p class="text-gray-600">Statut trajet : <span class="text-black" style="${trip.statut === 'annule' ? 'color:#b91c1c;font-weight:600;' : ''}">${formatTripStatusFr(trip.statut)}</span></p>
-                      <p class="text-gray-600">Départ : <span class="text-black">${new Date(trip.dateDepart).toLocaleDateString('fr-FR')}</span></p>
-                      ${trip.dateArrivee ? `<p class="text-gray-600">Arrivée : <span class="text-black">${new Date(trip.dateArrivee).toLocaleDateString('fr-FR')}</span></p>` : ''}
-                    </div>
-                  </div>
-                  <div>
-                    ${invoice.modePaiement ? `
-                      <p class="font-semibold mb-2">Référence paiement</p>
-                      <p class="text-sm text-gray-600">Mode : <span class="text-black">${escapeHtml(invoice.modePaiement)}</span></p>
-                    ` : ''}
-                  </div>
-                </div>`;
+    prestationTitle = 'Transport';
+    prestationMain = escapePdfHtml(`${trip.origine} → ${trip.destination}`);
+    const sub: string[] = [];
+    if (driver) sub.push(`Chauffeur : ${escapePdfHtml(`${driver.prenom} ${driver.nom}`)}`);
+    if (trip.marchandise) sub.push(`Marchandise : ${escapePdfHtml(trip.marchandise)}`);
+    if (trip.tracteurId) sub.push(`Tracteur : ${escapePdfHtml(getTruckLabel(trip.tracteurId))}`);
+    if (trip.remorqueuseId) sub.push(`Remorque : ${escapePdfHtml(getTruckLabel(trip.remorqueuseId))}`);
+    sub.push(`Statut : ${escapePdfHtml(formatTripStatusFr(trip.statut))}`);
+    sub.push(`Départ : ${formatPdfDate(trip.dateDepart)}`);
+    if (trip.dateArrivee) sub.push(`Arrivée : ${formatPdfDate(trip.dateArrivee)}`);
+    prestationSub = sub.join(' · ');
   } else if (expense) {
-    detailBlock = `
-                <div class="mb-8">
-                  <h3 class="font-bold text-lg mb-4 uppercase" style="letter-spacing:0.06em;font-size:13px;color:#475569;">Détail de la dépense facturée</h3>
-                  <div class="border rounded-lg overflow-hidden" style="border-color:#e2e8f0;">
-                    <table class="w-full">
-                      <thead class="bg-gray-100">
-                        <tr>
-                          <th class="p-3 text-left font-bold text-sm">Description</th>
-                          <th class="p-3 text-right font-bold text-sm">Montant TTC</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr class="border-t border-gray-200">
-                          <td class="p-3">
-                            <p class="font-semibold">${escapeHtml(expense.description)}</p>
-                            <p class="text-xs text-gray-600">${escapeHtml(expense.categorie)}${expense.sousCategorie ? ' · ' + escapeHtml(expense.sousCategorie) : ''}</p>
-                            <p class="text-xs text-gray-600 mt-1">Date dépense : ${new Date(expense.date).toLocaleDateString('fr-FR')}</p>
-                          </td>
-                          <td class="p-3 text-right font-bold">${invoice.montantTTC.toLocaleString('fr-FR')} FCFA</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>`;
+    prestationTitle = 'Dépense';
+    prestationMain = escapePdfHtml(expense.description);
+    prestationSub = `${escapePdfHtml(expense.categorie)}${expense.sousCategorie ? ` · ${escapePdfHtml(expense.sousCategorie)}` : ''} · ${formatPdfDate(expense.date)}`;
   } else if (parcelExpedition) {
     const pe = parcelExpedition;
-    const dateArriveeMs = pe.dateArrivee?.trim() ? new Date(pe.dateArrivee).getTime() : NaN;
-    const hasArriveeValide = !Number.isNaN(dateArriveeMs);
-    const lotsRows = pe.lots
+    prestationTitle = 'Expédition colis';
+    prestationMain = escapePdfHtml(`${pe.reference} — ${pe.origine} → ${pe.destination}`);
+    const sub: string[] = [];
+    if (driver) {
+      sub.push(
+        `Chauffeur : ${escapePdfHtml(`${driver.prenom} ${driver.nom}`)}${driver.telephone ? ` (${escapePdfHtml(driver.telephone)})` : ''}`,
+      );
+    }
+    if (pe.tracteurId) sub.push(`Tracteur : ${escapePdfHtml(getTruckLabel(pe.tracteurId))}`);
+    sub.push(`Départ : ${formatPdfDate(pe.dateDepart)}`);
+    if (pe.dateArrivee?.trim()) sub.push(`Arrivée : ${formatPdfDate(pe.dateArrivee)}`);
+    prestationSub = sub.join(' · ');
+
+    const maxLots = 6;
+    const lots = pe.lots.slice(0, maxLots);
+    const lotRows = lots
       .map(
-        (l) => `
-                        <tr class="border-t border-gray-200">
-                          <td class="p-2 text-sm">${escapeHtml(l.clients)}</td>
-                          <td class="p-2 text-sm">${escapeHtml(l.unite)}</td>
-                          <td class="p-2 text-sm text-right">${l.quantite.toLocaleString('fr-FR')}</td>
-                          <td class="p-2 text-sm text-right">${l.prixUnitaire.toLocaleString('fr-FR')}</td>
-                          <td class="p-2 text-sm text-right font-semibold">${l.montant.toLocaleString('fr-FR')}</td>
-                          <td class="p-2 text-xs text-gray-600">${l.observations ? escapeHtml(l.observations) : '—'}</td>
-                        </tr>`,
+        (l) => `<tr>
+          <td style="padding:4px 6px;border-bottom:1px solid ${S.border};font-size:8pt;">${escapePdfHtml(l.clients)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid ${S.border};font-size:8pt;text-align:right;">${fcfa(l.quantite)} ${escapePdfHtml(l.unite)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid ${S.border};font-size:8pt;text-align:right;">${fcfa(l.prixUnitaire)}</td>
+          <td style="padding:4px 6px;border-bottom:1px solid ${S.border};font-size:8pt;text-align:right;font-weight:600;">${fcfa(l.montant)}</td>
+        </tr>`,
       )
       .join('');
-    detailBlock = `
-                <div class="mb-8">
-                  <h3 class="font-bold text-lg mb-4 uppercase" style="letter-spacing:0.06em;font-size:13px;color:#475569;">Détails de l'expédition</h3>
-                  <p class="text-sm text-gray-600 mb-3">Réf. <span class="font-semibold text-black">${escapeHtml(pe.reference)}</span> · ${escapeHtml(pe.origine)} → ${escapeHtml(pe.destination)}</p>
-                  <div class="border rounded-lg overflow-hidden" style="border-color:#e2e8f0;">
-                    <table class="w-full">
-                      <thead class="bg-gray-100">
-                        <tr>
-                          <th class="p-2 text-left font-bold text-xs">Client / ligne</th>
-                          <th class="p-2 text-left font-bold text-xs">Unité</th>
-                          <th class="p-2 text-right font-bold text-xs">Qté</th>
-                          <th class="p-2 text-right font-bold text-xs">PU</th>
-                          <th class="p-2 text-right font-bold text-xs">Montant</th>
-                          <th class="p-2 text-left font-bold text-xs">Obs.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${lotsRows}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div class="mb-8 grid grid-cols-2 gap-6">
-                  <div>
-                    <p class="font-semibold mb-2">Informations complémentaires</p>
-                    <div class="text-sm space-y-1">
-                      ${driver ? `<p class="text-gray-600">Chauffeur : <span class="text-black">${driver.prenom} ${driver.nom}</span>${driver.telephone ? ` · ${escapeHtml(driver.telephone)}` : ''}</p>` : ''}
-                      ${pe.tracteurId ? `<p class="text-gray-600">Tracteur : <span class="text-black">${getTruckLabel(pe.tracteurId)}</span></p>` : ''}
-                      ${pe.remorqueuseId ? `<p class="text-gray-600">Remorque : <span class="text-black">${getTruckLabel(pe.remorqueuseId)}</span></p>` : ''}
-                      <p class="text-gray-600">Statut expédition : <span class="text-black" style="${pe.statut === 'annule' ? 'color:#b91c1c;font-weight:600;' : ''}">${formatTripStatusFr(pe.statut)}</span></p>
-                      <p class="text-gray-600">Départ : <span class="text-black">${new Date(pe.dateDepart).toLocaleDateString('fr-FR')}</span></p>
-                      ${hasArriveeValide ? `<p class="text-gray-600">Arrivée : <span class="text-black">${new Date(pe.dateArrivee!).toLocaleDateString('fr-FR')}</span></p>` : ''}
-                      ${pe.description ? `<p class="text-gray-600 mt-2">${escapeHtml(pe.description)}</p>` : ''}
-                    </div>
-                  </div>
-                  <div>
-                    ${invoice.modePaiement ? `
-                      <p class="font-semibold mb-2">Référence paiement</p>
-                      <p class="text-sm text-gray-600">Mode : <span class="text-black">${escapeHtml(invoice.modePaiement)}</span></p>
-                    ` : ''}
-                  </div>
-                </div>`;
+    const more =
+      pe.lots.length > maxLots
+        ? `<p style="margin:4px 0 0;font-size:7.5pt;color:${S.muted};">… et ${pe.lots.length - maxLots} autre(s) ligne(s)</p>`
+        : '';
+    extraRows = `
+      <div style="margin-top:8px;border:1px solid ${S.border};border-radius:6px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:4px 6px;text-align:left;font-size:7.5pt;color:${S.muted};">Client</th>
+              <th style="padding:4px 6px;text-align:right;font-size:7.5pt;color:${S.muted};">Qté</th>
+              <th style="padding:4px 6px;text-align:right;font-size:7.5pt;color:${S.muted};">PU</th>
+              <th style="padding:4px 6px;text-align:right;font-size:7.5pt;color:${S.muted};">Montant</th>
+            </tr>
+          </thead>
+          <tbody>${lotRows}</tbody>
+        </table>
+        ${more}
+      </div>`;
+  } else {
+    prestationTitle = invoice.clientOrderId ? 'Commande client' : 'Prestation';
+    prestationMain = escapePdfHtml(invoice.factureClientLibelle || 'Facture client');
+    if (invoice.notes) prestationSub = escapePdfHtml(invoice.notes);
   }
 
+  const remiseBlock =
+    invoice.remise && invoice.remise > 0 && invoice.montantHTApresRemise
+      ? totalsLine(
+          `Remise (${invoice.remise} %)`,
+          `-${fcfa(invoice.montantHT - invoice.montantHTApresRemise, 2)} FCFA`,
+        )
+      : '';
+
+  const tvaBlock =
+    invoice.tva && invoice.tva > 0
+      ? totalsLine('TVA', `${fcfa(invoice.tva, 2)} FCFA`)
+      : '';
+  const tpsBlock =
+    invoice.tps && invoice.tps > 0
+      ? totalsLine('TPS', `${fcfa(invoice.tps, 2)} FCFA`)
+      : '';
+
   const notesBlock = invoice.notes
-    ? `
-            <div class="mt-8 border-t border-gray-200 pt-4">
-              <p class="font-semibold mb-2">Remarques</p>
-              <p class="text-sm text-gray-600">${escapeHtml(invoice.notes)}</p>
-            </div>`
+    ? `<div style="margin-top:8px;padding:8px 10px;background:#f8fafc;border-radius:6px;border:1px solid ${S.border};">
+        <p style="margin:0 0 2px;font-size:7.5pt;font-weight:700;color:${S.muted};text-transform:uppercase;">Remarques</p>
+        <p style="margin:0;font-size:8.5pt;color:${S.ink};line-height:1.4;">${escapePdfHtml(invoice.notes)}</p>
+      </div>`
     : '';
 
   return `
-        <div style="max-width: 800px; margin: 0 auto;">
-          <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px;padding:20px 22px;background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%);border:1px solid #e2e8f0;border-radius:14px;">
-            <div style="flex-shrink:0;width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#4f46e5,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 14px rgba(37,99,235,0.35);">
-              ${TRUCK_LOGO_SVG_MARK}
-            </div>
-            <div>
-              <div style="font-size:19px;font-weight:800;color:#0f172a;letter-spacing:-0.03em;line-height:1.2;">${COMPANY_NAME}</div>
-              <div style="font-size:12px;color:#64748b;margin-top:6px;">${COMPANY_TAGLINE}</div>
-              <div style="font-size:12px;color:#64748b;margin-top:2px;">${COMPANY_CONTACT}</div>
-            </div>
+    <div class="pdf-no-break" style="width:100%;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;padding:10px 12px;background:linear-gradient(135deg,#f8fafc,#eff6ff);border:1px solid ${S.border};border-radius:10px;">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <div style="width:44px;height:44px;border-radius:9px;background:linear-gradient(135deg,#4f46e5,#2563eb);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            ${TRUCK_LOGO_SVG_MARK}
           </div>
-
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:22px;border-bottom:2px solid #cbd5e1;">
-            <div>
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:#64748b;font-weight:700;">Facture</div>
-              <h1 style="font-size:28px;font-weight:800;margin:8px 0 0 0;color:#0f172a;letter-spacing:-0.03em;">${escapeHtml(invoice.numero)}</h1>
-              <p style="font-size:13px;color:#64748b;margin:10px 0 0 0;">Date d'émission : ${new Date(invoice.dateCreation).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
-            </div>
-            <span style="display:inline-block;padding:10px 16px;border-radius:10px;background:${statusBg};color:${statusFg};font-size:12px;font-weight:700;">${statusLabel}</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-8 mb-8 pb-6 border-b border-gray-200">
-            <div>
-              <h2 class="font-bold text-sm mb-3 uppercase" style="letter-spacing:0.1em;color:#64748b;">Émetteur</h2>
-              <p class="font-bold text-base" style="color:#0f172a;">${COMPANY_NAME}</p>
-              <p class="text-sm text-gray-600 mt-2" style="line-height:1.6;">Transport de marchandises<br/>Douala, Cameroun<br/>${COMPANY_CONTACT}</p>
-            </div>
-            <div class="text-right">
-              <h2 class="font-bold text-sm mb-3 uppercase" style="letter-spacing:0.1em;color:#64748b;">${partyLabel}</h2>
-              <p class="font-semibold text-lg" style="color:#0f172a;">${escapeHtml(partyName)}</p>
-            </div>
-          </div>
-
-          ${detailBlock}
-
-          <div class="flex justify-end mb-8">
-            <div class="w-64" style="min-width:280px;">
-              <div class="border-t-2 border-gray-300 pt-4">
-                <div class="space-y-2">
-                  <div class="flex justify-between items-center">
-                    <span class="text-gray-600">Montant HT initial :</span>
-                    <span class="font-semibold">${invoice.montantHT.toLocaleString('fr-FR')} FCFA</span>
-                  </div>
-                  ${invoice.remise && invoice.remise > 0 && invoice.montantHTApresRemise ? `
-                    <div class="flex justify-between items-center text-orange-600">
-                      <span class="text-gray-600">Remise (${invoice.remise}%) :</span>
-                      <span class="font-semibold">-${(invoice.montantHT - invoice.montantHTApresRemise).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                    </div>
-                    <div class="flex justify-between items-center pt-1 border-t border-gray-200">
-                      <span class="text-gray-600">Montant HT après remise :</span>
-                      <span class="font-semibold">${invoice.montantHTApresRemise.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                    </div>
-                  ` : ''}
-                  ${invoice.tva && invoice.tva > 0 ? `
-                    <div class="flex justify-between items-center">
-                      <span class="text-gray-600">TVA :</span>
-                      <span class="font-semibold">${invoice.tva.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                    </div>
-                  ` : ''}
-                  ${invoice.tps && invoice.tps > 0 ? `
-                    <div class="flex justify-between items-center">
-                      <span class="text-gray-600">TPS :</span>
-                      <span class="font-semibold">${invoice.tps.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                    </div>
-                  ` : ''}
-                  <div class="flex justify-between items-center pt-2 border-t border-gray-300">
-                    <span class="font-bold text-lg">Montant TTC :</span>
-                    <span class="font-bold text-2xl">${invoice.montantTTC.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                  </div>
-                  <div class="flex justify-between items-center pt-2 border-t border-gray-200">
-                    <span class="text-gray-600">Montant déjà payé :</span>
-                    <span class="font-semibold text-green-700">${dejaPaye.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                  </div>
-                  <div class="flex justify-between items-center">
-                    <span class="text-gray-600">Reste à payer :</span>
-                    <span class="font-semibold ${resteAPayer > 0.01 ? 'text-orange-700' : 'text-green-700'}">${resteAPayer.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          ${notesBlock}
-
-          <div class="mt-12 pt-8 border-t-2 border-gray-300 text-center">
-            <p class="font-bold text-sm">${COMPANY_NAME}</p>
-            <p class="text-sm text-gray-600 mt-1">Merci pour votre confiance.</p>
+          <div style="min-width:0;">
+            <div style="font-size:12pt;font-weight:800;color:${S.ink};letter-spacing:-0.02em;">${COMPANY_NAME}</div>
+            <p style="margin:2px 0 0;font-size:7.5pt;color:${S.muted};">${COMPANY_TAGLINE}</p>
+            <p style="margin:1px 0 0;font-size:7.5pt;color:${S.muted};">${COMPANY_CONTACT}</p>
           </div>
         </div>
-      `;
+        <div style="text-align:right;flex-shrink:0;">
+          <p style="margin:0;font-size:7pt;text-transform:uppercase;letter-spacing:0.12em;color:${S.muted};font-weight:700;">Facture</p>
+          <p style="margin:2px 0 0;font-size:14pt;font-weight:800;color:${S.ink};">${escapePdfHtml(invoice.numero)}</p>
+          <p style="margin:4px 0 0;font-size:7.5pt;color:${S.muted};">Émise le ${formatPdfDate(invoice.dateCreation)}</p>
+          <span style="display:inline-block;margin-top:6px;padding:4px 10px;border-radius:6px;background:${statusBg};color:${statusFg};font-size:7.5pt;font-weight:700;">${statusLabel}</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div style="padding:8px 10px;border:1px solid ${S.border};border-radius:6px;">
+          <p style="margin:0 0 4px;font-size:7pt;text-transform:uppercase;letter-spacing:0.1em;color:${S.muted};font-weight:700;">Émetteur</p>
+          <p style="margin:0;font-size:9.5pt;font-weight:700;color:${S.ink};">${COMPANY_NAME}</p>
+          <p style="margin:3px 0 0;font-size:7.5pt;color:${S.muted};line-height:1.4;">Douala, Cameroun<br/>${COMPANY_CONTACT}</p>
+        </div>
+        <div style="padding:8px 10px;border:1px solid ${S.border};border-radius:6px;text-align:right;">
+          <p style="margin:0 0 4px;font-size:7pt;text-transform:uppercase;letter-spacing:0.1em;color:${S.muted};font-weight:700;">${partyLabel}</p>
+          <p style="margin:0;font-size:10pt;font-weight:700;color:${S.ink};">${partyName}</p>
+          ${invoice.datePaiement && dejaPaye > 0 ? `<p style="margin:4px 0 0;font-size:7.5pt;color:${S.muted};">Paiement : ${formatPdfDate(invoice.datePaiement)}</p>` : ''}
+          ${invoice.modePaiement ? `<p style="margin:2px 0 0;font-size:7.5pt;color:${S.muted};">Mode : ${escapePdfHtml(invoice.modePaiement)}</p>` : ''}
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px;border:1px solid ${S.border};border-radius:6px;overflow:hidden;">
+        <div style="padding:6px 10px;background:#f1f5f9;border-bottom:1px solid ${S.border};">
+          <span style="font-size:7.5pt;font-weight:700;text-transform:uppercase;color:${S.muted};letter-spacing:0.06em;">${prestationTitle}</span>
+        </div>
+        <div style="padding:8px 10px;">
+          <p style="margin:0;font-size:9.5pt;font-weight:700;color:${S.ink};">${prestationMain}</p>
+          ${prestationSub ? `<p style="margin:4px 0 0;font-size:7.5pt;color:${S.muted};line-height:1.35;">${prestationSub}</p>` : ''}
+          ${extraRows}
+        </div>
+        <div style="display:flex;justify-content:flex-end;padding:6px 10px;background:#fafafa;border-top:1px solid ${S.border};">
+          <span style="font-size:8pt;color:${S.muted};margin-right:8px;">Montant TTC ligne</span>
+          <span style="font-size:10pt;font-weight:800;color:${S.accent};">${fcfa(invoice.montantTTC, 2)} FCFA</span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <div style="width:52%;min-width:200px;padding:10px 12px;border:2px solid ${S.accent};border-radius:8px;background:#f8fafc;">
+          ${totalsLine('Montant HT', `${fcfa(invoice.montantHT, 2)} FCFA`)}
+          ${remiseBlock}
+          ${invoice.remise && invoice.montantHTApresRemise ? totalsLine('HT après remise', `${fcfa(invoice.montantHTApresRemise, 2)} FCFA`) : ''}
+          ${tvaBlock}
+          ${tpsBlock}
+          ${totalsLine('Montant TTC', `${fcfa(invoice.montantTTC, 2)} FCFA`, true, S.accent)}
+          ${totalsLine('Déjà payé', `${fcfa(dejaPaye, 2)} FCFA`, false, '#15803d')}
+          ${totalsLine('Reste à payer', `${fcfa(resteAPayer, 2)} FCFA`, false, resteAPayer > 0.01 ? '#c2410c' : '#15803d')}
+        </div>
+      </div>
+
+      ${notesBlock && !trip && !expense && !parcelExpedition ? notesBlock : invoice.notes && (trip || expense || parcelExpedition) ? notesBlock : ''}
+
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid ${S.border};text-align:center;">
+        <p style="margin:0;font-size:8.5pt;font-weight:700;color:${S.ink};">${COMPANY_NAME}</p>
+        <p style="margin:2px 0 0;font-size:7.5pt;color:${S.muted};">Merci pour votre confiance.</p>
+      </div>
+    </div>`;
 }
+

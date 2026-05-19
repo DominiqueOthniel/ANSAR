@@ -125,6 +125,43 @@ export class ClientOperationsService {
     });
   }
 
+  /** Facture FAC-CMD liée à la commande (par invoiceId ou clientOrderId). */
+  private async findOrderInvoice(order: ClientOrder): Promise<Invoice | null> {
+    if (order.invoiceId) {
+      const byId = await this.invoiceRepo.findOne({ where: { id: order.invoiceId } });
+      if (byId) return byId;
+    }
+    return this.invoiceRepo.findOne({ where: { clientOrderId: order.id } });
+  }
+
+  private resolveOrderPayment(
+    montant: number,
+    order: ClientOrder,
+    existing: Invoice | null,
+    payment?: { montantPaye?: number; datePaiement?: string },
+  ): { montantPaye: number; statut: 'en_attente' | 'payee'; datePaiement?: string } {
+    if (payment?.montantPaye !== undefined && payment.montantPaye !== null) {
+      const montantPaye = Math.min(Math.max(0, Number(payment.montantPaye)), montant);
+      return {
+        montantPaye,
+        statut: montantPaye >= montant - 0.01 ? 'payee' : 'en_attente',
+        datePaiement:
+          montantPaye > 0
+            ? payment.datePaiement?.trim() || order.dateCommande
+            : undefined,
+      };
+    }
+    if (existing) {
+      const montantPaye = Math.min(Math.max(0, Number(existing.montantPaye ?? 0)), montant);
+      return {
+        montantPaye,
+        statut: montantPaye >= montant - 0.01 ? 'payee' : existing.statut,
+        datePaiement: existing.datePaiement,
+      };
+    }
+    return { montantPaye: 0, statut: 'en_attente' };
+  }
+
   private async ensureOrderInvoice(
     order: ClientOrder,
     payment?: { montantPaye?: number; datePaiement?: string },
@@ -134,28 +171,28 @@ export class ClientOperationsService {
 
     const libelle = order.designation;
     const notes = order.reference ? `Commande ${order.reference}` : undefined;
-    const payeRaw = payment?.montantPaye != null ? Number(payment.montantPaye) : 0;
-    const montantPaye = Math.min(Math.max(0, payeRaw), montant);
-    const statut = montantPaye >= montant - 0.01 ? 'payee' : 'en_attente';
-    const datePaiement =
-      montantPaye > 0
-        ? payment?.datePaiement?.trim() || order.dateCommande
-        : undefined;
+    const existing = await this.findOrderInvoice(order);
+    const { montantPaye, statut, datePaiement } = this.resolveOrderPayment(
+      montant,
+      order,
+      existing,
+      payment,
+    );
 
-    if (order.invoiceId) {
-      const inv = await this.invoiceRepo.findOne({ where: { id: order.invoiceId } });
-      if (inv) {
-        await this.syncInvoiceAmount(order.invoiceId, montant, {
-          clientTierId: order.clientId,
-          clientOrderId: order.id,
-          factureClientLibelle: libelle,
-          notes: notes ?? inv.notes,
-          montantPaye,
-          statut,
-          datePaiement,
-        });
-        return;
+    if (existing) {
+      await this.syncInvoiceAmount(existing.id, montant, {
+        clientTierId: order.clientId,
+        clientOrderId: order.id,
+        factureClientLibelle: libelle,
+        notes: notes ?? existing.notes,
+        montantPaye,
+        statut,
+        datePaiement,
+      });
+      if (!order.invoiceId || order.invoiceId !== existing.id) {
+        await this.orderRepo.update(order.id, { invoiceId: existing.id });
       }
+      return;
     }
 
     const inv = this.invoiceRepo.create({

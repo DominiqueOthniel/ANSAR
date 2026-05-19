@@ -39,6 +39,7 @@ import {
 import { appendEntreeFromInvoicePayment, isPaiementVersBanque } from '@/lib/caisse-local';
 import { COMPANY_NAME, COMPANY_TAGLINE } from '@/lib/invoice-branding';
 import { buildSingleInvoicePdfInnerHtml } from '@/lib/invoice-single-pdf-html';
+import { openPdfPrintWindow } from '@/lib/pdf-print';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -1103,101 +1104,27 @@ export default function Invoices() {
         ? thirdParties.find((tp) => tp.id === expense.fournisseurId)
         : null;
 
-      const pdfContent = document.createElement('div');
-      pdfContent.className = 'invoice-print p-8 bg-white text-black';
-      pdfContent.innerHTML = buildSingleInvoicePdfInnerHtml({
-        invoice: selectedInvoice,
-        dejaPaye,
-        resteAPayer,
-        trip,
-        expense,
-        parcelExpedition: parcelEx ?? null,
-        driver: driver ?? null,
-        fournisseurNom: expenseSupplier?.nom ?? null,
-        getTruckLabel,
-      });
+      const clientTier = selectedInvoice.clientTierId
+        ? thirdParties.find((tp) => tp.id === selectedInvoice.clientTierId)
+        : null;
 
-      // Créer une fenêtre pour le PDF
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Facture ${selectedInvoice.numero}</title>
-              <style>
-                body { 
-                  font-family: Arial, sans-serif; 
-                  padding: 40px; 
-                  background: white;
-                  color: black;
-                }
-                .invoice-print { max-width: 800px; margin: 0 auto; }
-                table { width: 100%; border-collapse: collapse; }
-                th, td { padding: 12px; text-align: left; }
-                th { background: #f3f4f6; font-weight: bold; }
-                .border-t { border-top: 1px solid #e5e7eb; }
-                .border-t-2 { border-top: 2px solid #9ca3af; }
-                .border-b { border-bottom: 1px solid #e5e7eb; }
-                .border-b-2 { border-bottom: 2px solid #9ca3af; }
-                .rounded { border-radius: 0.375rem; }
-                .rounded-lg { border-radius: 0.5rem; }
-                .bg-gray-100 { background: #f3f4f6; }
-                .bg-gray-200 { background: #e5e7eb; }
-                .text-gray-600 { color: #4b5563; }
-                .text-gray-700 { color: #374151; }
-                .text-green-700 { color: #15803d; }
-                .text-orange-700 { color: #c2410c; }
-                .text-yellow-700 { color: #a16207; }
-                .bg-green-100 { background: #dcfce7; }
-                .bg-yellow-100 { background: #fef3c7; }
-                .font-bold { font-weight: 700; }
-                .font-semibold { font-weight: 600; }
-                .text-xs { font-size: 0.75rem; }
-                .text-sm { font-size: 0.875rem; }
-                .text-lg { font-size: 1.125rem; }
-                .text-2xl { font-size: 1.5rem; }
-                .text-3xl { font-size: 1.875rem; }
-                .uppercase { text-transform: uppercase; }
-                .grid { display: grid; }
-                .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-                .gap-6 { gap: 1.5rem; }
-                .gap-8 { gap: 2rem; }
-                .flex { display: flex; }
-                .justify-between { justify-content: space-between; }
-                .text-center { text-align: center; }
-                .text-right { text-align: right; }
-                .mb-1 { margin-bottom: 0.25rem; }
-                .mb-2 { margin-bottom: 0.5rem; }
-                .mb-4 { margin-bottom: 1rem; }
-                .mb-8 { margin-bottom: 2rem; }
-                .mt-1 { margin-top: 0.25rem; }
-                .mt-8 { margin-top: 2rem; }
-                .mt-12 { margin-top: 3rem; }
-                .p-3 { padding: 0.75rem; }
-                .p-8 { padding: 2rem; }
-                .pt-4 { padding-top: 1rem; }
-                .pt-8 { padding-top: 2rem; }
-                .pb-4 { padding-bottom: 1rem; }
-                .pb-6 { padding-bottom: 1.5rem; }
-                .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
-                .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
-                .space-y-1 > * + * { margin-top: 0.25rem; }
-                .overflow-hidden { overflow: hidden; }
-              </style>
-            </head>
-            <body>
-              ${pdfContent.innerHTML}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        
-        // Attendre que le contenu soit chargé puis imprimer/télécharger
-        setTimeout(() => {
-          printWindow.print();
-        }, 250);
-      }
+      openPdfPrintWindow({
+        title: `Facture ${selectedInvoice.numero}`,
+        variant: 'invoice',
+        accentColor: '#2563eb',
+        bodyHtml: buildSingleInvoicePdfInnerHtml({
+          invoice: selectedInvoice,
+          dejaPaye,
+          resteAPayer,
+          trip,
+          expense,
+          parcelExpedition: parcelEx ?? null,
+          driver: driver ?? null,
+          fournisseurNom: expenseSupplier?.nom ?? null,
+          clientLabel: clientTier?.nom ?? selectedInvoice.factureClientLibelle ?? undefined,
+          getTruckLabel,
+        }),
+      });
     } catch (error) {
       console.error('Erreur lors de la génération du PDF:', error);
       toast.error('Erreur lors de la génération du PDF');

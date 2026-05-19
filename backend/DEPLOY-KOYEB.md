@@ -160,6 +160,17 @@ Vérifie que `DATABASE_URL` utilise l’URL **Supabase en mode Transaction (pool
 
 Le backend autorise `*.netlify.app`, `*.vercel.app`, `*.koyeb.app`, `*.onrender.com`, `*.railway.app` et `FRONTEND_URL`. Pour un domaine custom, définis `FRONTEND_URL` avec l’URL exacte du front.
 
+### Erreur 500 sur `PATCH /api/client-orders/...`
+
+Souvent : colonnes **`clientOrderId`** / **`clientDeliveryId`** absentes sur la table `invoices` (prod avec `DB_SYNCHRONIZE=false`).
+
+Dans **Supabase → SQL Editor**, exécute dans l’ordre :
+
+1. `backend/sql-migrations/modules-articles-clients-chargements.sql` (si pas déjà fait)
+2. `backend/sql-migrations/invoices-client-orders-deliveries.sql`
+
+Puis **redéploie** le backend Koyeb (dernier commit `main`).
+
 ---
 
 ## Récap des URLs utiles

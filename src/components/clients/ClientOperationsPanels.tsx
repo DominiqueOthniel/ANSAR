@@ -21,6 +21,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -750,6 +751,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingOrder ? 'Modifier la commande' : 'Nouvelle commande'}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Saisie ou modification d&apos;une commande client et encaissement FAC-CMD.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitOrder} className="space-y-3">
             {selectableLoadings.length > 0 ? (
@@ -995,6 +999,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
             <DialogTitle>
               {editingDelivery ? 'Modifier la livraison' : 'Planifier une livraison'}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Planification ou modification d&apos;une livraison client.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitDelivery} className="space-y-3">
             <div>
