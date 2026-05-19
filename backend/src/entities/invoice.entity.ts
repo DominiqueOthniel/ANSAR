@@ -29,7 +29,7 @@ export class Invoice {
   clientOrderId?: string;
 
   @Column({ type: 'uuid', nullable: true })
-  clientDeliveryId?: string;
+  clientDeliveryId?: string | null;
 
   @Column({ type: 'varchar', length: 20 })
   statut: InvoiceStatus;

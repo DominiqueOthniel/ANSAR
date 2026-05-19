@@ -67,6 +67,7 @@ import {
   loadCreditsForPlafond,
   thirdPartiesToClientTierLike,
 } from '@/lib/client-initial-balance';
+import { linkDriverTruckSelection } from '@/lib/driver-truck-link';
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -1149,7 +1150,14 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               <Select
                 value={deliveryForm.chauffeurId || '__none__'}
                 onValueChange={(v) =>
-                  setDeliveryForm((p) => ({ ...p, chauffeurId: v === '__none__' ? '' : v }))
+                  setDeliveryForm((p) =>
+                    linkDriverTruckSelection(
+                      activeTrucks,
+                      p,
+                      'chauffeur',
+                      v === '__none__' ? '' : v,
+                    ),
+                  )
                 }
               >
                 <SelectTrigger>
@@ -1170,7 +1178,14 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               <Select
                 value={deliveryForm.tracteurId || '__none__'}
                 onValueChange={(v) =>
-                  setDeliveryForm((p) => ({ ...p, tracteurId: v === '__none__' ? '' : v }))
+                  setDeliveryForm((p) =>
+                    linkDriverTruckSelection(
+                      activeTrucks,
+                      p,
+                      'tracteur',
+                      v === '__none__' ? '' : v,
+                    ),
+                  )
                 }
               >
                 <SelectTrigger>

@@ -109,8 +109,10 @@ export class ClientOperationsService {
   private async nextInvoiceNum(prefix: string): Promise<string> {
     const year = new Date().getFullYear();
     const fullPrefix = `${prefix}-${year}-`;
-    const rows = await this.invoiceRepo.find();
-    const count = rows.filter((i) => i.numero.startsWith(fullPrefix)).length;
+    const count = await this.invoiceRepo
+      .createQueryBuilder('i')
+      .where('i.numero LIKE :p', { p: `${fullPrefix}%` })
+      .getCount();
     return `${fullPrefix}${String(count + 1).padStart(3, '0')}`;
   }
 
@@ -299,7 +301,7 @@ export class ClientOperationsService {
       await this.syncInvoiceAmount(existing.id, montant, {
         clientTierId: order.clientId,
         clientOrderId: order.id,
-        clientDeliveryId: undefined,
+        clientDeliveryId: null,
         factureClientLibelle: libelle,
         notes,
         montantPaye,
