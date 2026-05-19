@@ -56,7 +56,7 @@ export class SupplierLoading {
   @Column({ type: 'varchar', length: 16, default: 'camion' })
   modeEntree: SupplierLoadingEntryMode;
 
-  /** Hub d’arrivée (ex. CAMRAIL Abidjan). */
+  /** Hub d’arrivée (ex. CAMRAIL Douala). */
   @Column({ type: 'varchar', length: 255, nullable: true })
   hubArrivee?: string;
 

@@ -13,10 +13,12 @@ export type HubLoadingStatus =
   | 'en_dispatch'
   | 'solde';
 
+/** Gares / dépôts CAMRAIL au Cameroun (Chemins de fer du Cameroun). */
 export const HUB_PRESETS = [
-  'CAMRAIL Abidjan',
-  'CAMRAIL Bouaké',
-  'CAMRAIL San-Pédro',
+  'CAMRAIL Douala',
+  'CAMRAIL Yaoundé',
+  'CAMRAIL Ngaoundéré',
+  'CAMRAIL Edéa',
   'Autre hub',
 ] as const;
 
