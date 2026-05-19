@@ -252,6 +252,7 @@ export interface ClientDelivery {
   clientId: string;
   invoiceId?: string;
   lieuLivraison: string;
+  modeSortie?: 'retrait_hub' | 'livraison_agent' | 'livraison_directe';
   statut: ClientDeliveryStatus;
   datePrevue?: string;
   dateLivraison?: string;
@@ -290,6 +291,9 @@ export interface SupplierLoading {
   montantBon?: number;
   dateChargement: string;
   statut: SupplierLoadingStatus;
+  modeEntree?: 'camion' | 'rail' | 'autre';
+  hubArrivee?: string;
+  dateArriveeHub?: string;
   lieu?: string;
   notes?: string;
   assignments?: SupplierLoadingAssignment[];
@@ -662,6 +666,12 @@ function normalizeClientDelivery(r: Record<string, unknown>): ClientDelivery {
     clientId: String(r.clientId),
     invoiceId: r.invoiceId ? String(r.invoiceId) : undefined,
     lieuLivraison: String(r.lieuLivraison ?? ''),
+    modeSortie:
+      r.modeSortie === 'retrait_hub' ||
+      r.modeSortie === 'livraison_agent' ||
+      r.modeSortie === 'livraison_directe'
+        ? r.modeSortie
+        : 'livraison_directe',
     statut: r.statut as ClientDeliveryStatus,
     datePrevue: r.datePrevue ? String(r.datePrevue) : undefined,
     dateLivraison: r.dateLivraison ? String(r.dateLivraison) : undefined,
@@ -722,6 +732,12 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
     montantBon: r.montantBon != null ? parseNum(r.montantBon) : undefined,
     dateChargement: String(r.dateChargement ?? ''),
     statut: r.statut as SupplierLoadingStatus,
+    modeEntree:
+      r.modeEntree === 'rail' || r.modeEntree === 'autre' || r.modeEntree === 'camion'
+        ? r.modeEntree
+        : 'camion',
+    hubArrivee: r.hubArrivee ? String(r.hubArrivee) : undefined,
+    dateArriveeHub: r.dateArriveeHub ? String(r.dateArriveeHub) : undefined,
     lieu: r.lieu ? String(r.lieu) : undefined,
     notes: r.notes ? String(r.notes) : undefined,
     assignments,
@@ -847,6 +863,8 @@ interface AppContextType {
     fournisseurId?: string;
     statut?: SupplierLoadingStatus;
     unassignedOnly?: boolean;
+    auHubOnly?: boolean;
+    hubArrivee?: string;
   }) => Promise<void>;
   createTruck: (data: Parameters<typeof trucksApi.create>[0]) => Promise<Truck>;
   updateTruck: (id: string, data: Parameters<typeof trucksApi.update>[1]) => Promise<Truck>;
@@ -1081,6 +1099,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     fournisseurId?: string;
     statut?: SupplierLoadingStatus;
     unassignedOnly?: boolean;
+    auHubOnly?: boolean;
+    hubArrivee?: string;
   }) => {
     try {
       const data = await supplierLoadingsApi.getAll(params);

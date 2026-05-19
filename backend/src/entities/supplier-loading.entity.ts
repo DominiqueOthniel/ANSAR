@@ -2,8 +2,14 @@ import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, OneToMany } from 
 import { ThirdParty } from './third-party.entity';
 import { SupplierLoadingAssignment } from './supplier-loading-assignment.entity';
 
+export type SupplierLoadingEntryMode = 'camion' | 'rail' | 'autre';
+
 export type SupplierLoadingStatus =
   | 'brouillon'
+  | 'en_transit'
+  | 'au_hub'
+  | 'en_dispatch'
+  | 'solde'
   | 'en_attente_affectation'
   | 'partiellement_affecte'
   | 'affecte'
@@ -45,6 +51,17 @@ export class SupplierLoading {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   lieu?: string;
+
+  /** camion | rail | autre */
+  @Column({ type: 'varchar', length: 16, default: 'camion' })
+  modeEntree: SupplierLoadingEntryMode;
+
+  /** Hub d’arrivée (ex. CAMRAIL Abidjan). */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  hubArrivee?: string;
+
+  @Column({ type: 'date', nullable: true })
+  dateArriveeHub?: string;
 
   @Column({ type: 'text', nullable: true })
   notes?: string;

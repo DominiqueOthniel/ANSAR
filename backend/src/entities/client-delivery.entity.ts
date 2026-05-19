@@ -6,6 +6,11 @@ import { Truck } from './truck.entity';
 
 export type ClientDeliveryStatus = 'planifiee' | 'en_cours' | 'livree' | 'annulee';
 
+export type ClientDeliveryExitMode =
+  | 'retrait_hub'
+  | 'livraison_agent'
+  | 'livraison_directe';
+
 /** Livraison chez le client (exécution d’une commande). */
 @Entity('client_deliveries')
 export class ClientDelivery {
@@ -23,6 +28,10 @@ export class ClientDelivery {
 
   @Column({ type: 'varchar', length: 255 })
   lieuLivraison: string;
+
+  /** retrait_hub | livraison_agent | livraison_directe */
+  @Column({ type: 'varchar', length: 32, default: 'livraison_directe' })
+  modeSortie: ClientDeliveryExitMode;
 
   @Column({ type: 'varchar', length: 32 })
   statut: ClientDeliveryStatus;

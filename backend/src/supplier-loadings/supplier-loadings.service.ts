@@ -8,6 +8,7 @@ import { Repository, In } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import {
   SupplierLoading,
+  SupplierLoadingEntryMode,
   SupplierLoadingStatus,
 } from '../entities/supplier-loading.entity';
 import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignment.entity';
@@ -50,22 +51,67 @@ export class SupplierLoadingsService {
     return Number.isFinite(n) ? n : undefined;
   }
 
+  private isHubFlow(loading: Pick<SupplierLoading, 'statut' | 'modeEntree' | 'hubArrivee'>): boolean {
+    return (
+      loading.modeEntree === 'rail' ||
+      !!(loading.hubArrivee?.trim()) ||
+      loading.statut === 'en_transit' ||
+      loading.statut === 'au_hub' ||
+      loading.statut === 'en_dispatch' ||
+      loading.statut === 'solde'
+    );
+  }
+
+  private resolveInitialStatut(dto: CreateSupplierLoadingDto): SupplierLoadingStatus {
+    if (dto.statut === 'brouillon') return 'brouillon';
+    if (
+      dto.statut &&
+      ['en_transit', 'au_hub', 'en_dispatch', 'solde'].includes(dto.statut)
+    ) {
+      return dto.statut;
+    }
+    const mode = dto.modeEntree ?? 'camion';
+    if (mode === 'rail' || dto.hubArrivee?.trim()) {
+      return dto.dateArriveeHub?.trim() ? 'au_hub' : 'en_transit';
+    }
+    return 'en_attente_affectation';
+  }
+
   private computeStatut(
-    loading: Pick<SupplierLoading, 'statut' | 'quantite'>,
+    loading: Pick<SupplierLoading, 'statut' | 'quantite' | 'modeEntree' | 'hubArrivee'>,
     assignments: SupplierLoadingAssignment[],
   ): SupplierLoadingStatus {
     if (loading.statut === 'annule') return 'annule';
     if (loading.statut === 'brouillon' && assignments.length === 0) return 'brouillon';
-    if (assignments.length === 0) return 'en_attente_affectation';
+
+    const hub = this.isHubFlow(loading);
+
+    if (assignments.length === 0) {
+      if (loading.statut === 'en_transit' || loading.statut === 'au_hub') {
+        return loading.statut;
+      }
+      if (hub) return loading.statut === 'solde' || loading.statut === 'en_dispatch' ? loading.statut : 'au_hub';
+      return 'en_attente_affectation';
+    }
 
     const totalQty = this.parseQty(loading.quantite);
-    if (totalQty == null || totalQty <= 0) return 'affecte';
-
     const assignedSum = assignments.reduce((sum, a) => {
       const q = this.parseQty(a.quantiteAffectee) ?? 0;
       return sum + q;
     }, 0);
 
+    if (hub) {
+      if (assignedSum <= 0) {
+        return loading.statut === 'en_transit' ? 'en_transit' : 'au_hub';
+      }
+      if (totalQty != null && totalQty > 0) {
+        if (assignedSum >= totalQty - 1e-6) return 'solde';
+        return 'en_dispatch';
+      }
+      return 'en_dispatch';
+    }
+
+    if (totalQty == null || totalQty <= 0) return 'affecte';
     if (assignedSum <= 0) return 'en_attente_affectation';
     if (assignedSum < totalQty - 1e-6) return 'partiellement_affecte';
     return 'affecte';
@@ -97,8 +143,9 @@ export class SupplierLoadingsService {
 
     if (!designation) throw new BadRequestException('Désignation requise.');
 
-    const statut: SupplierLoadingStatus =
-      dto.statut === 'brouillon' ? 'brouillon' : 'en_attente_affectation';
+    const modeEntree: SupplierLoadingEntryMode = dto.modeEntree ?? 'camion';
+    const hubArrivee = dto.hubArrivee?.trim() || undefined;
+    const statut = this.resolveInitialStatut(dto);
 
     const entity = this.loadingRepo.create({
       id: uuidv4(),
@@ -111,7 +158,10 @@ export class SupplierLoadingsService {
       montantBon: dto.montantBon != null ? String(dto.montantBon) : undefined,
       dateChargement: dto.dateChargement,
       statut,
-      lieu: dto.lieu?.trim() || undefined,
+      modeEntree,
+      hubArrivee,
+      dateArriveeHub: dto.dateArriveeHub?.trim() || undefined,
+      lieu: dto.lieu?.trim() || hubArrivee || undefined,
       notes: dto.notes?.trim() || undefined,
     });
 
@@ -123,6 +173,8 @@ export class SupplierLoadingsService {
     fournisseurId?: string;
     statut?: SupplierLoadingStatus;
     unassignedOnly?: boolean;
+    auHubOnly?: boolean;
+    hubArrivee?: string;
   }): Promise<SupplierLoading[]> {
     const qb = this.loadingRepo
       .createQueryBuilder('l')
@@ -150,6 +202,20 @@ export class SupplierLoadingsService {
           l.statut !== 'annule' &&
           (!l.assignments || l.assignments.length === 0),
       );
+    }
+
+    if (params?.auHubOnly) {
+      list = list.filter(
+        (l) =>
+          l.statut === 'au_hub' ||
+          l.statut === 'en_dispatch' ||
+          (l.statut === 'en_transit' && !!l.hubArrivee),
+      );
+    }
+
+    if (params?.hubArrivee?.trim()) {
+      const h = params.hubArrivee.trim().toLowerCase();
+      list = list.filter((l) => (l.hubArrivee ?? '').toLowerCase().includes(h));
     }
 
     return list;
@@ -194,6 +260,11 @@ export class SupplierLoadingsService {
       loading.montantBon = dto.montantBon != null ? String(dto.montantBon) : undefined;
     }
     if (dto.dateChargement != null) loading.dateChargement = dto.dateChargement;
+    if (dto.modeEntree != null) loading.modeEntree = dto.modeEntree;
+    if (dto.hubArrivee !== undefined) loading.hubArrivee = dto.hubArrivee?.trim() || undefined;
+    if (dto.dateArriveeHub !== undefined) {
+      loading.dateArriveeHub = dto.dateArriveeHub?.trim() || undefined;
+    }
     if (dto.lieu !== undefined) loading.lieu = dto.lieu?.trim() || undefined;
     if (dto.notes !== undefined) loading.notes = dto.notes?.trim() || undefined;
 
@@ -203,6 +274,8 @@ export class SupplierLoadingsService {
       loading.statut = 'brouillon';
     } else if (dto.statut) {
       loading.statut = dto.statut;
+    } else if (dto.dateArriveeHub && loading.statut === 'en_transit') {
+      loading.statut = 'au_hub';
     }
 
     const assignments = loading.assignments ?? [];

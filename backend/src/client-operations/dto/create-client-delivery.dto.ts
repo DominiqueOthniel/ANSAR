@@ -20,6 +20,11 @@ export class CreateClientDeliveryDto {
 
   @IsOptional()
   @IsString()
+  @IsIn(['retrait_hub', 'livraison_agent', 'livraison_directe'])
+  modeSortie?: 'retrait_hub' | 'livraison_agent' | 'livraison_directe';
+
+  @IsOptional()
+  @IsString()
   @IsIn(['planifiee', 'en_cours', 'livree', 'annulee'])
   statut?: 'planifiee' | 'en_cours' | 'livree' | 'annulee';
 

@@ -8,6 +8,9 @@ export type ClientOrderStatus =
 
 export type ClientDeliveryStatus = 'planifiee' | 'en_cours' | 'livree' | 'annulee';
 
+export type { ClientDeliveryExitMode } from '@/lib/hub-transit';
+export { formatDeliveryExitModeFr } from '@/lib/hub-transit';
+
 const ORDER_STATUS_LABELS: Record<ClientOrderStatus, string> = {
   brouillon: 'Brouillon',
   confirmee: 'Confirmée',

@@ -288,8 +288,7 @@ export default function AuditLogs() {
   };
 
   return (
-    <div className="space-y-6" replace_all
-false
+    <div className="space-y-6">
       <PageHeader
         title="Historique des mouvements"
         description="Journal complet : banque, caisse, dépenses, factures, encaissements, crédits, commandes et livraisons. Chaque opération est enregistrée avec l’utilisateur et le montant."

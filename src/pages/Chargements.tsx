@@ -11,7 +11,16 @@ import {
   type SupplierLoadingStatus,
   getLoadingAssignedClientId,
   isLoadingUnassigned,
+  isLoadingAtHub,
 } from '@/lib/supplier-loadings';
+import {
+  HUB_PRESETS,
+  LOADING_ENTRY_MODE_OPTIONS,
+  computeHubRemainder,
+  defaultHubForEntryMode,
+  formatLoadingEntryModeFr,
+  type LoadingEntryMode,
+} from '@/lib/hub-transit';
 import { formatClientOrderStatusFr } from '@/lib/client-operations';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -43,7 +52,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
@@ -63,8 +72,9 @@ function statusBadgeVariant(
   statut: SupplierLoadingStatus,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (statut === 'annule') return 'destructive';
-  if (statut === 'affecte') return 'default';
-  if (statut === 'partiellement_affecte') return 'secondary';
+  if (statut === 'affecte' || statut === 'solde') return 'default';
+  if (statut === 'partiellement_affecte' || statut === 'en_dispatch') return 'secondary';
+  if (statut === 'au_hub' || statut === 'en_transit') return 'outline';
   return 'outline';
 }
 
@@ -79,6 +89,9 @@ type LoadingFormState = {
   montantBonTouched: boolean;
   unite: string;
   dateChargement: string;
+  modeEntree: LoadingEntryMode;
+  hubArrivee: string;
+  dateArriveeHub: string;
   lieu: string;
   notes: string;
   statut: SupplierLoadingStatus | '';
@@ -95,6 +108,9 @@ const emptyForm = (): LoadingFormState => ({
   montantBonTouched: false,
   unite: '',
   dateChargement: todayIso(),
+  modeEntree: 'camion',
+  hubArrivee: '',
+  dateArriveeHub: '',
   lieu: '',
   notes: '',
   statut: '',
@@ -121,6 +137,7 @@ export default function Chargements() {
   const [filterFournisseur, setFilterFournisseur] = useState('');
   const [filterStatut, setFilterStatut] = useState<string>('all');
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [auHubOnly, setAuHubOnly] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierLoading | null>(null);
@@ -175,6 +192,9 @@ export default function Chargements() {
         isLoadingUnassigned(l.statut, l.assignments?.length ?? 0),
       );
     }
+    if (auHubOnly) {
+      list = list.filter((l) => isLoadingAtHub(l.statut) || l.modeEntree === 'rail');
+    }
     if (q) {
       list = list.filter((l) => {
         const inMain =
@@ -192,11 +212,24 @@ export default function Chargements() {
       });
     }
     return list;
-  }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly]);
+  }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly, auHubOnly]);
 
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm());
+    setDialogOpen(true);
+  };
+
+  const openCamrailBon = () => {
+    setEditing(null);
+    const hub = HUB_PRESETS[0];
+    setForm({
+      ...emptyForm(),
+      modeEntree: 'rail',
+      hubArrivee: hub,
+      lieu: hub,
+      statut: 'en_transit',
+    });
     setDialogOpen(true);
   };
 
@@ -239,12 +272,25 @@ export default function Chargements() {
       montantBonTouched: l.montantBon != null,
       unite: l.unite ?? '',
       dateChargement: l.dateChargement,
+      modeEntree: l.modeEntree ?? 'camion',
+      hubArrivee: l.hubArrivee ?? '',
+      dateArriveeHub: l.dateArriveeHub ?? '',
       lieu: l.lieu ?? '',
       notes: l.notes ?? '',
       statut: l.statut,
     });
     setDialogOpen(true);
   };
+
+  const handleMarkArrivedHub = (l: SupplierLoading) =>
+    withGuard(async () => {
+      await updateSupplierLoading(l.id, {
+        statut: 'au_hub',
+        dateArriveeHub: todayIso(),
+        hubArrivee: l.hubArrivee || HUB_PRESETS[0],
+      });
+      toast.success('Bon marqué comme arrivé au hub.');
+    });
 
   const onArticleChange = (articleId: string) => {
     const art = articles.find((a) => a.id === articleId);
@@ -273,6 +319,7 @@ export default function Chargements() {
         return;
       }
 
+      const hub = form.hubArrivee.trim() || undefined;
       const payload = {
         fournisseurId: form.fournisseurId,
         numeroBon: form.numeroBon.trim() || undefined,
@@ -282,7 +329,10 @@ export default function Chargements() {
         unite: form.unite.trim() || undefined,
         montantBon: form.montantBon,
         dateChargement: form.dateChargement,
-        lieu: form.lieu.trim() || undefined,
+        modeEntree: form.modeEntree,
+        hubArrivee: hub,
+        dateArriveeHub: form.dateArriveeHub.trim() || undefined,
+        lieu: form.lieu.trim() || hub || undefined,
         notes: form.notes.trim() || undefined,
         ...(form.statut ? { statut: form.statut } : {}),
       };
@@ -496,6 +546,10 @@ export default function Chargements() {
               <Link to="/fournisseurs">Vue fournisseurs</Link>
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <Button type="button" variant="secondary" size="sm" onClick={openCamrailBon}>
+              <Train className="h-4 w-4 mr-2" />
+              Bon CAMRAIL (rail)
+            </Button>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -630,6 +684,98 @@ export default function Chargements() {
                     </p>
                   )}
                 <div className="space-y-2">
+                  <Label>Mode d&apos;entrée</Label>
+                  <Select
+                    value={form.modeEntree}
+                    onValueChange={(v) => {
+                      const mode = v as LoadingEntryMode;
+                      const hub = defaultHubForEntryMode(mode);
+                      setForm((f) => ({
+                        ...f,
+                        modeEntree: mode,
+                        hubArrivee: mode === 'rail' && !f.hubArrivee.trim() ? hub : f.hubArrivee,
+                        lieu: mode === 'rail' ? f.hubArrivee.trim() || hub : f.lieu,
+                        statut:
+                          !editing && mode === 'rail'
+                            ? f.dateArriveeHub
+                              ? 'au_hub'
+                              : 'en_transit'
+                            : f.statut,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LOADING_ENTRY_MODE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.modeEntree === 'rail' && (
+                  <div className="space-y-3 rounded-md border border-dashed p-3 bg-muted/30">
+                    <div className="space-y-2">
+                      <Label>Hub d&apos;arrivée (CAMRAIL)</Label>
+                      <Select
+                        value={
+                          (HUB_PRESETS as readonly string[]).includes(form.hubArrivee)
+                            ? form.hubArrivee
+                            : 'Autre hub'
+                        }
+                        onValueChange={(v) => {
+                          if (v !== 'Autre hub') {
+                            setForm((f) => ({ ...f, hubArrivee: v, lieu: v }));
+                          } else {
+                            setForm((f) => ({ ...f, hubArrivee: '', lieu: '' }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir le hub" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HUB_PRESETS.map((h) => (
+                            <SelectItem key={h} value={h}>
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {!(HUB_PRESETS as readonly string[]).slice(0, -1).includes(form.hubArrivee) && (
+                        <Input
+                          placeholder="Nom du hub"
+                          value={form.hubArrivee}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              hubArrivee: e.target.value,
+                              lieu: e.target.value,
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date arrivée au hub</Label>
+                      <Input
+                        type="date"
+                        value={form.dateArriveeHub}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            dateArriveeHub: e.target.value,
+                            statut: e.target.value ? 'au_hub' : f.statut || 'en_transit',
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
                   <Label>Date chargement *</Label>
                   <Input
                     type="date"
@@ -737,6 +883,13 @@ export default function Chargements() {
               />
               Non affectés uniquement
             </label>
+            <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
+              <Checkbox
+                checked={auHubOnly}
+                onCheckedChange={(c) => setAuHubOnly(c === true)}
+              />
+              Au hub / CAMRAIL
+            </label>
           </div>
 
           <div className="rounded-md border overflow-x-auto">
@@ -747,6 +900,7 @@ export default function Chargements() {
                   <TableHead>Fournisseur</TableHead>
                   <TableHead>N° bon</TableHead>
                   <TableHead>Désignation</TableHead>
+                  <TableHead>Hub / entrée</TableHead>
                   <TableHead>Qté</TableHead>
                   <TableHead>Valeur bon</TableHead>
                   <TableHead>Statut</TableHead>
@@ -757,7 +911,7 @@ export default function Chargements() {
               <TableBody>
                 {sortedLoadings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       Aucun bon de chargement.
                     </TableCell>
                   </TableRow>
@@ -775,6 +929,21 @@ export default function Chargements() {
                       </TableCell>
                       <TableCell>{l.numeroBon || '—'}</TableCell>
                       <TableCell className="font-medium">{l.designation}</TableCell>
+                      <TableCell className="text-xs max-w-[140px]">
+                        <span className="block">{formatLoadingEntryModeFr(l.modeEntree)}</span>
+                        {l.hubArrivee ? (
+                          <span className="text-muted-foreground flex items-center gap-0.5 mt-0.5">
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            {l.hubArrivee}
+                          </span>
+                        ) : null}
+                        {computeHubRemainder(l.quantite, l.assignments) != null ? (
+                          <span className="text-amber-700 dark:text-amber-400 block mt-0.5">
+                            Reste hub : {computeHubRemainder(l.quantite, l.assignments)}
+                            {l.unite ? ` ${l.unite}` : ''}
+                          </span>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {l.quantite != null
                           ? `${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
@@ -805,6 +974,16 @@ export default function Chargements() {
                       <TableCell className="text-right space-x-1">
                         {l.statut !== 'annule' && (
                           <>
+                            {l.statut === 'en_transit' && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void handleMarkArrivedHub(l)}
+                                title="Marquer arrivé au hub"
+                              >
+                                <MapPin className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"

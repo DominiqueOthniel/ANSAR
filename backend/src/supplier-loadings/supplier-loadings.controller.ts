@@ -32,11 +32,15 @@ export class SupplierLoadingsController {
     @Query('fournisseurId') fournisseurId?: string,
     @Query('statut') statut?: SupplierLoadingStatus,
     @Query('unassignedOnly') unassignedOnly?: string,
+    @Query('auHubOnly') auHubOnly?: string,
+    @Query('hubArrivee') hubArrivee?: string,
   ) {
     return this.service.findAll({
       fournisseurId,
       statut,
       unassignedOnly: unassignedOnly === 'true' || unassignedOnly === '1',
+      auHubOnly: auHubOnly === 'true' || auHubOnly === '1',
+      hubArrivee,
     });
   }
 

@@ -268,6 +268,9 @@ export class ClientOperationsService {
   }
 
   private assertTransportBilling(delivery: ClientDelivery): void {
+    if (delivery.modeSortie === 'retrait_hub') {
+      return;
+    }
     if (this.isTransportBilledBySupplier(delivery)) {
       if (!delivery.transportFournisseurId) {
         throw new BadRequestException('Indiquez le fournisseur qui vous facture le transport.');
@@ -633,7 +636,9 @@ export class ClientOperationsService {
     const lieu = dto.lieuLivraison.trim();
     if (!lieu) throw new BadRequestException('Le lieu de livraison est obligatoire.');
     const statut: ClientDeliveryStatus = dto.statut ?? 'planifiee';
-    const transportFactureParFournisseur = dto.transportFactureParFournisseur === true;
+    const modeSortie = dto.modeSortie ?? 'livraison_directe';
+    const transportFactureParFournisseur =
+      modeSortie !== 'retrait_hub' && dto.transportFactureParFournisseur === true;
     if (transportFactureParFournisseur) {
       await this.assertTransportFournisseur(dto.transportFournisseurId);
     }
@@ -642,14 +647,20 @@ export class ClientOperationsService {
       clientOrderId: order.id,
       clientId: order.clientId,
       lieuLivraison: lieu,
+      modeSortie,
       statut,
       datePrevue: dto.datePrevue || undefined,
       dateLivraison:
         statut === 'livree' ? dto.dateLivraison || dto.datePrevue || undefined : dto.dateLivraison,
-      chauffeurId: dto.chauffeurId || undefined,
-      tracteurId: dto.tracteurId || undefined,
+      chauffeurId:
+        modeSortie === 'retrait_hub' ? undefined : dto.chauffeurId || undefined,
+      tracteurId: modeSortie === 'retrait_hub' ? undefined : dto.tracteurId || undefined,
       montantTransport:
-        dto.montantTransport != null ? Number(dto.montantTransport) : undefined,
+        modeSortie === 'retrait_hub'
+          ? undefined
+          : dto.montantTransport != null
+            ? Number(dto.montantTransport)
+            : undefined,
       transportFactureParFournisseur,
       transportFournisseurId: transportFactureParFournisseur
         ? dto.transportFournisseurId || undefined
@@ -661,7 +672,11 @@ export class ClientOperationsService {
     await this.syncOrderStatusFromDeliveries(order.id);
     const freshOrder = await this.findOrder(order.id);
     await this.ensureOrderInvoice(freshOrder, undefined, actor);
-    await this.ensureDeliveryInvoice(saved, freshOrder, actor);
+    if (modeSortie !== 'retrait_hub') {
+      await this.ensureDeliveryInvoice(saved, freshOrder, actor);
+    } else {
+      await this.clearDeliveryTransportInvoice(saved, actor);
+    }
     const result = await this.findDelivery(saved.id);
     await this.auditLogsService.log({
       module: 'client-deliveries',
@@ -721,6 +736,7 @@ export class ClientOperationsService {
       if (!l) throw new BadRequestException('Le lieu de livraison ne peut pas être vide.');
       patch.lieuLivraison = l;
     }
+    if (dto.modeSortie !== undefined) patch.modeSortie = dto.modeSortie;
     if (dto.statut !== undefined) patch.statut = dto.statut;
     if (dto.datePrevue !== undefined) patch.datePrevue = dto.datePrevue || undefined;
     if (dto.dateLivraison !== undefined) patch.dateLivraison = dto.dateLivraison || undefined;
@@ -747,6 +763,18 @@ export class ClientOperationsService {
       patch.dateLivraison = new Date().toISOString().slice(0, 10);
     }
     const merged: ClientDelivery = { ...existing, ...patch };
+    if (merged.modeSortie === 'retrait_hub') {
+      patch.chauffeurId = undefined;
+      patch.tracteurId = undefined;
+      patch.montantTransport = undefined;
+      patch.transportFactureParFournisseur = false;
+      patch.transportFournisseurId = undefined;
+      merged.chauffeurId = undefined;
+      merged.tracteurId = undefined;
+      merged.montantTransport = undefined;
+      merged.transportFactureParFournisseur = false;
+      merged.transportFournisseurId = undefined;
+    }
     this.assertTransportBilling(merged);
     await this.deliveryRepo.update(id, patch);
     await this.syncOrderStatusFromDeliveries(
@@ -755,7 +783,11 @@ export class ClientOperationsService {
     const updated = await this.findDelivery(id);
     const order = await this.findOrder(updated.clientOrderId);
     await this.ensureOrderInvoice(order, undefined, actor);
-    await this.ensureDeliveryInvoice(updated, order, actor);
+    if (updated.modeSortie === 'retrait_hub') {
+      await this.clearDeliveryTransportInvoice(updated, actor);
+    } else {
+      await this.ensureDeliveryInvoice(updated, order, actor);
+    }
     await this.auditLogsService.log({
       module: 'client-deliveries',
       action: 'UPDATE',

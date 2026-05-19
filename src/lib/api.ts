@@ -252,6 +252,7 @@ export interface ClientOrderPayload {
 export interface ClientDeliveryPayload {
   clientOrderId: string;
   lieuLivraison: string;
+  modeSortie?: 'retrait_hub' | 'livraison_agent' | 'livraison_directe';
   statut?: 'planifiee' | 'en_cours' | 'livree' | 'annulee';
   datePrevue?: string;
   dateLivraison?: string;
@@ -454,6 +455,10 @@ export const clientDeliveriesApi = {
 
 export type SupplierLoadingStatusPayload =
   | 'brouillon'
+  | 'en_transit'
+  | 'au_hub'
+  | 'en_dispatch'
+  | 'solde'
   | 'en_attente_affectation'
   | 'partiellement_affecte'
   | 'affecte'
@@ -469,6 +474,9 @@ export interface SupplierLoadingPayload {
   montantBon?: number;
   dateChargement: string;
   statut?: SupplierLoadingStatusPayload;
+  modeEntree?: 'camion' | 'rail' | 'autre';
+  hubArrivee?: string;
+  dateArriveeHub?: string;
   lieu?: string;
   notes?: string;
 }
@@ -485,12 +493,16 @@ export const supplierLoadingsApi = {
     fournisseurId?: string;
     statut?: SupplierLoadingStatusPayload;
     unassignedOnly?: boolean;
+    auHubOnly?: boolean;
+    hubArrivee?: string;
   }) =>
     request<any[]>(
       `/supplier-loadings${buildQuery({
         fournisseurId: params?.fournisseurId,
         statut: params?.statut,
         unassignedOnly: params?.unassignedOnly ? 'true' : undefined,
+        auHubOnly: params?.auHubOnly ? 'true' : undefined,
+        hubArrivee: params?.hubArrivee,
       })}`,
     ),
   getOne: (id: string) => request<any>(`/supplier-loadings/${id}`),

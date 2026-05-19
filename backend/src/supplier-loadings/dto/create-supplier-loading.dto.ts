@@ -9,6 +9,18 @@ import {
   Min,
 } from 'class-validator';
 
+const STATUTS = [
+  'brouillon',
+  'en_transit',
+  'au_hub',
+  'en_dispatch',
+  'solde',
+  'en_attente_affectation',
+  'partiellement_affecte',
+  'affecte',
+  'annule',
+] as const;
+
 export class CreateSupplierLoadingDto {
   @IsUUID()
   fournisseurId: string;
@@ -48,8 +60,22 @@ export class CreateSupplierLoadingDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['brouillon', 'en_attente_affectation', 'partiellement_affecte', 'affecte', 'annule'])
-  statut?: 'brouillon' | 'en_attente_affectation' | 'partiellement_affecte' | 'affecte' | 'annule';
+  @IsIn(STATUTS)
+  statut?: (typeof STATUTS)[number];
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['camion', 'rail', 'autre'])
+  modeEntree?: 'camion' | 'rail' | 'autre';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  hubArrivee?: string;
+
+  @IsOptional()
+  @IsString()
+  dateArriveeHub?: string;
 
   @IsOptional()
   @IsString()

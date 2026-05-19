@@ -49,6 +49,13 @@ import {
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
 } from '@/lib/supplier-loadings';
+import {
+  DELIVERY_EXIT_MODE_OPTIONS,
+  HUB_PRESETS,
+  deliveryLieuForExitMode,
+  formatDeliveryExitModeFr,
+  type ClientDeliveryExitMode,
+} from '@/lib/hub-transit';
 import { checkPretAccordePlafond } from '@/lib/client-credit-plafond';
 import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
 import {
@@ -240,6 +247,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   const [editingDelivery, setEditingDelivery] = useState<ClientDelivery | null>(null);
   const [deliveryForm, setDeliveryForm] = useState({
     clientOrderId: '',
+    modeSortie: 'livraison_directe' as ClientDeliveryExitMode,
     lieuLivraison: defaultDestination ?? '',
     statut: 'planifiee' as ClientDeliveryStatus,
     datePrevue: '',
@@ -251,6 +259,11 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     transportFournisseurId: '',
     notes: '',
   });
+
+  const hubForOrder = (orderId: string): string => {
+    const linked = findSupplierLoadingForOrder(supplierLoadings, orderId);
+    return linked?.hubArrivee?.trim() || HUB_PRESETS[0];
+  };
 
   const resetOrderForm = () => {
     setOrderForm({
@@ -449,9 +462,19 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
 
   const resetDeliveryForm = (orderId?: string) => {
     const order = orderId ? orders.find((o) => o.id === orderId) : undefined;
+    const linked = orderId ? findSupplierLoadingForOrder(supplierLoadings, orderId) : undefined;
+    const hub = linked?.hubArrivee?.trim() || HUB_PRESETS[0];
+    const modeSortie: ClientDeliveryExitMode = linked?.hubArrivee || linked?.modeEntree === 'rail'
+      ? 'retrait_hub'
+      : 'livraison_directe';
     setDeliveryForm({
       clientOrderId: orderId ?? '',
-      lieuLivraison: order?.destination ?? defaultDestination ?? '',
+      modeSortie,
+      lieuLivraison: deliveryLieuForExitMode(
+        modeSortie,
+        hub,
+        order?.destination ?? defaultDestination ?? '',
+      ),
       statut: 'planifiee',
       datePrevue: order?.dateLivraisonSouhaitee ?? '',
       dateLivraison: '',
@@ -478,6 +501,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     setEditingDelivery(d);
     setDeliveryForm({
       clientOrderId: d.clientOrderId,
+      modeSortie: d.modeSortie ?? 'livraison_directe',
       lieuLivraison: d.lieuLivraison,
       statut: d.statut,
       datePrevue: d.datePrevue ?? '',
@@ -502,8 +526,10 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       toast.error('Lieu de livraison obligatoire.');
       return;
     }
-    const billedBySupplier = deliveryForm.transportFactureParFournisseur;
-    const hasMission = !!(deliveryForm.chauffeurId || deliveryForm.tracteurId);
+    const isRetraitHub = deliveryForm.modeSortie === 'retrait_hub';
+    const billedBySupplier = !isRetraitHub && deliveryForm.transportFactureParFournisseur;
+    const hasMission =
+      !isRetraitHub && !!(deliveryForm.chauffeurId || deliveryForm.tracteurId);
     if (
       !billedBySupplier &&
       hasMission &&
@@ -527,12 +553,13 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       try {
         const payload = {
           clientOrderId: deliveryForm.clientOrderId,
+          modeSortie: deliveryForm.modeSortie,
           lieuLivraison: deliveryForm.lieuLivraison.trim(),
           statut: deliveryForm.statut,
           datePrevue: deliveryForm.datePrevue || undefined,
           dateLivraison: deliveryForm.dateLivraison || undefined,
-          chauffeurId: deliveryForm.chauffeurId || undefined,
-          tracteurId: deliveryForm.tracteurId || undefined,
+          chauffeurId: isRetraitHub ? undefined : deliveryForm.chauffeurId || undefined,
+          tracteurId: isRetraitHub ? undefined : deliveryForm.tracteurId || undefined,
           transportFactureParFournisseur: billedBySupplier,
           transportFournisseurId: billedBySupplier
             ? deliveryForm.transportFournisseurId
@@ -697,9 +724,14 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 <li key={d.id} className="rounded-lg border px-2.5 py-2 text-sm">
                   <div className="flex justify-between gap-2">
                     <span className="font-medium truncate">{d.lieuLivraison}</span>
-                    <Badge variant="secondary" className="text-xs shrink-0">
-                      {formatClientDeliveryStatusFr(d.statut)}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                      <Badge variant="secondary" className="text-xs">
+                        {formatClientDeliveryStatusFr(d.statut)}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {formatDeliveryExitModeFr(d.modeSortie)}
+                      </Badge>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {order?.designation ?? d.orderDesignation ?? 'Commande'}
@@ -1024,6 +1056,48 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               </Select>
             </div>
             <div>
+              <Label>Mode de sortie</Label>
+              <Select
+                value={deliveryForm.modeSortie}
+                onValueChange={(v) => {
+                  const mode = v as ClientDeliveryExitMode;
+                  const hub = hubForOrder(deliveryForm.clientOrderId);
+                  const order = orders.find((o) => o.id === deliveryForm.clientOrderId);
+                  setDeliveryForm((p) => ({
+                    ...p,
+                    modeSortie: mode,
+                    lieuLivraison: deliveryLieuForExitMode(
+                      mode,
+                      hub,
+                      order?.destination ?? defaultDestination ?? '',
+                    ),
+                    chauffeurId: mode === 'retrait_hub' ? '' : p.chauffeurId,
+                    tracteurId: mode === 'retrait_hub' ? '' : p.tracteurId,
+                    montantTransport: mode === 'retrait_hub' ? undefined : p.montantTransport,
+                    transportFactureParFournisseur:
+                      mode === 'retrait_hub' ? false : p.transportFactureParFournisseur,
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DELIVERY_EXIT_MODE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {
+                  DELIVERY_EXIT_MODE_OPTIONS.find((o) => o.value === deliveryForm.modeSortie)
+                    ?.hint
+                }
+              </p>
+            </div>
+            <div>
               <Label>Lieu de livraison *</Label>
               <Input
                 value={deliveryForm.lieuLivraison}
@@ -1069,6 +1143,8 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 </SelectContent>
               </Select>
             </div>
+            {deliveryForm.modeSortie !== 'retrait_hub' && (
+            <>
             <div>
               <Label>Chauffeur</Label>
               <Select
@@ -1174,6 +1250,8 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                   </p>
                 </div>
               )}
+            </>
+            )}
             <div className="space-y-2">
               <Label>Notes</Label>
               <Textarea

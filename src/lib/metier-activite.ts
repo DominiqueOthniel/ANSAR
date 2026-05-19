@@ -28,7 +28,7 @@ export const PAGE_DEPENSES_DESCRIPTION =
 export const PAGE_ARTICLES_DESCRIPTION =
   'Catalogue des produits ou prestations achetés (ex. sac de ciment, tonne de gravier). Sous chaque article, déclarez le prix unitaire forfaitaire par fournisseur : lors des dépenses, le tarif se remplit automatiquement dès que vous choisissez l’article et le fournisseur.';
 
-export const PAGE_CHARGEMENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Enregistrez les bons de chargement chez vos fournisseurs (dépôts, usines, carrières…), puis affectez chaque bon aux commandes clients concernées pour suivre ce qui reste à livrer.`;
+export const PAGE_CHARGEMENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Enregistrez les bons de chargement chez vos fournisseurs (dépôts, usines, carrières…). Mode « Rail / CAMRAIL » : arrivée au hub, dispatch vers les commandes clients. Affectez chaque bon aux commandes pour suivre le reste au hub et les livraisons ou retraits.`;
 
 export const PAGE_FOURNISSEURS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Vue centrée fournisseurs : état des sites (bons en attente, affectations), dépenses liées, transports sous-traités (fournisseur → société → client) et tarifs catalogue — pour suivre chaque interaction avec vos points de chargement.`;
 
