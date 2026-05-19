@@ -259,7 +259,7 @@ export interface ClientDeliveryPayload {
   chauffeurId?: string;
   tracteurId?: string;
   montantTransport?: number;
-  /** Transport sous-traité : le fournisseur facture la société, refacturation client via FAC-LIV. */
+  /** Transport sous-traité : montant refacturé au client sur la facture commande (FAC-CMD). */
   transportFactureParFournisseur?: boolean;
   transportFournisseurId?: string;
   notes?: string;

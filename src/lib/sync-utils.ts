@@ -110,7 +110,7 @@ export const calculatePaidAmountForParcelExpedition = (
     .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
 };
 
-/** Montant encaissé sur une livraison client (facture transport FAC-LIV). */
+/** Encaissement sur une ancienne FAC-LIV (avant fusion dans FAC-CMD). */
 export const calculatePaidAmountForClientDelivery = (
   deliveryId: string,
   invoices: Invoice[],

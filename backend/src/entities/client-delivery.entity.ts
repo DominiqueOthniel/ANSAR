@@ -53,7 +53,7 @@ export class ClientDelivery {
   montantTransport?: number;
 
   /**
-   * Transport sous-traité : le fournisseur facture la société, qui refacture le client (FAC-LIV).
+   * Transport sous-traité : le fournisseur facture la société, montant refacturé sur la FAC-CMD.
    */
   @Column({ type: 'boolean', default: false })
   transportFactureParFournisseur: boolean;

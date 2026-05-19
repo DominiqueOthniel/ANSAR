@@ -164,22 +164,134 @@ export class ClientOperationsService {
     return { montantPaye: 0, statut: 'en_attente' };
   }
 
+  /** Transport facturable sur la facture commande (une seule FAC-CMD, transport détaillé en notes). */
+  private deliveryBillsTransport(delivery: ClientDelivery): boolean {
+    if (delivery.modeSortie === 'retrait_hub') return false;
+    const montant = this.deliveryTransportMontant(delivery);
+    if (montant <= 0) return false;
+    if (delivery.statut === 'annulee') return false;
+    if (this.isTransportBilledBySupplier(delivery)) return true;
+    return this.hasTransportMission(delivery);
+  }
+
+  private formatExitModeFr(mode: ClientDelivery['modeSortie']): string {
+    if (mode === 'retrait_hub') return 'retrait au hub';
+    if (mode === 'livraison_agent') return 'livraison par agent';
+    return 'livraison directe';
+  }
+
+  private async loadBillableDeliveriesForOrder(orderId: string): Promise<ClientDelivery[]> {
+    const rows = await this.deliveryRepo.find({
+      where: { clientOrderId: orderId },
+      relations: ['chauffeur', 'tracteur', 'transportFournisseur'],
+    });
+    return rows.filter((d) => this.deliveryBillsTransport(d));
+  }
+
+  private buildDeliveryTransportLine(delivery: ClientDelivery): string {
+    const montant = this.deliveryTransportMontant(delivery);
+    const details: string[] = [this.formatExitModeFr(delivery.modeSortie)];
+    if (delivery.transportFournisseur?.nom) {
+      details.push(`fournisseur ${delivery.transportFournisseur.nom}`);
+    }
+    const ch = delivery.chauffeur;
+    if (ch) details.push(`${ch.prenom} ${ch.nom}`.trim());
+    const tr = delivery.tracteur;
+    if (tr?.immatriculation) details.push(tr.immatriculation);
+    const detailStr = details.length ? ` (${details.join(' · ')})` : '';
+    return `Livraison ${delivery.lieuLivraison} — transport : ${montant.toLocaleString('fr-FR')} FCFA${detailStr}`;
+  }
+
+  private buildOrderInvoiceNotes(
+    order: ClientOrder,
+    billableDeliveries: ClientDelivery[],
+  ): string {
+    const lines: string[] = [];
+    if (order.reference) lines.push(`Commande ${order.reference}`);
+    const marchandise = Number(order.montant ?? 0);
+    if (marchandise > 0) {
+      lines.push(`Marchandise : ${marchandise.toLocaleString('fr-FR')} FCFA`);
+    }
+    for (const d of billableDeliveries) {
+      lines.push(this.buildDeliveryTransportLine(d));
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * Anciennes FAC-LIV : fusion des encaissements puis suppression (transport inclus dans FAC-CMD).
+   */
+  private async absorbLegacyDeliveryInvoices(
+    orderId: string,
+    actor?: AuditActor,
+  ): Promise<{ mergedPaye: number; mergedDatePaiement?: string }> {
+    let mergedPaye = 0;
+    let mergedDatePaiement: string | undefined;
+    const deliveries = await this.deliveryRepo.find({ where: { clientOrderId: orderId } });
+    for (const d of deliveries) {
+      if (!d.invoiceId) continue;
+      const inv = await this.invoiceRepo.findOne({ where: { id: d.invoiceId } });
+      if (!inv || inv.clientDeliveryId !== d.id) continue;
+      mergedPaye += Number(inv.montantPaye ?? 0);
+      if (inv.datePaiement) mergedDatePaiement = inv.datePaiement;
+      await this.invoiceRepo.delete(inv.id);
+      await this.deliveryRepo.update(d.id, { invoiceId: undefined });
+      await this.auditLogsService.log({
+        module: 'invoices',
+        action: 'DELETE',
+        entityId: inv.id,
+        summary: `Fusion facture transport ${inv.numero} dans la facture commande`,
+        beforeData: inv as unknown as Record<string, unknown>,
+        actor,
+      });
+    }
+    return { mergedPaye, mergedDatePaiement };
+  }
+
   private async ensureOrderInvoice(
     order: ClientOrder,
     payment?: { montantPaye?: number; datePaiement?: string },
     actor?: AuditActor,
   ): Promise<void> {
-    const montant = Number(order.montant ?? 0);
+    const { mergedPaye, mergedDatePaiement } = await this.absorbLegacyDeliveryInvoices(
+      order.id,
+      actor,
+    );
+    const billableDeliveries = await this.loadBillableDeliveriesForOrder(order.id);
+    const marchandise = Number(order.montant ?? 0);
+    const transportTotal = billableDeliveries.reduce(
+      (sum, d) => sum + this.deliveryTransportMontant(d),
+      0,
+    );
+    const montant = marchandise + transportTotal;
     if (montant <= 0) return;
 
-    const libelle = order.designation;
-    const notes = order.reference ? `Commande ${order.reference}` : undefined;
+    const libelle =
+      transportTotal > 0 && marchandise > 0
+        ? `${order.designation} (marchandise + transport)`
+        : transportTotal > 0
+          ? `${order.designation} — transport`
+          : order.designation;
+    const notes = this.buildOrderInvoiceNotes(order, billableDeliveries);
     const existing = await this.findOrderInvoice(order);
+    let paymentResolved = payment;
+    if (!paymentResolved && mergedPaye > 0 && existing) {
+      const basePaye = Number(existing.montantPaye ?? 0);
+      paymentResolved = {
+        montantPaye: Math.min(basePaye + mergedPaye, montant),
+        datePaiement: mergedDatePaiement ?? existing.datePaiement,
+      };
+    } else if (!paymentResolved && mergedPaye > 0 && !existing) {
+      paymentResolved = {
+        montantPaye: Math.min(mergedPaye, montant),
+        datePaiement: mergedDatePaiement,
+      };
+    }
     const { montantPaye, statut, datePaiement } = this.resolveOrderPayment(
       montant,
       order,
       existing,
-      payment,
+      paymentResolved,
     );
 
     if (existing) {
@@ -187,8 +299,9 @@ export class ClientOperationsService {
       await this.syncInvoiceAmount(existing.id, montant, {
         clientTierId: order.clientId,
         clientOrderId: order.id,
+        clientDeliveryId: undefined,
         factureClientLibelle: libelle,
-        notes: notes ?? existing.notes,
+        notes,
         montantPaye,
         statut,
         datePaiement,
@@ -277,7 +390,7 @@ export class ClientOperationsService {
       }
       if (this.deliveryTransportMontant(delivery) <= 0) {
         throw new BadRequestException(
-          'Indiquez le montant transport refacturé au client (FAC-LIV) lorsque le fournisseur vous facture le transport.',
+          'Indiquez le montant transport refacturé au client lorsque le fournisseur vous facture le transport.',
         );
       }
       return;
@@ -289,113 +402,12 @@ export class ClientOperationsService {
     }
   }
 
-  /** Supprime la FAC-LIV lorsqu’il n’y a plus de montant transport à facturer au client. */
-  private async clearDeliveryTransportInvoice(
-    delivery: ClientDelivery,
-    actor?: AuditActor,
-  ): Promise<void> {
-    if (!delivery.invoiceId) return;
-    const inv = await this.invoiceRepo.findOne({ where: { id: delivery.invoiceId } });
-    if (!inv || inv.clientDeliveryId !== delivery.id) return;
-    await this.invoiceRepo.delete(delivery.invoiceId);
-    await this.deliveryRepo.update(delivery.id, { invoiceId: undefined });
-    await this.auditLogsService.log({
-      module: 'invoices',
-      action: 'DELETE',
-      entityId: inv.id,
-      summary: `Suppression facture transport ${inv.numero}`,
-      beforeData: inv as unknown as Record<string, unknown>,
-      actor,
-    });
-  }
-
-  private buildTransportInvoiceNotes(delivery: ClientDelivery, order: ClientOrder): string {
-    const parts = [
-      `Transport — ${delivery.lieuLivraison}`,
-      `Commande : ${order.designation}`,
-    ];
-    const fournisseur = delivery.transportFournisseur;
-    if (fournisseur?.nom) {
-      parts.push(`Transport fournisseur : ${fournisseur.nom}`);
-    }
-    const ch = delivery.chauffeur;
-    const tr = delivery.tracteur;
-    if (ch) parts.push(`Chauffeur : ${ch.prenom} ${ch.nom}`.trim());
-    if (tr) parts.push(`Camion : ${tr.immatriculation}`);
-    return parts.join(' · ');
-  }
-
-  /** Facture transport (FAC-LIV) distincte de la facture marchandise (FAC-CMD). */
-  private async ensureDeliveryInvoice(
-    delivery: ClientDelivery,
+  /** Recalcule la FAC-CMD (marchandise + transports des livraisons). */
+  private async syncOrderInvoiceFromDeliveries(
     order: ClientOrder,
     actor?: AuditActor,
   ): Promise<void> {
-    const montant = this.deliveryTransportMontant(delivery);
-    if (montant <= 0) {
-      await this.clearDeliveryTransportInvoice(delivery, actor);
-      return;
-    }
-    const bySupplier = this.isTransportBilledBySupplier(delivery);
-    if (!bySupplier && !this.hasTransportMission(delivery)) {
-      await this.clearDeliveryTransportInvoice(delivery, actor);
-      return;
-    }
-
-    const full = await this.findDelivery(delivery.id);
-    const libelle = `${order.designation} — transport`;
-    const notes = this.buildTransportInvoiceNotes(full, order);
-    const dateCreation = full.datePrevue ?? full.dateLivraison ?? order.dateCommande;
-
-    if (full.invoiceId) {
-      const inv = await this.invoiceRepo.findOne({ where: { id: full.invoiceId } });
-      if (inv) {
-        await this.syncInvoiceAmount(full.invoiceId, montant, {
-          clientTierId: order.clientId,
-          clientOrderId: order.id,
-          clientDeliveryId: full.id,
-          factureClientLibelle: libelle,
-          notes,
-        });
-        const after = await this.invoiceRepo.findOne({ where: { id: full.invoiceId } });
-        await this.auditLogsService.log({
-          module: 'invoices',
-          action: 'UPDATE',
-          entityId: full.invoiceId,
-          summary: `Mise à jour facture transport ${inv.numero}`,
-          beforeData: inv as unknown as Record<string, unknown>,
-          afterData: (after ?? inv) as unknown as Record<string, unknown>,
-          actor,
-        });
-        return;
-      }
-    }
-
-    const inv = this.invoiceRepo.create({
-      id: uuidv4(),
-      numero: await this.nextInvoiceNum('FAC-LIV'),
-      clientOrderId: order.id,
-      clientDeliveryId: full.id,
-      clientTierId: order.clientId,
-      statut: 'en_attente',
-      montantHT: montant,
-      montantHTApresRemise: montant,
-      montantTTC: montant,
-      montantPaye: 0,
-      dateCreation,
-      factureClientLibelle: libelle,
-      notes,
-    });
-    const saved = await this.invoiceRepo.save(inv);
-    await this.deliveryRepo.update(full.id, { invoiceId: saved.id });
-    await this.auditLogsService.log({
-      module: 'invoices',
-      action: 'CREATE',
-      entityId: saved.id,
-      summary: `Création facture transport ${saved.numero} (${montant.toLocaleString('fr-FR')} FCFA)`,
-      afterData: saved as unknown as Record<string, unknown>,
-      actor,
-    });
+    await this.ensureOrderInvoice(order, undefined, actor);
   }
 
   private deriveOrderStatus(deliveries: ClientDelivery[]): ClientOrderStatus {
@@ -671,12 +683,7 @@ export class ClientOperationsService {
     const saved = await this.deliveryRepo.save(row);
     await this.syncOrderStatusFromDeliveries(order.id);
     const freshOrder = await this.findOrder(order.id);
-    await this.ensureOrderInvoice(freshOrder, undefined, actor);
-    if (modeSortie !== 'retrait_hub') {
-      await this.ensureDeliveryInvoice(saved, freshOrder, actor);
-    } else {
-      await this.clearDeliveryTransportInvoice(saved, actor);
-    }
+    await this.syncOrderInvoiceFromDeliveries(freshOrder, actor);
     const result = await this.findDelivery(saved.id);
     await this.auditLogsService.log({
       module: 'client-deliveries',
@@ -782,12 +789,7 @@ export class ClientOperationsService {
     );
     const updated = await this.findDelivery(id);
     const order = await this.findOrder(updated.clientOrderId);
-    await this.ensureOrderInvoice(order, undefined, actor);
-    if (updated.modeSortie === 'retrait_hub') {
-      await this.clearDeliveryTransportInvoice(updated, actor);
-    } else {
-      await this.ensureDeliveryInvoice(updated, order, actor);
-    }
+    await this.syncOrderInvoiceFromDeliveries(order, actor);
     await this.auditLogsService.log({
       module: 'client-deliveries',
       action: 'UPDATE',
@@ -802,8 +804,11 @@ export class ClientOperationsService {
 
   async removeDelivery(id: string, actor?: AuditActor): Promise<void> {
     const existing = await this.findDelivery(id);
+    const orderId = existing.clientOrderId;
     await this.deliveryRepo.delete(id);
-    await this.syncOrderStatusFromDeliveries(existing.clientOrderId);
+    await this.syncOrderStatusFromDeliveries(orderId);
+    const order = await this.findOrder(orderId);
+    await this.syncOrderInvoiceFromDeliveries(order, actor);
     await this.auditLogsService.log({
       module: 'client-deliveries',
       action: 'DELETE',

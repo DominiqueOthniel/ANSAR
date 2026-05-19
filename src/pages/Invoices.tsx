@@ -54,6 +54,7 @@ import {
   clientInvoiceNotesPreview,
   clientInvoiceTypeLabel,
   getClientInvoiceKind,
+  isSupersededClientDeliveryInvoice,
 } from '@/lib/invoice-client-display';
 
 const INVOICE_SORT_OPTIONS = [
@@ -626,6 +627,8 @@ export default function Invoices() {
   const filteredInvoices = useMemo(
     () =>
       invoices.filter(invoice => {
+        if (isSupersededClientDeliveryInvoice(invoice, invoices)) return false;
+
         const trip = getTrip(invoice.trajetId);
         const parcelEx = getParcelExpedition(invoice.parcelExpeditionId);
         const expense = getExpense(invoice.expenseId);

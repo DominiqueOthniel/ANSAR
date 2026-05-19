@@ -236,12 +236,11 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       (inv) => inv.id === order.invoiceId || inv.clientOrderId === order.id,
     );
 
-  const invoiceForDelivery = (delivery: ClientDelivery) =>
-    invoices.find(
-      (inv) =>
-        inv.id === delivery.invoiceId ||
-        inv.clientDeliveryId === delivery.id,
-    );
+  const invoiceForDelivery = (delivery: ClientDelivery) => {
+    const order = orders.find((o) => o.id === delivery.clientOrderId);
+    if (!order) return undefined;
+    return invoiceForOrder(order);
+  };
 
   const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState<ClientDelivery | null>(null);
@@ -546,7 +545,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       billedBySupplier &&
       (!deliveryForm.montantTransport || deliveryForm.montantTransport <= 0)
     ) {
-      toast.error('Indiquez le montant transport refacturé au client (FAC-LIV).');
+      toast.error('Indiquez le montant transport refacturé au client (inclus sur la facture commande).');
       return;
     }
     await withGuard(async () => {
@@ -757,7 +756,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
                     >
                       <FileText className="h-3 w-3" />
-                      Facture {invoiceForDelivery(d)!.numero}
+                      Transport inclus — facture {invoiceForDelivery(d)!.numero}
                     </Link>
                   )}
                   <Button
@@ -1202,8 +1201,8 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 <span className="text-sm leading-snug">
                   <span className="font-medium">Transport sous-traité (fournisseur)</span>
                   <span className="block text-xs text-muted-foreground mt-0.5">
-                    Le fournisseur vous facture le transport ; vous le refacturez ensuite au client
-                    (FAC-LIV), en plus de la marchandise (FAC-CMD).
+                    Le fournisseur vous facture le transport ; le montant refacturé au client est
+                    inclus sur la facture commande (FAC-CMD), détaillé par livraison.
                   </span>
                 </span>
               </label>
@@ -1229,7 +1228,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Génère une FAC-LIV pour le client (coût fournisseur + marge éventuelle).
+                      Ajouté au total de la facture commande (coût fournisseur + marge éventuelle).
                     </p>
                   </div>
                 </>
@@ -1246,7 +1245,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Flotte interne — facturé au client par votre société (FAC-LIV).
+                    Flotte interne — inclus sur la facture commande du client.
                   </p>
                 </div>
               )}

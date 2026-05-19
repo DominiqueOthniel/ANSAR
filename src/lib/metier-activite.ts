@@ -11,9 +11,9 @@ export const PAGE_DASHBOARD_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Synthèse enca
 export const PAGE_TRAJETS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fil d’Ariane volontairement simple : enregistrez les fournisseurs de ramassage dans Tiers, puis enchaînez les arrêts « chargement » (un site fournisseur par ligne, dans l’ordre du camion) puis les « livraison ». Résumé origine / destination + liste d’arrêts = la mission lisible d’un coup d’œil ; plusieurs clients peuvent être facturés sur un même trajet.`;
 
 export const PAGE_FACTURES_DESCRIPTION =
-  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Les factures FAC-CMD couvrent la marchandise ; les FAC-LIV le transport refacturé au client (flotte interne ou transport sous-traité chez un fournisseur).';
+  'Facturation des prestations ou marges vendues à vos clients (trajets, expéditions, frais). Les factures FAC-CMD regroupent marchandise et transport des livraisons (détail indiqué sur la facture).';
 
-export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, commandes, livraisons, factures et envois colis. Sur une livraison, cochez « transport sous-traité (fournisseur) » lorsque le fournisseur vous facture le transport : indiquez le fournisseur et le montant refacturé au client — une FAC-LIV est générée en plus de la FAC-CMD marchandise.`;
+export const PAGE_CLIENTS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Fiches partenaires : coordonnées, encours, commandes, livraisons, factures et envois colis. Sur une livraison, cochez « transport sous-traité (fournisseur) » lorsque le fournisseur vous facture le transport : le montant refacturé est ajouté à la facture commande (FAC-CMD), avec le détail de chaque livraison.`;
 
 export const PAGE_TIERS_DESCRIPTION = `${ACTIVITE_ROLE_COURT} Propriétaires de camions, clients, fournisseurs (points de chargement / contacts site), et personnel siège (employés) pour lier les salaires hors chauffeurs — chaque fiche clarifie qui intervient sur la chaîne.`;
 
