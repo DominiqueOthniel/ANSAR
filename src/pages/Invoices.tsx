@@ -49,6 +49,12 @@ import {
   tripHasMultipleInvoicePayers,
   sumInvoicePaymentSlices,
 } from '@/lib/invoice-payment-slices';
+import {
+  buildClientInvoiceDisplay,
+  clientInvoiceNotesPreview,
+  clientInvoiceTypeLabel,
+  getClientInvoiceKind,
+} from '@/lib/invoice-client-display';
 
 const INVOICE_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date création (récent → ancien)' },
@@ -72,6 +78,8 @@ export default function Invoices() {
     expenses,
     thirdParties,
     parcelExpeditions,
+    clientOrders,
+    clientDeliveries,
     createInvoice,
     updateInvoice,
     deleteInvoice,
@@ -2440,7 +2448,22 @@ export default function Invoices() {
                   const parcelExRow = getParcelExpedition(invoice.parcelExpeditionId);
                   const isExpenseInvoice = !!invoice.expenseId;
                   const isParcelInvoice = !!invoice.parcelExpeditionId;
-                  
+                  const clientKind = getClientInvoiceKind(invoice);
+                  const clientDisplay =
+                    clientKind &&
+                    buildClientInvoiceDisplay(
+                      invoice,
+                      clientOrders,
+                      clientDeliveries,
+                      (id) => (id ? getDriverName(id) : '—'),
+                      (id) => (id ? getTruckLabel(id) : '—'),
+                      (id) =>
+                        id ? thirdParties.find((tp) => tp.id === id)?.nom ?? '—' : '—',
+                    );
+                  const notesPreview = clientKind
+                    ? clientInvoiceNotesPreview(invoice, clientKind)
+                    : invoice.notes;
+
                   return (
                     <TableRow key={invoice.id} className="hover:bg-muted/50 transition-colors duration-200 [&>td]:align-top">
                       <TableCell className="whitespace-nowrap align-top">
@@ -2456,6 +2479,18 @@ export default function Invoices() {
                         ) : isParcelInvoice ? (
                           <Badge variant="outline" className="bg-sky-100 text-sky-800 dark:bg-sky-950/30 dark:text-sky-300 border-sky-300">
                             📦 Expédition
+                          </Badge>
+                        ) : clientKind ? (
+                          <Badge
+                            variant="outline"
+                            className={
+                              clientKind === 'delivery'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-300'
+                                : 'bg-violet-100 text-violet-800 dark:bg-violet-950/30 dark:text-violet-300 border-violet-300'
+                            }
+                          >
+                            {clientKind === 'delivery' ? '🚚' : <Package className="h-3 w-3 inline mr-0.5" />}
+                            {clientInvoiceTypeLabel(clientKind)}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-300">
@@ -2504,6 +2539,15 @@ export default function Invoices() {
                             <div className="text-xs text-muted-foreground mt-1">
                               Chauffeur : {getDriverName(parcelExRow.chauffeurId)}
                             </div>
+                          </div>
+                        ) : clientDisplay ? (
+                          <div>
+                            <div className="font-medium">{clientDisplay.title}</div>
+                            {clientDisplay.lines.map((line) => (
+                              <div key={line} className="text-xs text-muted-foreground mt-0.5">
+                                {line}
+                              </div>
+                            ))}
                           </div>
                         ) : trip ? (
                           <div>
@@ -2570,10 +2614,10 @@ export default function Invoices() {
                 </Badge>
                       </TableCell>
                       <TableCell className="align-top max-w-[10rem]">
-                        {invoice.notes ? (
-                          <div className="text-sm text-muted-foreground max-w-xs" title={invoice.notes}>
+                        {notesPreview ? (
+                          <div className="text-sm text-muted-foreground max-w-xs" title={notesPreview}>
                             <span className="inline-flex items-center gap-1">
-                              📝 <span className="truncate">{invoice.notes}</span>
+                              📝 <span className="truncate">{notesPreview}</span>
                             </span>
                           </div>
                         ) : (
