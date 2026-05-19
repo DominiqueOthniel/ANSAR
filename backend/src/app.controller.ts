@@ -45,9 +45,22 @@ export class AppController {
     };
   }
 
+  /** Routes métier récentes — présentes dans le binaire si `capabilities` les liste toutes. */
+  private static readonly API_CAPABILITIES = [
+    'articles',
+    'merchandise-qualities',
+    'client-orders',
+    'client-deliveries',
+    'supplier-loadings',
+  ] as const;
+
   @Get('health')
-  health(): { status: string } {
-    return { status: 'ok' };
+  health(): { status: string; version: string; capabilities: string[] } {
+    return {
+      status: 'ok',
+      version: '1.1.0',
+      capabilities: [...AppController.API_CAPABILITIES],
+    };
   }
 
   @Delete('admin/purge')

@@ -8,6 +8,6 @@ export class CaisseConfig {
   @Column({ name: 'soldeInitial', type: 'decimal', precision: 15, scale: 2, default: 0 })
   soldeInitial: string;
 
-  @Column({ name: 'updatedAt', type: 'datetime', nullable: true })
+  @Column({ name: 'updatedAt', type: 'timestamp', nullable: true })
   updatedAt?: Date;
 }

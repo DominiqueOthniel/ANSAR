@@ -8,7 +8,7 @@ Koyeb propose un **free tier** avec 1 service web + 1 base de données. Ce guide
 
 - Un compte [Koyeb](https://www.koyeb.com) (connexion GitHub recommandée).
 - Une base **PostgreSQL** : par exemple [Supabase](https://supabase.com) (gratuit). Récupère l’URL en mode **Transaction (pooler)** : bouton **Connect** → URI, port **6543**. Si le mot de passe contient `#`, remplace-le par `%23` dans l’URL.
-- Le dépôt GitHub du projet (ex. `DominiqueOthniel/truck-track`).
+- Le dépôt GitHub du projet (ex. `DominiqueOthniel/ANSAR`, branche `main`).
 
 ---
 
@@ -67,8 +67,20 @@ Une fois le déploiement terminé, l’API est accessible à une URL du type :
 À vérifier :
 
 - **GET** `https://ton-url.koyeb.app/` → JSON d’accueil
-- **GET** `https://ton-url.koyeb.app/api/health` → `{"status":"ok"}`
+- **GET** `https://ton-url.koyeb.app/api/health` → `{"status":"ok","version":"1.1.0","capabilities":["articles",...]}`
 - **GET** `https://ton-url.koyeb.app/api/caisse/transactions` → `[]` ou tableau JSON (pas une page HTML « Cannot GET »)
+- **GET** `https://ton-url.koyeb.app/api/articles` → `[]` ou tableau JSON (**pas** 404)
+
+### Si le front logue « Route absente » (`articles`, `client-orders`, `supplier-loadings`, …)
+
+L’API répond (`/api/health` OK) mais ces routes renvoient **404** : Koyeb tourne encore sur une **ancienne version** du backend (avant les modules Articles / Clients / Chargements).
+
+1. Vérifie que le service Koyeb pointe vers le repo **ANSAR**, branche **main**, répertoire de build **`backend`**.
+2. **Redeploy** avec **Clear build cache** (rebuild complet depuis le dernier commit GitHub).
+3. Après déploiement, contrôle **GET** `/api/health` : le champ `capabilities` doit lister `articles`, `client-orders`, etc.
+4. Base PostgreSQL :
+   - soit `DB_SYNCHRONIZE=true` pour **un** déploiement (création des tables), puis repasser à `false` ;
+   - soit exécuter `backend/sql-migrations/modules-articles-clients-chargements.sql` dans Supabase si `DB_SYNCHRONIZE=false`.
 
 ### Si le front affiche « Cannot GET /api/caisse/... »
 
@@ -86,7 +98,7 @@ Si tu préfères la ligne de commande (après [installation de la CLI](https://w
 
 ```bash
 koyeb app init truck-track-api \
-  --git github.com/DominiqueOthniel/truck-track \
+  --git github.com/DominiqueOthniel/ANSAR \
   --git-branch main \
   --git-workdir backend \
   --git-buildpack-build-command "NPM_CONFIG_PRODUCTION=false npm install && npm run build" \
