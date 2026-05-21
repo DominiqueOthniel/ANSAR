@@ -151,11 +151,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     <div className="min-h-screen bg-background relative">
       {/* Alertes système */}
       {apiError && (
-        <Alert variant="destructive" className="rounded-none border-x-0 border-t-0 z-50 relative">
-          <AlertCircle className="h-4 w-4" />
+        <Alert className="rounded-none border-x-0 border-t-0 z-50 relative bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-900/60">
+          <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-300" />
           <AlertDescription>
-            {apiError} — Démarrez le backend : <span className="font-mono">cd backend && npm run start:dev</span>.
-            Vérifiez <span className="font-mono">VITE_API_URL</span> (ex. http://localhost:3000/api ; le suffixe /api est ajouté automatiquement si absent).
+            Connexion momentanément indisponible. Certaines données peuvent prendre plus de temps à se synchroniser ; vous pouvez continuer et réessayer dans un instant.
           </AlertDescription>
         </Alert>
       )}
