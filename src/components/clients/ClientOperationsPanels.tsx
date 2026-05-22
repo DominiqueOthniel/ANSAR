@@ -306,6 +306,20 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     }
   };
 
+  const handleDeleteDelivery = async (d: ClientDelivery) => {
+    if (d.statut !== 'annulee') {
+      toast.error('Annulez d’abord la livraison avant de la supprimer.');
+      return;
+    }
+    if (!confirm(`Supprimer la livraison « ${d.lieuLivraison} » ?`)) return;
+    try {
+      await deleteClientDelivery(d.id);
+      toast.success('Livraison supprimée');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Suppression impossible');
+    }
+  };
+
   const openEditOrder = (o: ClientOrder) => {
     if (!isClientOrderEditable(o.statut)) {
       toast.error('Cette commande est livrée ou annulée et ne peut plus être modifiée.');
@@ -762,16 +776,30 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                       Transport inclus — facture {invoiceForDelivery(d)!.numero}
                     </Link>
                   )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="mt-1 h-7 px-2"
-                    onClick={() => openEditDelivery(d)}
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    Modifier
-                  </Button>
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2"
+                      onClick={() => openEditDelivery(d)}
+                    >
+                      <Edit className="h-3 w-3 mr-1" />
+                      Modifier
+                    </Button>
+                    {d.statut === 'annulee' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        onClick={() => handleDeleteDelivery(d)}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Supprimer
+                      </Button>
+                    )}
+                  </div>
                 </li>
               );
             })}
