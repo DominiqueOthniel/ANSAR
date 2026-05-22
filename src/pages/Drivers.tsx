@@ -510,6 +510,28 @@ export default function Drivers() {
               color: #111827;
               background: #fff;
             }
+            .pdf-print-toolbar {
+              position: sticky;
+              top: 0;
+              z-index: 10;
+              display: flex;
+              justify-content: flex-end;
+              margin: -24px -24px 20px -24px;
+              padding: 10px 12px;
+              background: rgba(248, 250, 252, 0.96);
+              border-bottom: 1px solid #e2e8f0;
+              backdrop-filter: blur(8px);
+            }
+            .pdf-print-button {
+              border: 0;
+              border-radius: 8px;
+              background: #7c3aed;
+              color: #fff;
+              font: 700 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              padding: 9px 14px;
+              cursor: pointer;
+              box-shadow: 0 6px 16px rgba(124, 58, 237, 0.2);
+            }
             .header {
               border-bottom: 3px solid #7c3aed;
               padding-bottom: 16px;
@@ -640,12 +662,16 @@ export default function Drivers() {
             }
             
             @media print {
+              .pdf-print-toolbar { display: none !important; }
               body { padding: 0; }
               .driver-card { break-inside: avoid; }
             }
           </style>
         </head>
         <body>
+          <div class="pdf-print-toolbar">
+            <button class="pdf-print-button" type="button" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+          </div>
           <div class="header">
             <h1>📊 Rapport Détaillé des Chauffeurs</h1>
             <p class="date">Généré le ${currentDate}</p>
@@ -692,9 +718,6 @@ export default function Drivers() {
     `);
 
     printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-    }, 300);
   };
 
   return (

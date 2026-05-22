@@ -399,6 +399,29 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
             background: #fff;
             margin: 0;
           }
+          .pdf-print-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin: -24px -24px 20px -24px;
+            padding: 10px 12px;
+            background: rgba(248, 250, 252, 0.96);
+            border-bottom: 1px solid #e2e8f0;
+            backdrop-filter: blur(8px);
+          }
+          .pdf-print-button {
+            border: 0;
+            border-radius: 8px;
+            background: ${accentColor};
+            color: #fff;
+            font: 700 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            padding: 9px 14px;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(30, 64, 175, 0.2);
+          }
           .pdf-brand {
             display: flex;
             align-items: center;
@@ -658,6 +681,7 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
             margin: 10mm 12mm;
           }
           @media print {
+            .pdf-print-toolbar { display: none !important; }
             html, body {
               padding: 0;
               margin: 0;
@@ -675,6 +699,9 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
         </style>
       </head>
       <body>
+        <div class="pdf-print-toolbar">
+          <button class="pdf-print-button" type="button" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+        </div>
         ${branding ? `
         <div class="pdf-brand">
           <div class="pdf-brand-logo">${TRUCK_LOGO_SVG_MARK}</div>
@@ -728,9 +755,6 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
   `);
 
   printWindow.document.close();
-  setTimeout(() => {
-    printWindow.print();
-  }, 250);
 }
 
 // Fonction utilitaire pour ajuster la luminosité d'une couleur hexadécimale

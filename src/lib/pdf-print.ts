@@ -36,6 +36,30 @@ export function getPdfBaseStyles(variant: PdfPrintVariant = 'report'): string {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    .pdf-print-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 10px 12px;
+      margin: 0 0 12px 0;
+      background: rgba(248, 250, 252, 0.96);
+      border-bottom: 1px solid #e2e8f0;
+      backdrop-filter: blur(8px);
+    }
+    .pdf-print-button {
+      border: 0;
+      border-radius: 8px;
+      background: #2563eb;
+      color: #fff;
+      font: 700 13px "Segoe UI", system-ui, -apple-system, sans-serif;
+      padding: 9px 14px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.2);
+    }
+    .pdf-print-button:hover { background: #1d4ed8; }
     .pdf-root {
       width: 100%;
       max-width: ${variant === 'report-landscape' ? '277mm' : '186mm'};
@@ -242,6 +266,7 @@ export function getPdfBaseStyles(variant: PdfPrintVariant = 'report'): string {
       margin-bottom: 10px;
     }
     @media print {
+      .pdf-print-toolbar { display: none !important; }
       html, body { height: auto; }
       .pdf-root { max-width: 100%; }
       thead { display: table-header-group; }
@@ -301,6 +326,9 @@ export function openPdfPrintWindow(opts: {
   <style>${styles}</style>
 </head>
 <body>
+  <div class="pdf-print-toolbar">
+    <button class="pdf-print-button" type="button" onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  </div>
   <div class="pdf-root ${variant === 'invoice' ? 'pdf-invoice-doc' : ''}">
     ${opts.bodyHtml}
   </div>
@@ -308,7 +336,6 @@ export function openPdfPrintWindow(opts: {
 </html>`);
 
   win.document.close();
-  setTimeout(() => win.print(), 300);
 }
 
 export function formatPdfDateTime(d = new Date()): string {
