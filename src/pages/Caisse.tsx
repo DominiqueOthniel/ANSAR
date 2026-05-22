@@ -761,7 +761,7 @@ export default function Caisse() {
       />
 
       {/* Statistiques : caisse + banque + trésorerie (tout recalculé à partir des mouvements) */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Caisse (espèces)</CardTitle>
@@ -771,32 +771,6 @@ export default function Caisse() {
               {soldeActuel.toLocaleString('fr-FR')} FCFA
             </div>
             <p className="text-xs text-muted-foreground mt-1">Solde actuel caisse</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Landmark className="h-4 w-4 text-amber-600" />
-              Solde banque (disponible)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${statsBanque.totalDisponible >= 0 ? 'text-amber-700 dark:text-amber-400' : 'text-red-600'}`}>
-              {statsBanque.totalDisponible.toLocaleString('fr-FR')} FCFA
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Somme des comptes — mis à jour via l’API et les prélèvements caisse
-            </p>
-            {statsBanque.parCompte.length > 1 && (
-              <ul className="mt-2 text-xs text-muted-foreground space-y-0.5 max-h-20 overflow-y-auto">
-                {statsBanque.parCompte.map((c) => (
-                  <li key={c.id} className="flex justify-between gap-2">
-                    <span className="truncate">{c.nom}</span>
-                    <span className="tabular-nums shrink-0">{c.solde.toLocaleString('fr-FR')}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </CardContent>
         </Card>
         <Card className="border-primary/30 bg-primary/5 dark:bg-primary/10">
