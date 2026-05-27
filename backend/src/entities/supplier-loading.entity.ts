@@ -1,8 +1,15 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { ThirdParty } from './third-party.entity';
+import { Truck } from './truck.entity';
 import { SupplierLoadingAssignment } from './supplier-loading-assignment.entity';
 
-export type SupplierLoadingEntryMode = 'camion' | 'rail' | 'autre';
+export type SupplierLoadingEntryMode =
+  | 'bon_simple'
+  | 'camion_ansar'
+  | 'rail'
+  | 'rendu_fournisseur'
+  | 'camion'
+  | 'autre';
 
 export type SupplierLoadingStatus =
   | 'brouillon'
@@ -52,9 +59,12 @@ export class SupplierLoading {
   @Column({ type: 'varchar', length: 255, nullable: true })
   lieu?: string;
 
-  /** camion | rail | autre */
-  @Column({ type: 'varchar', length: 16, default: 'camion' })
+  /** bon_simple | camion_ansar | rail | rendu_fournisseur (+ anciennes valeurs camion/autre). */
+  @Column({ type: 'varchar', length: 32, default: 'bon_simple' })
   modeEntree: SupplierLoadingEntryMode;
+
+  @Column({ type: 'uuid', nullable: true })
+  camionId?: string;
 
   /** Hub d’arrivée (ex. CAMRAIL Douala). */
   @Column({ type: 'varchar', length: 255, nullable: true })
@@ -69,6 +79,10 @@ export class SupplierLoading {
   @ManyToOne(() => ThirdParty)
   @JoinColumn({ name: 'fournisseurId' })
   fournisseur?: ThirdParty;
+
+  @ManyToOne(() => Truck, { nullable: true })
+  @JoinColumn({ name: 'camionId' })
+  camion?: Truck;
 
   @OneToMany(() => SupplierLoadingAssignment, (a) => a.loading)
   assignments?: SupplierLoadingAssignment[];

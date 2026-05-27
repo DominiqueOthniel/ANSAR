@@ -474,7 +474,8 @@ export interface SupplierLoadingPayload {
   montantBon?: number;
   dateChargement: string;
   statut?: SupplierLoadingStatusPayload;
-  modeEntree?: 'camion' | 'rail' | 'autre';
+  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
+  camionId?: string;
   hubArrivee?: string;
   dateArriveeHub?: string;
   lieu?: string;

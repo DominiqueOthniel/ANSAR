@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS supplier_loadings (
   "montantBon" DECIMAL(14, 2),
   "dateChargement" DATE NOT NULL,
   statut VARCHAR(32) NOT NULL,
+  "modeEntree" VARCHAR(32) NOT NULL DEFAULT 'bon_simple',
+  "camionId" UUID REFERENCES trucks(id),
+  "hubArrivee" VARCHAR(255),
+  "dateArriveeHub" DATE,
   lieu VARCHAR(255),
   notes TEXT
 );

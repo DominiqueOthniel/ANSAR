@@ -4,6 +4,7 @@ import type {
   Invoice,
   SupplierLoading,
   ThirdParty,
+  Truck,
 } from '@/contexts/AppContext';
 import { sumEncoursClientPourPlafond, type CreditLike } from '@/lib/client-credit-plafond';
 import { getClientInitialBalanceMontant } from '@/lib/client-initial-balance';
@@ -58,11 +59,154 @@ export type ClientsExportContext = {
   clientDeliveries: ClientDelivery[];
   invoices: Invoice[];
   supplierLoadings: SupplierLoading[];
+  trucks: Truck[];
   credits: CreditLike[];
   soldeInitialByClientId: Map<string, number>;
   filtersDescription?: string;
   fileNamePrefix?: string;
 };
+
+type ClientLedgerEntry = {
+  date: string;
+  qtes: string | number;
+  qltes: string;
+  atc: string;
+  camion: string;
+  prixUnitaire: string | number;
+  debit: number;
+  credit: number;
+  sortKey: string;
+};
+
+function getOrderInvoice(order: ClientOrder, invoices: Invoice[]): Invoice | undefined {
+  return order.invoiceId
+    ? invoices.find((i) => i.id === order.invoiceId)
+    : invoices.find((i) => i.clientOrderId === order.id);
+}
+
+function getOrderCamionLabel(
+  order: ClientOrder,
+  deliveries: ClientDelivery[],
+  trucks: Truck[],
+): string {
+  const labels = deliveries
+    .filter((d) => d.clientOrderId === order.id && d.tracteurId)
+    .map((d) => trucks.find((t) => t.id === d.tracteurId)?.immatriculation)
+    .filter((x): x is string => !!x);
+  return [...new Set(labels)].join(' / ') || '—';
+}
+
+function getInvoiceCreditForClient(inv: Invoice, client: ThirdParty): number {
+  const paid = inv.montantPaye ?? 0;
+  if (paid <= 0) return 0;
+  const slices = inv.paiementsEncaissements ?? [];
+  if (slices.length === 0) return paid;
+  return slices
+    .filter((p) => p.clientTierId === client.id || p.payeurLibelle === client.nom)
+    .reduce((sum, p) => sum + p.montant, 0);
+}
+
+function buildClientLedgerRows(
+  client: ThirdParty,
+  orders: ClientOrder[],
+  deliveries: ClientDelivery[],
+  clientInvoices: Invoice[],
+  ctx: ClientsExportContext,
+): (string | number)[][] {
+  const entries: ClientLedgerEntry[] = [];
+  const soldeInitial = ctx.soldeInitialByClientId.get(client.id) ?? 0;
+
+  if (soldeInitial > 0) {
+    entries.push({
+      date: '—',
+      qtes: '',
+      qltes: 'Solde initial',
+      atc: '',
+      camion: '',
+      prixUnitaire: '',
+      debit: Math.round(soldeInitial),
+      credit: 0,
+      sortKey: '0000-00-00',
+    });
+  }
+
+  orders.forEach((order) => {
+    const inv = getOrderInvoice(order, ctx.invoices);
+    const debit = inv?.montantTTC ?? order.montant ?? 0;
+    if (debit <= 0) return;
+    entries.push({
+      date: order.dateCommande,
+      qtes: order.quantite ?? '',
+      qltes: order.designation,
+      atc: cell(order.reference),
+      camion: getOrderCamionLabel(order, deliveries, ctx.trucks),
+      prixUnitaire: order.prixUnitaire != null ? Math.round(order.prixUnitaire) : '',
+      debit: Math.round(debit),
+      credit: 0,
+      sortKey: order.dateCommande,
+    });
+  });
+
+  clientInvoices
+    .filter((inv) => !inv.clientOrderId && !inv.clientDeliveryId)
+    .forEach((inv) => {
+      entries.push({
+        date: inv.dateCreation,
+        qtes: '',
+        qltes: inv.factureClientLibelle || inv.numero,
+        atc: inv.numero,
+        camion: '',
+        prixUnitaire: '',
+        debit: Math.round(inv.montantTTC),
+        credit: 0,
+        sortKey: inv.dateCreation,
+      });
+    });
+
+  clientInvoices.forEach((inv) => {
+    const credit = getInvoiceCreditForClient(inv, client);
+    if (credit <= 0) return;
+    entries.push({
+      date: inv.datePaiement || inv.dateCreation,
+      qtes: '',
+      qltes: `Vers/${inv.modePaiement || 'Paiement'}`,
+      atc: '',
+      camion: '',
+      prixUnitaire: '',
+      debit: 0,
+      credit: Math.round(credit),
+      sortKey: inv.datePaiement || inv.dateCreation,
+    });
+  });
+
+  let solde = 0;
+  const sorted = stableSort(
+    entries.map((entry, index) => ({ ...entry, index })),
+    (a, b) => {
+      const byDate = frCollator.compare(a.sortKey, b.sortKey);
+      return byDate !== 0 ? byDate : a.index - b.index;
+    },
+  );
+
+  if (sorted.length === 0) {
+    return [['—', '', 'Aucun mouvement', '', '', '', '', '', '']];
+  }
+
+  return sorted.map((entry) => {
+    solde += entry.debit - entry.credit;
+    return [
+      entry.date,
+      entry.qtes,
+      entry.qltes,
+      entry.atc,
+      entry.camion,
+      entry.prixUnitaire,
+      entry.debit > 0 ? entry.debit : '',
+      entry.credit > 0 ? entry.credit : '',
+      Math.round(solde),
+    ];
+  });
+}
 
 function buildClientDetailBlocks(
   client: ThirdParty,
@@ -194,6 +338,11 @@ function buildClientDetailBlocks(
       title: 'Fiche & encours',
       columns: ['Champ', 'Valeur'],
       rows: ficheRows,
+    },
+    {
+      title: 'Compte client',
+      columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'N°CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
+      rows: buildClientLedgerRows(client, orders, deliveries, clientInvoices, ctx),
     },
     {
       title: `Commandes (${orders.length})`,

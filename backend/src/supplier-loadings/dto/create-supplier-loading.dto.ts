@@ -21,6 +21,15 @@ const STATUTS = [
   'annule',
 ] as const;
 
+const MODES_ENTREE = [
+  'bon_simple',
+  'camion_ansar',
+  'rail',
+  'rendu_fournisseur',
+  'camion',
+  'autre',
+] as const;
+
 export class CreateSupplierLoadingDto {
   @IsUUID()
   fournisseurId: string;
@@ -65,8 +74,12 @@ export class CreateSupplierLoadingDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['camion', 'rail', 'autre'])
-  modeEntree?: 'camion' | 'rail' | 'autre';
+  @IsIn(MODES_ENTREE)
+  modeEntree?: (typeof MODES_ENTREE)[number];
+
+  @IsOptional()
+  @IsUUID()
+  camionId?: string;
 
   @IsOptional()
   @IsString()

@@ -1,6 +1,13 @@
 /** Flux hub / CAMRAIL — entrée fournisseur et sortie vers le client. */
 
-export type LoadingEntryMode = 'camion' | 'rail' | 'autre';
+export type LoadingEntryMode =
+  | 'bon_simple'
+  | 'camion_ansar'
+  | 'rail'
+  | 'rendu_fournisseur'
+  /** Anciennes valeurs conservées pour les bons déjà enregistrés. */
+  | 'camion'
+  | 'autre';
 
 export type ClientDeliveryExitMode =
   | 'retrait_hub'
@@ -23,9 +30,10 @@ export const HUB_PRESETS = [
 ] as const;
 
 export const LOADING_ENTRY_MODE_OPTIONS: { value: LoadingEntryMode; label: string }[] = [
-  { value: 'camion', label: 'Camion (direct)' },
-  { value: 'rail', label: 'Rail / CAMRAIL' },
-  { value: 'autre', label: 'Autre' },
+  { value: 'bon_simple', label: 'Bon simple (client se débrouille)' },
+  { value: 'camion_ansar', label: 'Camion direct ANSAR' },
+  { value: 'rail', label: 'CAMRAIL' },
+  { value: 'rendu_fournisseur', label: 'Rendu fournisseur' },
 ];
 
 export const DELIVERY_EXIT_MODE_OPTIONS: {
@@ -51,9 +59,12 @@ export const DELIVERY_EXIT_MODE_OPTIONS: {
 ];
 
 const ENTRY_LABELS: Record<LoadingEntryMode, string> = {
-  camion: 'Camion',
-  rail: 'Rail / CAMRAIL',
-  autre: 'Autre',
+  bon_simple: 'Bon simple',
+  camion_ansar: 'Camion direct ANSAR',
+  rail: 'CAMRAIL',
+  rendu_fournisseur: 'Rendu fournisseur',
+  camion: 'Camion direct ANSAR',
+  autre: 'Bon simple',
 };
 
 const EXIT_LABELS: Record<ClientDeliveryExitMode, string> = {

@@ -63,13 +63,34 @@ function tracteurImmatForForm(truck: Truck): string {
   return full || truck.immatriculation;
 }
 
+function splitCombinedTruckImmat(immatriculation: string): { tracteur: string; remorque?: string } {
+  const parts = immatriculation
+    .trim()
+    .toUpperCase()
+    .split(/\s*(?:-|\/|\+|\\)\s*|\s{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return { tracteur: parts[0], remorque: parts.slice(1).join('-') };
+  }
+
+  return { tracteur: immatriculation.trim().toUpperCase() };
+}
+
 function exportTracteurImmat(truck: Truck): string {
-  return truck.type === 'tracteur' ? tracteurImmatForForm(truck) : '-';
+  if (truck.type !== 'tracteur') return '-';
+  const separateRemorque = truck.remorqueImmatriculation?.trim();
+  if (separateRemorque) return tracteurImmatForForm(truck);
+  return splitCombinedTruckImmat(truck.immatriculation).tracteur || truck.immatriculation;
 }
 
 function exportRemorqueImmat(truck: Truck): string {
   if (truck.type === 'remorqueuse') return truck.immatriculation;
-  return truck.remorqueImmatriculation?.trim() || '-';
+  const separateRemorque = truck.remorqueImmatriculation?.trim();
+  if (separateRemorque) return separateRemorque.toUpperCase();
+  if (truck.sousType !== 'tracteur_jumele') return '-';
+  return splitCombinedTruckImmat(truck.immatriculation).remorque || '-';
 }
 
 export default function Trucks() {

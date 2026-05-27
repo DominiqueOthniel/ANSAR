@@ -621,6 +621,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       clientDeliveries,
       invoices,
       supplierLoadings,
+      trucks,
       credits,
       soldeInitialByClientId,
       filtersDescription: getFiltersDescription(),

@@ -89,6 +89,7 @@ type LoadingFormState = {
   unite: string;
   dateChargement: string;
   modeEntree: LoadingEntryMode;
+  camionId: string;
   hubArrivee: string;
   dateArriveeHub: string;
   lieu: string;
@@ -107,7 +108,8 @@ const emptyForm = (): LoadingFormState => ({
   montantBonTouched: false,
   unite: '',
   dateChargement: todayIso(),
-  modeEntree: 'camion',
+  modeEntree: 'bon_simple',
+  camionId: '',
   hubArrivee: '',
   dateArriveeHub: '',
   lieu: '',
@@ -123,6 +125,7 @@ export default function Chargements() {
   const {
     supplierLoadings,
     thirdParties,
+    trucks,
     articles,
     clientOrders,
     createSupplierLoading,
@@ -171,6 +174,21 @@ export default function Chargements() {
     for (const tp of clients) m.set(tp.id, tp.nom);
     return m;
   }, [clients]);
+
+  const activeTrucks = useMemo(
+    () =>
+      stableSort(
+        trucks.filter((t) => t.statut === 'actif'),
+        (a, b) => frCollator.compare(a.immatriculation, b.immatriculation),
+      ),
+    [trucks],
+  );
+
+  const truckLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of trucks) m.set(t.id, `${t.immatriculation} · ${t.modele}`);
+    return m;
+  }, [trucks]);
 
   const sortedLoadings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -272,6 +290,7 @@ export default function Chargements() {
       unite: l.unite ?? '',
       dateChargement: l.dateChargement,
       modeEntree: l.modeEntree ?? 'camion',
+      camionId: l.camionId ?? '',
       hubArrivee: l.hubArrivee ?? '',
       dateArriveeHub: l.dateArriveeHub ?? '',
       lieu: l.lieu ?? '',
@@ -317,8 +336,14 @@ export default function Chargements() {
         toast.error('Date de chargement requise.');
         return;
       }
+      if (form.modeEntree === 'camion_ansar' && !form.camionId) {
+        toast.error('Choisissez le camion ANSAR utilisé pour ce bon.');
+        return;
+      }
 
-      const hub = form.hubArrivee.trim() || undefined;
+      const isCamrail = form.modeEntree === 'rail';
+      const isCamionAnsar = form.modeEntree === 'camion_ansar' || form.modeEntree === 'camion';
+      const hub = isCamrail ? form.hubArrivee.trim() || undefined : undefined;
       const payload = {
         fournisseurId: form.fournisseurId,
         numeroBon: form.numeroBon.trim() || undefined,
@@ -329,8 +354,9 @@ export default function Chargements() {
         montantBon: form.montantBon,
         dateChargement: form.dateChargement,
         modeEntree: form.modeEntree,
+        camionId: isCamionAnsar ? form.camionId || undefined : undefined,
         hubArrivee: hub,
-        dateArriveeHub: form.dateArriveeHub.trim() || undefined,
+        dateArriveeHub: isCamrail ? form.dateArriveeHub.trim() || undefined : undefined,
         lieu: form.lieu.trim() || hub || undefined,
         notes: form.notes.trim() || undefined,
         ...(form.statut ? { statut: form.statut } : {}),
@@ -459,6 +485,8 @@ export default function Chargements() {
     { header: 'Fournisseur', value: (l: SupplierLoading) => l.fournisseurNom ?? '—' },
     { header: 'N° bon', value: (l: SupplierLoading) => l.numeroBon || '—' },
     { header: 'Désignation', value: (l: SupplierLoading) => l.designation },
+    { header: 'Mode d’entrée', value: (l: SupplierLoading) => formatLoadingEntryModeFr(l.modeEntree) },
+    { header: 'Camion ANSAR', value: (l: SupplierLoading) => l.camionId ? truckLabelById.get(l.camionId) ?? '—' : '—' },
     {
       header: 'Quantité',
       value: (l: SupplierLoading) =>
@@ -691,7 +719,10 @@ export default function Chargements() {
                       setForm((f) => ({
                         ...f,
                         modeEntree: mode,
-                        hubArrivee: mode === 'rail' && !f.hubArrivee.trim() ? hub : f.hubArrivee,
+                        camionId:
+                          mode === 'camion_ansar' || mode === 'camion' ? f.camionId : '',
+                        hubArrivee: mode === 'rail' ? f.hubArrivee.trim() || hub : '',
+                        dateArriveeHub: mode === 'rail' ? f.dateArriveeHub : '',
                         lieu: mode === 'rail' ? f.hubArrivee.trim() || hub : f.lieu,
                         statut:
                           !editing && mode === 'rail'
@@ -714,6 +745,35 @@ export default function Chargements() {
                     </SelectContent>
                   </Select>
                 </div>
+                {(form.modeEntree === 'camion_ansar' || form.modeEntree === 'camion') && (
+                  <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/30">
+                    <Label>Camion direct ANSAR *</Label>
+                    <Select
+                      value={form.camionId || ''}
+                      onValueChange={(camionId) => setForm((f) => ({ ...f, camionId }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un camion disponible" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeTrucks.length === 0 ? (
+                          <div className="p-3 text-sm text-muted-foreground">
+                            Aucun camion actif disponible.
+                          </div>
+                        ) : (
+                          activeTrucks.map((truck) => (
+                            <SelectItem key={truck.id} value={truck.id}>
+                              {truck.immatriculation} · {truck.modele}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      À utiliser quand ANSAR enlève directement la marchandise chez le fournisseur.
+                    </p>
+                  </div>
+                )}
                 {form.modeEntree === 'rail' && (
                   <div className="space-y-3 rounded-md border border-dashed p-3 bg-muted/30">
                     <div className="space-y-2">
@@ -929,6 +989,11 @@ export default function Chargements() {
                       <TableCell className="font-medium">{l.designation}</TableCell>
                       <TableCell className="text-xs max-w-[140px]">
                         <span className="block">{formatLoadingEntryModeFr(l.modeEntree)}</span>
+                        {l.camionId ? (
+                          <span className="text-muted-foreground block mt-0.5">
+                            {truckLabelById.get(l.camionId) ?? 'Camion ANSAR'}
+                          </span>
+                        ) : null}
                         {l.hubArrivee ? (
                           <span className="text-muted-foreground flex items-center gap-0.5 mt-0.5">
                             <MapPin className="h-3 w-3 shrink-0" />

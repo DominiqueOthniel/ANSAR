@@ -291,7 +291,8 @@ export interface SupplierLoading {
   montantBon?: number;
   dateChargement: string;
   statut: SupplierLoadingStatus;
-  modeEntree?: 'camion' | 'rail' | 'autre';
+  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
+  camionId?: string;
   hubArrivee?: string;
   dateArriveeHub?: string;
   lieu?: string;
@@ -733,9 +734,15 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
     dateChargement: String(r.dateChargement ?? ''),
     statut: r.statut as SupplierLoadingStatus,
     modeEntree:
-      r.modeEntree === 'rail' || r.modeEntree === 'autre' || r.modeEntree === 'camion'
+      r.modeEntree === 'bon_simple' ||
+      r.modeEntree === 'camion_ansar' ||
+      r.modeEntree === 'rendu_fournisseur' ||
+      r.modeEntree === 'rail' ||
+      r.modeEntree === 'autre' ||
+      r.modeEntree === 'camion'
         ? r.modeEntree
-        : 'camion',
+        : 'bon_simple',
+    camionId: r.camionId ? String(r.camionId) : undefined,
     hubArrivee: r.hubArrivee ? String(r.hubArrivee) : undefined,
     dateArriveeHub: r.dateArriveeHub ? String(r.dateArriveeHub) : undefined,
     lieu: r.lieu ? String(r.lieu) : undefined,

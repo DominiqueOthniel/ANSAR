@@ -6,6 +6,7 @@ import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignme
 import { ThirdParty } from '../entities/third-party.entity';
 import { ClientOrder } from '../entities/client-order.entity';
 import { Article } from '../entities/article.entity';
+import { Truck } from '../entities/truck.entity';
 import { SupplierLoadingsService } from './supplier-loadings.service';
 import { SupplierLoadingsController } from './supplier-loadings.controller';
 
@@ -17,6 +18,7 @@ import { SupplierLoadingsController } from './supplier-loadings.controller';
       ThirdParty,
       ClientOrder,
       Article,
+      Truck,
     ]),
     AuditLogsModule,
   ],

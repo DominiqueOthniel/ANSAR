@@ -15,6 +15,7 @@ import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignme
 import { ThirdParty } from '../entities/third-party.entity';
 import { ClientOrder } from '../entities/client-order.entity';
 import { Article } from '../entities/article.entity';
+import { Truck } from '../entities/truck.entity';
 import { CreateSupplierLoadingDto } from './dto/create-supplier-loading.dto';
 import { UpdateSupplierLoadingDto } from './dto/update-supplier-loading.dto';
 import { SetLoadingAssignmentsDto } from './dto/set-loading-assignments.dto';
@@ -33,6 +34,8 @@ export class SupplierLoadingsService {
     private readonly orderRepo: Repository<ClientOrder>,
     @InjectRepository(Article)
     private readonly articleRepo: Repository<Article>,
+    @InjectRepository(Truck)
+    private readonly truckRepo: Repository<Truck>,
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
@@ -70,7 +73,7 @@ export class SupplierLoadingsService {
     ) {
       return dto.statut;
     }
-    const mode = dto.modeEntree ?? 'camion';
+    const mode = dto.modeEntree ?? 'bon_simple';
     if (mode === 'rail' || dto.hubArrivee?.trim()) {
       return dto.dateArriveeHub?.trim() ? 'au_hub' : 'en_transit';
     }
@@ -120,6 +123,7 @@ export class SupplierLoadingsService {
   private loadingRelations() {
     return {
       fournisseur: true,
+      camion: true,
       assignments: {
         clientOrder: {
           client: true,
@@ -143,7 +147,17 @@ export class SupplierLoadingsService {
 
     if (!designation) throw new BadRequestException('Désignation requise.');
 
-    const modeEntree: SupplierLoadingEntryMode = dto.modeEntree ?? 'camion';
+    const modeEntree: SupplierLoadingEntryMode = dto.modeEntree ?? 'bon_simple';
+    const camionId =
+      modeEntree === 'camion_ansar' || modeEntree === 'camion' ? dto.camionId : undefined;
+    if (modeEntree === 'camion_ansar' && !camionId) {
+      throw new BadRequestException('Choisissez le camion ANSAR utilisé pour ce bon.');
+    }
+    if ((modeEntree === 'camion_ansar' || modeEntree === 'camion') && camionId) {
+      const truck = await this.truckRepo.findOne({ where: { id: camionId } });
+      if (!truck) throw new BadRequestException('Camion ANSAR introuvable.');
+      if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
+    }
     const hubArrivee = dto.hubArrivee?.trim() || undefined;
     const statut = this.resolveInitialStatut(dto);
 
@@ -159,6 +173,7 @@ export class SupplierLoadingsService {
       dateChargement: dto.dateChargement,
       statut,
       modeEntree,
+      camionId,
       hubArrivee,
       dateArriveeHub: dto.dateArriveeHub?.trim() || undefined,
       lieu: dto.lieu?.trim() || hubArrivee || undefined,
@@ -261,6 +276,22 @@ export class SupplierLoadingsService {
     }
     if (dto.dateChargement != null) loading.dateChargement = dto.dateChargement;
     if (dto.modeEntree != null) loading.modeEntree = dto.modeEntree;
+    if (dto.camionId !== undefined || dto.modeEntree != null) {
+      const nextMode = dto.modeEntree ?? loading.modeEntree;
+      const nextCamionId =
+        nextMode === 'camion_ansar' || nextMode === 'camion'
+          ? dto.camionId ?? loading.camionId
+          : undefined;
+      if (nextMode === 'camion_ansar' && !nextCamionId) {
+        throw new BadRequestException('Choisissez le camion ANSAR utilisé pour ce bon.');
+      }
+      if (nextCamionId) {
+        const truck = await this.truckRepo.findOne({ where: { id: nextCamionId } });
+        if (!truck) throw new BadRequestException('Camion ANSAR introuvable.');
+        if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
+      }
+      loading.camionId = nextCamionId;
+    }
     if (dto.hubArrivee !== undefined) loading.hubArrivee = dto.hubArrivee?.trim() || undefined;
     if (dto.dateArriveeHub !== undefined) {
       loading.dateArriveeHub = dto.dateArriveeHub?.trim() || undefined;
