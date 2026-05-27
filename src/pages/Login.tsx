@@ -95,9 +95,9 @@ export default function Login() {
             </div>
 
             <h1 className="text-3xl font-bold text-white mb-1">
-              Truck<span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">Track</span>
+              <span className="bg-gradient-to-r from-violet-300 via-white to-indigo-300 bg-clip-text text-transparent">ANSAR</span>
             </h1>
-            <p className="text-white/50 text-sm">Gestion de flotte</p>
+            <p className="text-white/50 text-sm">Gestion de flotte · Cameroun</p>
           </div>
 
           {/* Formulaire */}

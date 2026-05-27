@@ -1,11 +1,11 @@
 {
-  "name": "FleetPro - Gestion de Flotte",
-  "short_name": "FleetPro",
-  "description": "Application de gestion de flotte de camions",
+  "name": "ANSAR - Gestion de flotte",
+  "short_name": "ANSAR",
+  "description": "Application de gestion de flotte et logistique au Cameroun",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1E293B",
-  "theme_color": "#0EA5E9",
+  "background_color": "#0f1117",
+  "theme_color": "#6c3ad6",
   "orientation": "portrait-primary",
   "icons": [
     {
