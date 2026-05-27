@@ -21,6 +21,7 @@ import Chargements from "./pages/Chargements";
 import Fournisseurs from "./pages/Fournisseurs";
 import UsersPage from "./pages/Users";
 import NotFound from "./pages/NotFound";
+import { DocumentTitle } from "./components/DocumentTitle";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <DocumentTitle />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
