@@ -92,7 +92,6 @@ export default function Invoices() {
   const { canManageAccounting } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isExpenseInvoiceDialogOpen, setIsExpenseInvoiceDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -105,15 +104,11 @@ export default function Invoices() {
   /** Facture liée à une expédition (exclusif avec trajet). */
   const [invoiceMissionKind, setInvoiceMissionKind] = useState<'trip' | 'parcel'>('trip');
   const [selectedParcelExpeditionId, setSelectedParcelExpeditionId] = useState('');
-  const [selectedExpenseId, setSelectedExpenseId] = useState('');
   const [modePaiement, setModePaiement] = useState('');
   const [notes, setNotes] = useState('');
   const [tva, setTva] = useState<number>(0);
   const [tps, setTps] = useState<number>(0);
   const [remise, setRemise] = useState<number>(0); // Remise en pourcentage
-  const [expenseTva, setExpenseTva] = useState<number>(0);
-  const [expenseTps, setExpenseTps] = useState<number>(0);
-  const [expenseRemise, setExpenseRemise] = useState<number>(0);
   /** Montant HT de la facture en cours (trajet) — plusieurs factures possibles, plafond = reste TTC. */
   const [tripInvoiceMontantHt, setTripInvoiceMontantHt] = useState(0);
   const [invoiceTripClientTierId, setInvoiceTripClientTierId] = useState('');
@@ -121,7 +116,6 @@ export default function Invoices() {
   const lastTripIdForInvoiceBaseRef = useRef('');
 
   const { isSubmitting: isCreatingTripInvoice, withGuard: withTripInvoiceGuard } = useSubmitGuard();
-  const { isSubmitting: isCreatingExpenseInvoice, withGuard: withExpenseInvoiceGuard } = useSubmitGuard();
   const { isSubmitting: isConfirmingPayment, withGuard: withPaymentGuard } = useSubmitGuard();
 
   const tierClientsFiches = useMemo(
@@ -208,12 +202,6 @@ export default function Invoices() {
     () => getAvailableParcelExpeditionsForInvoicing(parcelExpeditions, invoices),
     [parcelExpeditions, invoices],
   );
-
-  // Obtenir les dépenses disponibles pour facturation (sans facture existante)
-  const availableExpenses = useMemo(() => {
-    const invoicedExpenseIds = new Set(invoices.map(inv => inv.expenseId).filter((id): id is string => !!id));
-    return expenses.filter(expense => !invoicedExpenseIds.has(expense.id));
-  }, [expenses, invoices]);
 
   const generateInvoiceNumber = () => {
     return genInvoiceNum(invoices);
@@ -316,57 +304,6 @@ export default function Invoices() {
         setInvoiceTripClientTierId('');
         setInvoiceTripClientLibelle('');
         lastTripIdForInvoiceBaseRef.current = '';
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erreur lors de la création');
-      }
-    });
-  };
-
-  const handleCreateExpenseInvoice = async () => {
-    if (!selectedExpenseId) {
-      toast.error('Veuillez sélectionner une dépense');
-      return;
-    }
-
-    const expense = expenses.find(e => e.id === selectedExpenseId);
-    if (!expense) return;
-
-    const montantHTInitial = expense.montant;
-    const montantRemise = montantHTInitial * (expenseRemise / 100);
-    const montantHTApresRemise = montantHTInitial - montantRemise;
-    const montantTVA = montantHTApresRemise * (expenseTva / 100);
-    const montantTPS = montantHTApresRemise * (expenseTps / 100);
-    const montantTTC = montantHTApresRemise + montantTVA + montantTPS;
-
-    const year = new Date().getFullYear();
-    const invoiceCount = invoices.filter(inv => inv.numero.startsWith(`FAC-EXP-${year}`)).length + 1;
-    const numero = `FAC-EXP-${year}-${String(invoiceCount).padStart(3, '0')}`;
-
-    await withExpenseInvoiceGuard(async () => {
-      try {
-        await createInvoice({
-          numero,
-          expenseId: selectedExpenseId,
-          statut: 'en_attente',
-          montantHT: montantHTInitial,
-          remise: expenseRemise > 0 ? expenseRemise : undefined,
-          montantHTApresRemise: expenseRemise > 0 ? montantHTApresRemise : undefined,
-          tva: expenseTva > 0 ? montantTVA : undefined,
-          tps: expenseTps > 0 ? montantTPS : undefined,
-          montantTTC,
-          montantPaye: 0,
-          dateCreation: new Date().toISOString().split('T')[0],
-          modePaiement: modePaiement || undefined,
-          notes: notes || undefined,
-        });
-        toast.success('Facture de dépense créée avec succès');
-        setIsExpenseInvoiceDialogOpen(false);
-        setSelectedExpenseId('');
-        setModePaiement('');
-        setNotes('');
-        setExpenseTva(0);
-        setExpenseTps(0);
-        setExpenseRemise(0);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors de la création');
       }
@@ -1869,330 +1806,6 @@ export default function Invoices() {
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Création...</>
                   ) : (
                     'Créer la facture'
-                  )}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={isExpenseInvoiceDialogOpen} onOpenChange={setIsExpenseInvoiceDialogOpen}>
-            {canManageAccounting && (
-            <DialogTrigger asChild>
-              <Button variant="outline" className="shadow-md hover:shadow-lg transition-all duration-300">
-                <Plus className="mr-2 h-4 w-4" />
-                Facture Dépense
-              </Button>
-            </DialogTrigger>
-            )}
-            <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Créer une facture de dépense</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                {/* Afficher le numéro de facture qui sera généré */}
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Numéro de facture qui sera attribué :</Label>
-                      <p className="text-2xl font-bold text-primary mt-1 font-mono">
-                        {(() => {
-                          const year = new Date().getFullYear();
-                          const invoiceCount = invoices.filter(inv => inv.numero.startsWith(`FAC-EXP-${year}`)).length + 1;
-                          return `FAC-EXP-${year}-${String(invoiceCount).padStart(3, '0')}`;
-                        })()}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-primary/20 rounded-lg">
-                      <FileText className="h-8 w-8 text-primary" />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="expense">Sélectionner une dépense *</Label>
-                  <Select value={selectedExpenseId} onValueChange={setSelectedExpenseId}>
-                    <SelectTrigger
-                      className="h-auto min-h-10 items-start gap-2 py-2 text-left [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:items-start"
-                    >
-                      <SelectValue placeholder="Sélectionner une dépense">
-                        {selectedExpenseId &&
-                          (() => {
-                            const expense = expenses.find((e) => e.id === selectedExpenseId);
-                            if (!expense) return selectedExpenseId;
-                            const truck = trucks.find((t) => t.id === expense.camionId);
-                            const supplier = expense.fournisseurId
-                              ? thirdParties.find((tp) => tp.id === expense.fournisseurId)
-                              : null;
-                            return (
-                              <div className="flex min-w-0 flex-1 flex-col gap-1 pr-1">
-                                <div className="min-w-0 truncate font-semibold">
-                                  {expense.categorie}
-                                  {expense.sousCategorie ? (
-                                    <span className="font-normal text-muted-foreground">
-                                      {' '}
-                                      — {expense.sousCategorie}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {truck ? `${EMOJI.camion} ${truck.immatriculation} · ` : ''}
-                                  {supplier ? `${supplier.nom} · ` : ''}
-                                  <span className="font-semibold text-primary">
-                                    {expense.montant.toLocaleString('fr-FR')} FCFA
-                                  </span>
-                                  {' · '}
-                                  {new Date(expense.date).toLocaleDateString('fr-FR')}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableExpenses.length === 0 ? (
-                        <div className="p-4 text-sm text-muted-foreground text-center">
-                          <p className="mb-2">{EMOJI.alerte} Aucune dépense disponible pour facturation</p>
-                          <p className="text-xs">
-                            Toutes les dépenses ont déjà une facture associée
-                          </p>
-                        </div>
-                      ) : (
-                        availableExpenses.map(expense => {
-                          const truck = trucks.find(t => t.id === expense.camionId);
-                          const supplier = expense.fournisseurId ? thirdParties.find(tp => tp.id === expense.fournisseurId) : null;
-                          return (
-                            <SelectItem key={expense.id} value={expense.id}>
-                              <div className="flex flex-col gap-1 py-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">{expense.categorie}</span>
-                                  {expense.sousCategorie && <span className="text-xs text-muted-foreground">- {expense.sousCategorie}</span>}
-                                </div>
-                                <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                                  {truck && <span>{EMOJI.camion} {truck.immatriculation}</span>}
-                                  {supplier && <span>🏢 {supplier.nom}</span>}
-                                  <span className="font-semibold text-primary">{expense.montant.toLocaleString('fr-FR')} FCFA</span>
-                                  <span>{EMOJI.date} {new Date(expense.date).toLocaleDateString('fr-FR')}</span>
-                                </div>
-                              </div>
-                            </SelectItem>
-                          );
-                        })
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Afficher les détails de la dépense sélectionnée */}
-                {selectedExpenseId && (() => {
-                  const selectedExpense = expenses.find(e => e.id === selectedExpenseId);
-                  if (!selectedExpense) return null;
-                  const truck = trucks.find(t => t.id === selectedExpense.camionId);
-                  const driver = selectedExpense.chauffeurId ? drivers.find(d => d.id === selectedExpense.chauffeurId) : null;
-                  const supplier = selectedExpense.fournisseurId ? thirdParties.find(tp => tp.id === selectedExpense.fournisseurId) : null;
-                  const trip = selectedExpense.tripId ? trips.find(t => t.id === selectedExpense.tripId) : null;
-
-                  return (
-                    <div className="bg-gradient-to-br from-muted/50 to-muted/30 border-2 border-primary/20 rounded-lg p-5 space-y-4 shadow-md">
-                      <div className="flex items-center justify-between pb-3 border-b border-border">
-                        <Label className="text-base font-bold">{EMOJI.liste} Informations de la dépense</Label>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2 bg-primary/5 rounded-lg p-3 border border-primary/10">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-semibold text-muted-foreground uppercase">Description</span>
-                          </div>
-                          <p className="text-lg font-bold text-primary">{selectedExpense.description}</p>
-                        </div>
-
-                        <div>
-                          <span className="text-xs font-semibold text-muted-foreground">📦 Catégorie</span>
-                          <p className="text-sm font-medium mt-1">{selectedExpense.categorie}</p>
-                          {selectedExpense.sousCategorie && (
-                            <p className="text-xs text-muted-foreground">Sous-catégorie: {selectedExpense.sousCategorie}</p>
-                          )}
-                        </div>
-
-                        <div>
-                          <span className="text-xs font-semibold text-muted-foreground">{EMOJI.argent} Montant</span>
-                          <p className="text-sm font-medium mt-1">{selectedExpense.montant.toLocaleString('fr-FR')} FCFA</p>
-                        </div>
-
-                        {truck && (
-                          <div>
-                            <span className="text-xs font-semibold text-muted-foreground">{EMOJI.camion} Camion</span>
-                            <p className="text-sm font-medium mt-1">{truck.immatriculation}</p>
-                            <p className="text-xs text-muted-foreground">Modèle: {truck.modele}</p>
-                          </div>
-                        )}
-
-                        {driver && (
-                          <div>
-                            <span className="text-xs font-semibold text-muted-foreground">{EMOJI.personne} Chauffeur</span>
-                            <p className="text-sm font-medium mt-1">{driver.prenom} {driver.nom}</p>
-                          </div>
-                        )}
-
-                        {supplier && (
-                          <div>
-                            <span className="text-xs font-semibold text-muted-foreground">🏢 Fournisseur</span>
-                            <p className="text-sm font-medium mt-1">{supplier.nom}</p>
-                          </div>
-                        )}
-
-                        {trip && (
-                          <div>
-                            <span className="text-xs font-semibold text-muted-foreground">🚚 Trajet lié</span>
-                            <p className="text-sm font-medium mt-1">{trip.origine} → {trip.destination}</p>
-                          </div>
-                        )}
-
-                        <div>
-                          <span className="text-xs font-semibold text-muted-foreground">{EMOJI.date} Date</span>
-                          <p className="text-sm font-medium mt-1">{new Date(selectedExpense.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <Label htmlFor="modePaiementExpense">Mode de paiement (optionnel)</Label>
-                  <Select value={modePaiement || 'none'} onValueChange={(value) => setModePaiement(value === 'none' ? '' : value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Aucun</SelectItem>
-                      <SelectItem value="Espèces">Espèces</SelectItem>
-                      <SelectItem value="Virement bancaire">Virement bancaire</SelectItem>
-                      <SelectItem value="Chèque">Chèque</SelectItem>
-                      <SelectItem value="Mobile Money">Mobile Money</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Section Remise, TVA et TPS pour dépense */}
-                {selectedExpenseId && (() => {
-                  const selectedExpense = expenses.find(e => e.id === selectedExpenseId);
-                  if (!selectedExpense) return null;
-                  
-                  const montantHTInitial = selectedExpense.montant;
-                  const montantRemise = montantHTInitial * (expenseRemise / 100);
-                  const montantHTApresRemise = montantHTInitial - montantRemise;
-                  const montantTVA = montantHTApresRemise * (expenseTva / 100);
-                  const montantTPS = montantHTApresRemise * (expenseTps / 100);
-                  const montantTTC = montantHTApresRemise + montantTVA + montantTPS;
-
-                  return (
-                    <div className="space-y-4 border-t pt-4">
-                      {/* Remise */}
-                      <div>
-                        <Label className="text-base font-semibold mb-3 block">Remise (optionnel)</Label>
-                        <div>
-                          <Label htmlFor="expenseRemise">Remise (%)</Label>
-                          <NumberInput
-                            id="expenseRemise"
-                            value={expenseRemise}
-                            onChange={(value) => setExpenseRemise(value || 0)}
-                            min={0}
-                            max={100}
-                            step={0.1}
-                            placeholder="0"
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">Ex: 10 pour 10% de remise</p>
-                        </div>
-                      </div>
-
-                      {/* TVA et TPS */}
-                      <div>
-                        <Label className="text-base font-semibold mb-3 block">Taux et taxes</Label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="expenseTva">TVA (%)</Label>
-                            <NumberInput
-                              id="expenseTva"
-                              value={expenseTva}
-                              onChange={(value) => setExpenseTva(value || 0)}
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              placeholder="0"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">Ex: 19.25 pour 19.25%</p>
-                          </div>
-                          <div>
-                            <Label htmlFor="expenseTps">TPS (%)</Label>
-                            <NumberInput
-                              id="expenseTps"
-                              value={expenseTps}
-                              onChange={(value) => setExpenseTps(value || 0)}
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              placeholder="0"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">Ex: 5 pour 5%</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Aperçu du calcul */}
-                      <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
-                        <Label className="text-sm font-semibold">Aperçu du calcul :</Label>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Montant HT initial :</span>
-                            <span className="font-medium">{montantHTInitial.toLocaleString('fr-FR')} FCFA</span>
-                          </div>
-                          {expenseRemise > 0 && (
-                            <>
-                              <div className="flex justify-between text-orange-600 dark:text-orange-400">
-                                <span>Remise ({expenseRemise}%) :</span>
-                                <span className="font-medium">-{montantRemise.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                              </div>
-                              <div className="flex justify-between pt-1 border-t border-border">
-                                <span className="text-muted-foreground">Montant HT après remise :</span>
-                                <span className="font-semibold">{montantHTApresRemise.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                              </div>
-                            </>
-                          )}
-                          {expenseTva > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">TVA ({expenseTva}%) :</span>
-                              <span className="font-medium">{montantTVA.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                            </div>
-                          )}
-                          {expenseTps > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">TPS ({expenseTps}%) :</span>
-                              <span className="font-medium">{montantTPS.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between pt-2 border-t border-border font-bold text-lg">
-                            <span>Montant TTC :</span>
-                            <span className="text-primary">{montantTTC.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <Label htmlFor="notesExpense">Notes (optionnel)</Label>
-                  <Input
-                    id="notesExpense"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Remarques ou commentaires"
-                  />
-                </div>
-
-                <Button onClick={handleCreateExpenseInvoice} className="w-full" disabled={!selectedExpenseId || isCreatingExpenseInvoice}>
-                  {isCreatingExpenseInvoice ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Création...</>
-                  ) : (
-                    'Créer la facture de dépense'
                   )}
                 </Button>
               </div>

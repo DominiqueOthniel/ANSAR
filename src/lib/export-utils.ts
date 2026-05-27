@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
 import {
   buildPdfBrandHtml,
@@ -35,6 +35,58 @@ export interface ExportWithDetailsOptions<T> extends ExportOptions<T> {
   detailsSectionTitle?: string;
 }
 
+interface ExcelTableRange {
+  startRow: number;
+  endRow: number;
+  columnCount: number;
+}
+
+const EXCEL_THIN_BORDER = {
+  top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+} as const;
+
+function applyExcelTableFormatting(
+  worksheet: XLSX.WorkSheet,
+  data: (string | number)[][],
+  tableRanges: ExcelTableRange[],
+): void {
+  const maxColumns = data.reduce((max, row) => Math.max(max, row.length), 0);
+  worksheet['!cols'] = Array.from({ length: maxColumns }, (_, colIndex) => {
+    const width = Math.min(
+      45,
+      Math.max(
+        12,
+        ...data.map((row) => String(row[colIndex] ?? '').length + 2),
+      ),
+    );
+    return { wch: width };
+  });
+
+  tableRanges.forEach(({ startRow, endRow, columnCount }) => {
+    for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+      for (let colIndex = 0; colIndex < columnCount; colIndex += 1) {
+        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+        const cell = worksheet[cellAddress] ?? { t: 's', v: '' };
+        const isHeader = rowIndex === startRow;
+        cell.s = {
+          border: EXCEL_THIN_BORDER,
+          alignment: { vertical: 'center', wrapText: true },
+          ...(isHeader
+            ? {
+                font: { bold: true, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '4F46E5' } },
+              }
+            : {}),
+        };
+        worksheet[cellAddress] = cell;
+      }
+    }
+  });
+}
+
 export function exportToExcel<T>(options: ExportOptions<T>) {
   const { title, fileName, sheetName = 'Données', filtersDescription, columns, rows } = options;
 
@@ -52,6 +104,7 @@ export function exportToExcel<T>(options: ExportOptions<T>) {
   data.push([]);
 
   // En‑têtes
+  const tableStartRow = data.length;
   data.push(columns.map((c) => c.header));
 
   // Lignes de données
@@ -68,6 +121,9 @@ export function exportToExcel<T>(options: ExportOptions<T>) {
   });
 
   const worksheet = XLSX.utils.aoa_to_sheet(data);
+  applyExcelTableFormatting(worksheet, data, [
+    { startRow: tableStartRow, endRow: data.length - 1, columnCount: columns.length },
+  ]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   XLSX.writeFile(workbook, fileName);
@@ -76,11 +132,18 @@ export function exportToExcel<T>(options: ExportOptions<T>) {
 function appendDetailBlockRows(
   data: (string | number)[][],
   block: ExportDetailBlock,
+  tableRanges?: ExcelTableRange[],
 ): void {
   data.push([block.title]);
+  const tableStartRow = data.length;
   data.push(block.columns);
   block.rows.forEach((row) => {
     data.push(row.map((c) => (c == null ? '' : c)));
+  });
+  tableRanges?.push({
+    startRow: tableStartRow,
+    endRow: data.length - 1,
+    columnCount: block.columns.length,
   });
   data.push([]);
 }
@@ -100,9 +163,11 @@ export function exportToExcelWithDetails<T>(options: ExportWithDetailsOptions<T>
   } = options;
 
   const data: (string | number)[][] = [];
+  const tableRanges: ExcelTableRange[] = [];
   data.push([title]);
   if (filtersDescription) data.push([filtersDescription]);
   data.push([]);
+  const tableStartRow = data.length;
   data.push(columns.map((c) => c.header));
   rows.forEach((row, index) => {
     data.push(
@@ -113,6 +178,7 @@ export function exportToExcelWithDetails<T>(options: ExportWithDetailsOptions<T>
       }),
     );
   });
+  tableRanges.push({ startRow: tableStartRow, endRow: data.length - 1, columnCount: columns.length });
 
   data.push([]);
   data.push([detailsSectionTitle]);
@@ -122,11 +188,12 @@ export function exportToExcelWithDetails<T>(options: ExportWithDetailsOptions<T>
     const heading = getDetailHeading?.(row, index) ?? `Ligne ${index + 1}`;
     data.push([`▸ ${heading}`]);
     data.push([]);
-    buildDetailBlocks(row, index).forEach((block) => appendDetailBlockRows(data, block));
+    buildDetailBlocks(row, index).forEach((block) => appendDetailBlockRows(data, block, tableRanges));
     data.push([]);
   });
 
   const worksheet = XLSX.utils.aoa_to_sheet(data);
+  applyExcelTableFormatting(worksheet, data, tableRanges);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   XLSX.writeFile(workbook, fileName);
@@ -148,14 +215,16 @@ export function exportDocumentToExcel(options: ExportDocumentOptions): void {
   const { title, fileName, sheetName = 'Données', filtersDescription, summary, sections = [] } =
     options;
   const data: (string | number)[][] = [];
+  const tableRanges: ExcelTableRange[] = [];
   data.push([title]);
   if (filtersDescription) data.push([filtersDescription]);
   data.push([]);
-  appendDetailBlockRows(data, summary);
+  appendDetailBlockRows(data, summary, tableRanges);
   for (const block of sections) {
-    appendDetailBlockRows(data, block);
+    appendDetailBlockRows(data, block, tableRanges);
   }
   const worksheet = XLSX.utils.aoa_to_sheet(data);
+  applyExcelTableFormatting(worksheet, data, tableRanges);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   XLSX.writeFile(workbook, fileName);

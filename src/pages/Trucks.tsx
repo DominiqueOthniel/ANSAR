@@ -63,6 +63,15 @@ function tracteurImmatForForm(truck: Truck): string {
   return full || truck.immatriculation;
 }
 
+function exportTracteurImmat(truck: Truck): string {
+  return truck.type === 'tracteur' ? tracteurImmatForForm(truck) : '-';
+}
+
+function exportRemorqueImmat(truck: Truck): string {
+  if (truck.type === 'remorqueuse') return truck.immatriculation;
+  return truck.remorqueImmatriculation?.trim() || '-';
+}
+
 export default function Trucks() {
   const { trucks, trips, parcelExpeditions, expenses, invoices, clientDeliveries, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
   const { canManageFleet } = useAuth();
@@ -388,7 +397,8 @@ export default function Trucks() {
       fileName: `camions_${new Date().toISOString().split('T')[0]}.xlsx`,
       filtersDescription: getFiltersDescription(),
       columns: [
-        { header: 'Immatriculation', value: (t) => t.immatriculation },
+        { header: 'Immatriculation tracteur', value: exportTracteurImmat },
+        { header: 'Immatriculation remorque', value: exportRemorqueImmat },
         { header: 'Modèle', value: (t) => t.modele },
         { header: 'Type', value: (t) => labelTruckType(t) },
         { header: 'Statut', value: (t) => t.statut === 'actif' ? 'Actif' : 'Inactif' },
@@ -435,7 +445,8 @@ export default function Trucks() {
         { label: 'Bénéfice Net', value: `${totalBenefice >= 0 ? '+' : ''}${totalBenefice.toLocaleString('fr-FR')} FCFA`, style: totalBenefice >= 0 ? 'positive' : 'negative', icon: '📊' },
       ],
       columns: [
-        { header: 'Immatriculation', value: (t) => t.immatriculation },
+        { header: 'Immat. tracteur', value: exportTracteurImmat },
+        { header: 'Immat. remorque', value: exportRemorqueImmat },
         { header: 'Modèle', value: (t) => t.modele },
         { header: 'Type', value: (t) => labelTruckType(t) },
         { header: 'Statut', value: (t) => t.statut === 'actif' ? `${EMOJI.succes} Actif` : `${EMOJI.inactif} Inactif` },
