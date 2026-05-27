@@ -29,8 +29,11 @@ import { Plus, Edit, Trash2, ClipboardList, Truck, Loader2, FileText } from 'luc
 import { toast } from 'sonner';
 import {
   computeLineAmount,
+  formatArticleSupplierPriceLabel,
   formatArticleSalePriceLabel,
+  getArticleSupplierUnitPrice,
   getArticleSaleUnitPrice,
+  listArticlesForSupplier,
   listArticlesForClientOrders,
 } from '@/lib/article-pricing';
 import {
@@ -80,11 +83,18 @@ function todayIso(): string {
 }
 
 type Props = {
-  clientId: string;
+  clientId?: string;
+  clientLabel?: string;
+  isWalkIn?: boolean;
   defaultDestination?: string;
 };
 
-export function ClientOperationsPanels({ clientId, defaultDestination }: Props) {
+export function ClientOperationsPanels({
+  clientId,
+  clientLabel = 'Client comptoir',
+  isWalkIn = false,
+  defaultDestination,
+}: Props) {
   const {
     clientOrders,
     clientDeliveries,
@@ -108,17 +118,17 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   const orders = useMemo(
     () =>
       clientOrders
-        .filter((o) => o.clientId === clientId)
+        .filter((o) => (isWalkIn ? !o.clientId : o.clientId === clientId))
         .sort((a, b) => b.dateCommande.localeCompare(a.dateCommande)),
-    [clientOrders, clientId],
+    [clientOrders, clientId, isWalkIn],
   );
 
   const deliveries = useMemo(
     () =>
       clientDeliveries
-        .filter((d) => d.clientId === clientId)
+        .filter((d) => (isWalkIn ? !d.clientId : d.clientId === clientId))
         .sort((a, b) => (b.datePrevue ?? '').localeCompare(a.datePrevue ?? '')),
-    [clientDeliveries, clientId],
+    [clientDeliveries, clientId, isWalkIn],
   );
 
   const fournisseurs = useMemo(
@@ -169,15 +179,37 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
   const [loadingForm, setLoadingForm] = useState({
     fournisseurId: '',
     numeroBon: '',
+    articleId: '',
     modeEntree: 'bon_simple' as LoadingEntryMode,
     camionId: '',
     hubArrivee: HUB_PRESETS[0] as string,
     dateChargement: todayIso(),
+    dateLivraison: '',
     designation: '',
     quantite: undefined as number | undefined,
     unite: '',
+    montantBon: undefined as number | undefined,
+    lieu: '',
     notes: '',
   });
+
+  const loadingArticlesForFournisseur = useMemo(
+    () => listArticlesForSupplier(articles, loadingForm.fournisseurId),
+    [articles, loadingForm.fournisseurId],
+  );
+
+  const loadingSiteOptions = useMemo(() => {
+    if (!loadingForm.fournisseurId) return [];
+    const sites = new Set<string>();
+    const fournisseur = thirdParties.find((tp) => tp.id === loadingForm.fournisseurId);
+    if (fournisseur?.adresse?.trim()) sites.add(fournisseur.adresse.trim());
+    supplierLoadings
+      .filter((l) => l.fournisseurId === loadingForm.fournisseurId)
+      .forEach((l) => {
+        if (l.lieu?.trim()) sites.add(l.lieu.trim());
+      });
+    return stableSort([...sites], (a, b) => frCollator.compare(a, b));
+  }, [loadingForm.fournisseurId, supplierLoadings, thirdParties]);
 
   const selectableLoadings = useMemo(
     () =>
@@ -243,13 +275,17 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     setLoadingForm({
       fournisseurId: '',
       numeroBon: orderForm.reference,
+      articleId: '',
       modeEntree: 'bon_simple',
       camionId: '',
       hubArrivee: HUB_PRESETS[0],
       dateChargement: orderForm.dateCommande || todayIso(),
+      dateLivraison: orderForm.dateLivraisonSouhaitee,
       designation: orderForm.designation,
       quantite: orderForm.quantite,
       unite: orderForm.unite,
+      montantBon: undefined,
+      lieu: '',
       notes: orderForm.destination ? `Client: ${orderForm.destination}` : '',
     });
     setLoadingDialogOpen(true);
@@ -278,14 +314,19 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
         const created = await createSupplierLoading({
           fournisseurId: loadingForm.fournisseurId,
           numeroBon: loadingForm.numeroBon.trim() || undefined,
+          articleId: loadingForm.articleId || undefined,
           designation: loadingForm.designation.trim(),
           quantite: loadingForm.quantite,
           unite: loadingForm.unite.trim() || undefined,
+          montantBon: loadingForm.montantBon,
           dateChargement: loadingForm.dateChargement,
+          dateLivraison: loadingForm.dateLivraison || undefined,
           modeEntree: loadingForm.modeEntree,
           camionId: isCamionAnsar ? loadingForm.camionId || undefined : undefined,
           hubArrivee: isCamrail ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0] : undefined,
-          lieu: isCamrail ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0] : undefined,
+          lieu: isCamrail
+            ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0]
+            : loadingForm.lieu.trim() || undefined,
           notes: loadingForm.notes.trim() || undefined,
         });
         setOrderForm((p) => ({
@@ -476,7 +517,8 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
           return;
         }
         const payload = {
-          clientId,
+          clientId: isWalkIn ? undefined : clientId,
+          clientNom: isWalkIn ? clientLabel : undefined,
           articleId: orderForm.articleId || undefined,
           reference: orderForm.reference.trim() || undefined,
           designation: orderForm.designation.trim(),
@@ -516,7 +558,9 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
           }
           toast.success('Commande mise à jour');
         } else {
-          const client = thirdParties.find((tp) => tp.id === clientId && tp.type === 'client');
+          const client = isWalkIn
+            ? undefined
+            : thirdParties.find((tp) => tp.id === clientId && tp.type === 'client');
           const montantCmd = finalMontant ?? 0;
           if (client?.plafondCredit != null && montantCmd > 0) {
             const credits = await loadCreditsForPlafond();
@@ -524,7 +568,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               credits,
               thirdParties: thirdPartiesToClientTierLike(thirdParties),
               preteur: client.nom,
-              clientTierId: clientId,
+              clientTierId: clientId ?? '',
               montantTotal: montantCmd,
               invoices,
             });
@@ -1159,7 +1203,11 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 options={fournisseurs}
                 value={loadingForm.fournisseurId}
                 onValueChange={(fournisseurId) =>
-                  setLoadingForm((p) => ({ ...p, fournisseurId }))
+                  setLoadingForm((p) => ({
+                    ...p,
+                    fournisseurId,
+                    articleId: '',
+                  }))
                 }
                 placeholder="Choisir un fournisseur"
               />
@@ -1258,17 +1306,118 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 )}
               </div>
             )}
-            <div>
-              <Label>Date du bon *</Label>
-              <Input
-                type="date"
-                value={loadingForm.dateChargement}
-                onChange={(e) =>
-                  setLoadingForm((p) => ({ ...p, dateChargement: e.target.value }))
-                }
-                required
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <Label>Date d&apos;émission du bon *</Label>
+                <Input
+                  type="date"
+                  value={loadingForm.dateChargement}
+                  onChange={(e) =>
+                    setLoadingForm((p) => ({ ...p, dateChargement: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label>Date de livraison</Label>
+                <Input
+                  type="date"
+                  value={loadingForm.dateLivraison}
+                  onChange={(e) =>
+                    setLoadingForm((p) => ({ ...p, dateLivraison: e.target.value }))
+                  }
+                />
+              </div>
             </div>
+            <div>
+              <Label>Désignation fournisseur</Label>
+              <Select
+                value={loadingForm.articleId || '_none'}
+                disabled={!loadingForm.fournisseurId}
+                onValueChange={(articleId) => {
+                  if (articleId === '_none') {
+                    setLoadingForm((p) => ({ ...p, articleId: '' }));
+                    return;
+                  }
+                  const article = articles.find((a) => a.id === articleId);
+                  const pu = getArticleSupplierUnitPrice(article, loadingForm.fournisseurId);
+                  const montantBon = computeLineAmount(loadingForm.quantite, pu);
+                  setLoadingForm((p) => ({
+                    ...p,
+                    articleId,
+                    designation: article?.libelle ?? p.designation,
+                    unite: article?.unite || p.unite,
+                    notes: p.notes,
+                    ...(montantBon != null ? { montantBon } : {}),
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      loadingForm.fournisseurId
+                        ? 'Choisir une désignation…'
+                        : 'Choisir d’abord un fournisseur'
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Saisie libre —</SelectItem>
+                  {loadingArticlesForFournisseur.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">
+                      Aucune désignation tarifée pour ce fournisseur.
+                    </div>
+                  ) : (
+                    loadingArticlesForFournisseur.map((article) => (
+                      <SelectItem key={article.id} value={article.id}>
+                        {formatArticleSupplierPriceLabel(article, loadingForm.fournisseurId)}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                La sélection remplit la désignation et l’unité du bon.
+              </p>
+            </div>
+            {loadingForm.modeEntree !== 'rail' && (
+              <div>
+                <Label>Lieu / site fournisseur</Label>
+                {loadingSiteOptions.length > 0 && (
+                  <Select
+                    value={loadingSiteOptions.includes(loadingForm.lieu) ? loadingForm.lieu : '_manual'}
+                    onValueChange={(lieu) =>
+                      setLoadingForm((p) => ({
+                        ...p,
+                        lieu: lieu === '_manual' ? '' : lieu,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choisir un lieu prédéfini" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {loadingSiteOptions.map((site) => (
+                        <SelectItem key={site} value={site}>
+                          {site}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="_manual">Saisie libre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Input
+                  className={loadingSiteOptions.length > 0 ? 'mt-2' : undefined}
+                  value={loadingForm.lieu}
+                  onChange={(e) => setLoadingForm((p) => ({ ...p, lieu: e.target.value }))}
+                  placeholder={
+                    loadingSiteOptions.length > 0
+                      ? 'Ou saisir un autre lieu'
+                      : 'Lieu / site du fournisseur'
+                  }
+                />
+              </div>
+            )}
             <div>
               <Label>Désignation *</Label>
               <Input
@@ -1285,7 +1434,17 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                 <NumberInput
                   min={0}
                   value={loadingForm.quantite}
-                  onChange={(quantite) => setLoadingForm((p) => ({ ...p, quantite }))}
+                  onChange={(quantite) => {
+                    const article = loadingForm.articleId
+                      ? articles.find((a) => a.id === loadingForm.articleId)
+                      : undefined;
+                    const pu = getArticleSupplierUnitPrice(article, loadingForm.fournisseurId);
+                    setLoadingForm((p) => ({
+                      ...p,
+                      quantite,
+                      montantBon: computeLineAmount(quantite, pu) ?? p.montantBon,
+                    }));
+                  }}
                 />
               </div>
               <div>

@@ -482,7 +482,8 @@ export class ClientOperationsService {
   }
 
   async createOrder(dto: CreateClientOrderDto, actor?: AuditActor): Promise<ClientOrder> {
-    await this.assertClient(dto.clientId);
+    if (dto.clientId) await this.assertClient(dto.clientId);
+    const clientNom = dto.clientId ? undefined : dto.clientNom?.trim() || 'Client comptoir';
     const built = await this.buildOrderPayloadAsync(dto);
     const designation = (dto.designation?.trim() || built.designation || '').trim();
     if (!designation) {
@@ -491,6 +492,7 @@ export class ClientOperationsService {
     const row = this.orderRepo.create({
       id: uuidv4(),
       clientId: dto.clientId,
+      clientNom,
       articleId: built.articleId,
       reference: dto.reference?.trim() || undefined,
       designation,
@@ -533,6 +535,8 @@ export class ClientOperationsService {
       .orderBy('o.dateCommande', 'DESC');
     if (query?.clientId) {
       qb.andWhere('o.clientId = :clientId', { clientId: query.clientId });
+    } else if (query?.walkIn === 'true') {
+      qb.andWhere('o.clientId IS NULL');
     }
     return qb.getMany();
   }
@@ -557,12 +561,15 @@ export class ClientOperationsService {
         'Une commande livrée ou annulée ne peut plus être modifiée.',
       );
     }
-    if (dto.clientId !== undefined) await this.assertClient(dto.clientId);
+    if (dto.clientId !== undefined && dto.clientId) await this.assertClient(dto.clientId);
 
     const built = await this.buildOrderPayloadAsync(dto, existing);
     const patch: Partial<ClientOrder> = {};
 
     if (dto.clientId !== undefined) patch.clientId = dto.clientId;
+    if (dto.clientNom !== undefined && !dto.clientId) {
+      patch.clientNom = dto.clientNom.trim() || 'Client comptoir';
+    }
     if (dto.articleId !== undefined || built.articleId !== undefined) {
       patch.articleId = built.articleId;
     }
@@ -592,8 +599,17 @@ export class ClientOperationsService {
     if (dto.notes !== undefined) patch.notes = dto.notes.trim() || undefined;
 
     await this.orderRepo.update(id, patch);
-    if (dto.clientId !== undefined && dto.clientId !== existing.clientId) {
-      await this.deliveryRepo.update({ clientOrderId: id }, { clientId: dto.clientId });
+    if (
+      (dto.clientId !== undefined && dto.clientId !== existing.clientId) ||
+      (dto.clientNom !== undefined && dto.clientNom !== existing.clientNom)
+    ) {
+      await this.deliveryRepo.update(
+        { clientOrderId: id },
+        {
+          clientId: dto.clientId || undefined,
+          clientNom: dto.clientId ? undefined : dto.clientNom?.trim() || 'Client comptoir',
+        },
+      );
     }
 
     const updated = await this.findOrder(id);
@@ -660,6 +676,7 @@ export class ClientOperationsService {
       id: uuidv4(),
       clientOrderId: order.id,
       clientId: order.clientId,
+      clientNom: order.clientNom,
       lieuLivraison: lieu,
       modeSortie,
       statut,
@@ -710,6 +727,8 @@ export class ClientOperationsService {
       .addOrderBy('d.id', 'DESC');
     if (query?.clientId) {
       qb.andWhere('d.clientId = :clientId', { clientId: query.clientId });
+    } else if (query?.walkIn === 'true') {
+      qb.andWhere('d.clientId IS NULL');
     }
     if (query?.clientOrderId) {
       qb.andWhere('d.clientOrderId = :clientOrderId', {
@@ -739,6 +758,7 @@ export class ClientOperationsService {
       const order = await this.findOrder(dto.clientOrderId);
       patch.clientOrderId = order.id;
       patch.clientId = order.clientId;
+      patch.clientNom = order.clientNom;
     }
     if (dto.lieuLivraison !== undefined) {
       const l = dto.lieuLivraison.trim();

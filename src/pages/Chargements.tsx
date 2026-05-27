@@ -88,6 +88,7 @@ type LoadingFormState = {
   montantBonTouched: boolean;
   unite: string;
   dateChargement: string;
+  dateLivraison: string;
   modeEntree: LoadingEntryMode;
   camionId: string;
   hubArrivee: string;
@@ -108,6 +109,7 @@ const emptyForm = (): LoadingFormState => ({
   montantBonTouched: false,
   unite: '',
   dateChargement: todayIso(),
+  dateLivraison: '',
   modeEntree: 'bon_simple',
   camionId: '',
   hubArrivee: '',
@@ -255,6 +257,19 @@ export default function Chargements() {
     [articles, form.fournisseurId],
   );
 
+  const supplierSiteOptions = useMemo(() => {
+    if (!form.fournisseurId) return [];
+    const sites = new Set<string>();
+    const fournisseur = thirdParties.find((tp) => tp.id === form.fournisseurId);
+    if (fournisseur?.adresse?.trim()) sites.add(fournisseur.adresse.trim());
+    supplierLoadings
+      .filter((l) => l.fournisseurId === form.fournisseurId)
+      .forEach((l) => {
+        if (l.lieu?.trim()) sites.add(l.lieu.trim());
+      });
+    return stableSort([...sites], (a, b) => frCollator.compare(a, b));
+  }, [form.fournisseurId, supplierLoadings, thirdParties]);
+
   const syncBonValue = (
     base: LoadingFormState,
     patch: Partial<LoadingFormState>,
@@ -289,6 +304,7 @@ export default function Chargements() {
       montantBonTouched: l.montantBon != null,
       unite: l.unite ?? '',
       dateChargement: l.dateChargement,
+      dateLivraison: l.dateLivraison ?? '',
       modeEntree: l.modeEntree ?? 'camion',
       camionId: l.camionId ?? '',
       hubArrivee: l.hubArrivee ?? '',
@@ -333,7 +349,7 @@ export default function Chargements() {
         return;
       }
       if (!form.dateChargement) {
-        toast.error('Date de chargement requise.');
+        toast.error("Date d'émission du bon requise.");
         return;
       }
       if (form.modeEntree === 'camion_ansar' && !form.camionId) {
@@ -353,6 +369,7 @@ export default function Chargements() {
         unite: form.unite.trim() || undefined,
         montantBon: form.montantBon,
         dateChargement: form.dateChargement,
+        dateLivraison: form.dateLivraison || undefined,
         modeEntree: form.modeEntree,
         camionId: isCamionAnsar ? form.camionId || undefined : undefined,
         hubArrivee: hub,
@@ -419,7 +436,7 @@ export default function Chargements() {
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
     ).filter((o) => {
       if (!q) return true;
-      const clientNom = clientsById.get(o.clientId) ?? '';
+      const clientNom = o.clientId ? clientsById.get(o.clientId) ?? '' : o.clientNom ?? 'Client comptoir';
       return (
         o.designation.toLowerCase().includes(q) ||
         (o.reference ?? '').toLowerCase().includes(q) ||
@@ -438,7 +455,7 @@ export default function Chargements() {
     setAssignRows((prev) => {
       const exists = prev.find((r) => r.clientOrderId === orderId);
       if (exists) return prev.filter((r) => r.clientOrderId !== orderId);
-      if (!assignClientId) setAssignClientId(order.clientId);
+      if (!assignClientId && order.clientId) setAssignClientId(order.clientId);
       return [...prev, { clientOrderId: orderId }];
     });
   };
@@ -481,7 +498,8 @@ export default function Chargements() {
   };
 
   const loadingExportColumns = [
-    { header: 'Date', value: (l: SupplierLoading) => l.dateChargement },
+    { header: 'Date émission bon', value: (l: SupplierLoading) => l.dateChargement },
+    { header: 'Date livraison', value: (l: SupplierLoading) => l.dateLivraison || '—' },
     { header: 'Fournisseur', value: (l: SupplierLoading) => l.fournisseurNom ?? '—' },
     { header: 'N° bon', value: (l: SupplierLoading) => l.numeroBon || '—' },
     { header: 'Désignation', value: (l: SupplierLoading) => l.designation },
@@ -620,27 +638,33 @@ export default function Chargements() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Article (catalogue)</Label>
+                  <Label>Désignation fournisseur</Label>
                   <Select
                     value={form.articleId || '_none'}
                     onValueChange={(v) => onArticleChange(v === '_none' ? '' : v)}
+                    disabled={!form.fournisseurId}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Optionnel" />
+                      <SelectValue placeholder={form.fournisseurId ? 'Choisir une désignation…' : 'Choisir d’abord un fournisseur'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="_none">— Aucun —</SelectItem>
-                      {(form.fournisseurId ? articlesForFournisseur : articles.filter((a) => a.actif)).map(
-                        (a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {form.fournisseurId
-                              ? formatArticleSupplierPriceLabel(a, form.fournisseurId)
-                              : `${a.libelle} (${a.unite})`}
-                          </SelectItem>
-                        ),
+                      <SelectItem value="_none">— Saisie libre —</SelectItem>
+                      {articlesForFournisseur.length === 0 ? (
+                        <div className="p-3 text-sm text-muted-foreground">
+                          Aucune désignation tarifée pour ce fournisseur.
+                        </div>
+                      ) : (
+                        articlesForFournisseur.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {formatArticleSupplierPriceLabel(a, form.fournisseurId)}
+                            </SelectItem>
+                          ))
                       )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    La sélection remplit automatiquement désignation, unité, prix fournisseur et valeur du bon.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Désignation *</Label>
@@ -833,22 +857,62 @@ export default function Chargements() {
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Date chargement *</Label>
-                  <Input
-                    type="date"
-                    value={form.dateChargement}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, dateChargement: e.target.value }))
-                    }
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Date d&apos;émission du bon *</Label>
+                    <Input
+                      type="date"
+                      value={form.dateChargement}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, dateChargement: e.target.value }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date de livraison</Label>
+                    <Input
+                      type="date"
+                      value={form.dateLivraison}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, dateLivraison: e.target.value }))
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Lieu / site</Label>
+                  {supplierSiteOptions.length > 0 && (
+                    <Select
+                      value={supplierSiteOptions.includes(form.lieu) ? form.lieu : '_manual'}
+                      onValueChange={(lieu) =>
+                        setForm((f) => ({
+                          ...f,
+                          lieu: lieu === '_manual' ? '' : lieu,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un lieu prédéfini" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {supplierSiteOptions.map((site) => (
+                          <SelectItem key={site} value={site}>
+                            {site}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="_manual">Saisie libre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Input
                     value={form.lieu}
                     onChange={(e) => setForm((f) => ({ ...f, lieu: e.target.value }))}
+                    placeholder={
+                      supplierSiteOptions.length > 0
+                        ? 'Ou saisir un autre lieu'
+                        : 'Lieu / site du fournisseur'
+                    }
                   />
                 </div>
                 {editing && (
@@ -954,7 +1018,8 @@ export default function Chargements() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Émission</TableHead>
+                  <TableHead>Livraison</TableHead>
                   <TableHead>Fournisseur</TableHead>
                   <TableHead>N° bon</TableHead>
                   <TableHead>Désignation</TableHead>
@@ -969,7 +1034,7 @@ export default function Chargements() {
               <TableBody>
                 {sortedLoadings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                       Aucun bon de chargement.
                     </TableCell>
                   </TableRow>
@@ -977,6 +1042,7 @@ export default function Chargements() {
                   sortedLoadings.map((l) => (
                     <TableRow key={l.id}>
                       <TableCell className="whitespace-nowrap">{l.dateChargement}</TableCell>
+                      <TableCell className="whitespace-nowrap">{l.dateLivraison || '—'}</TableCell>
                       <TableCell>
                         <Link
                           to={`/tiers?id=${l.fournisseurId}`}
@@ -1148,7 +1214,7 @@ export default function Chargements() {
                       <div className="flex-1 min-w-[180px]">
                         <p className="font-medium text-sm">{o.designation}</p>
                         <p className="text-xs text-muted-foreground">
-                          {clientsById.get(o.clientId) ?? 'Client'} ·{' '}
+                          {o.clientId ? clientsById.get(o.clientId) ?? 'Client' : o.clientNom ?? 'Client comptoir'} ·{' '}
                           {formatClientOrderStatusFr(o.statut)} · {o.dateCommande}
                           {o.reference ? ` · ${o.reference}` : ''}
                         </p>

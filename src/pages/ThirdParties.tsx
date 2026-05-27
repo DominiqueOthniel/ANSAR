@@ -133,6 +133,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const [clientAdvancedFilters, setClientAdvancedFilters] =
     useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
   const [detailClient, setDetailClient] = useState<ThirdParty | null>(null);
+  const [walkInClientOpen, setWalkInClientOpen] = useState(false);
   const [creditsForPlafondSheet, setCreditsForPlafondSheet] = useState<CreditLike[]>([]);
   const [detailSoldeInitial, setDetailSoldeInitial] = useState<number | null>(null);
 
@@ -780,6 +781,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               <FileText className="mr-2 h-4 w-4" />
               PDF
             </Button>
+            {isClientsScope && (
+              <Button variant="secondary" onClick={() => setWalkInClientOpen(true)} className="shadow-md hover:shadow-lg transition-all duration-300">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Client comptoir
+              </Button>
+            )}
             <Dialog open={isDialogOpen} onOpenChange={(open) => {
               setIsDialogOpen(open);
               if (!open) resetForm();
@@ -1856,6 +1863,23 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               </div>
             </>
           )}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={walkInClientOpen} onOpenChange={setWalkInClientOpen}>
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="pr-8">Client comptoir (passager)</SheetTitle>
+            <SheetDescription>
+              Commandes et livraisons pour un client ponctuel, sans création de fiche client.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <ClientOperationsPanels
+              isWalkIn
+              clientLabel="Client comptoir"
+            />
+          </div>
         </SheetContent>
       </Sheet>
     </div>

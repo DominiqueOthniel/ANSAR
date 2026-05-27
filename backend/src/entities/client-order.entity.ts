@@ -16,8 +16,11 @@ export class ClientOrder {
   @PrimaryColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  clientId: string;
+  @Column({ type: 'uuid', nullable: true })
+  clientId?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  clientNom?: string;
 
   @Column({ type: 'uuid', nullable: true })
   articleId?: string;
@@ -58,7 +61,7 @@ export class ClientOrder {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @ManyToOne(() => ThirdParty)
+  @ManyToOne(() => ThirdParty, { nullable: true })
   @JoinColumn({ name: 'clientId' })
   client?: ThirdParty;
 

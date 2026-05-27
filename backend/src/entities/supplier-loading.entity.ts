@@ -53,6 +53,9 @@ export class SupplierLoading {
   @Column({ type: 'date' })
   dateChargement: string;
 
+  @Column({ type: 'date', nullable: true })
+  dateLivraison?: string;
+
   @Column({ type: 'varchar', length: 32 })
   statut: SupplierLoadingStatus;
 

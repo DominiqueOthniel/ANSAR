@@ -73,20 +73,22 @@ export function findSupplierLoadingForOrder(
 
 /** Client déjà lié au bon via une affectation existante. */
 export function getLoadingAssignedClientId(loading: {
-  assignments?: { clientId?: string }[];
+  assignments?: { clientId?: string; clientNom?: string }[];
 }): string | undefined {
   for (const a of loading.assignments ?? []) {
     if (a.clientId) return a.clientId;
+    if (a.clientNom) return `comptoir:${a.clientNom}`;
   }
   return undefined;
 }
 
 /** Vérifie qu’une commande du client donné peut être rattachée au bon. */
 export function canAssignClientOrderToLoading(
-  loading: { assignments?: { clientId?: string }[] },
-  orderClientId: string,
+  loading: { assignments?: { clientId?: string; clientNom?: string }[] },
+  orderClientId?: string,
 ): boolean {
   const locked = getLoadingAssignedClientId(loading);
+  if (!orderClientId) return !locked || locked.startsWith('comptoir:');
   return !locked || locked === orderClientId;
 }
 

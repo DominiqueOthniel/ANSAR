@@ -10,5 +10,9 @@ ALTER TABLE supplier_loadings
 ALTER TABLE supplier_loadings
   ADD COLUMN IF NOT EXISTS "camionId" UUID REFERENCES trucks(id);
 
+ALTER TABLE supplier_loadings
+  ADD COLUMN IF NOT EXISTS "dateLivraison" DATE;
+
 COMMENT ON COLUMN supplier_loadings."modeEntree" IS 'bon_simple | camion_ansar | rail | rendu_fournisseur';
 COMMENT ON COLUMN supplier_loadings."camionId" IS 'Camion ANSAR utilisé si modeEntree = camion_ansar';
+COMMENT ON COLUMN supplier_loadings."dateLivraison" IS 'Date de livraison prévue ou réalisée du bon fournisseur';

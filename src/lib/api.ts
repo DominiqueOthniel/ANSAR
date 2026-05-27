@@ -25,7 +25,7 @@ export function setApiActor(actor: { login?: string; role?: string } | null): vo
   apiActor = actor;
 }
 
-function buildQuery(params?: Record<string, string | number | undefined> | null): string {
+function buildQuery(params?: Record<string, string | number | boolean | undefined> | null): string {
   const q = new URLSearchParams();
   if (params == null) return '';
   for (const [k, v] of Object.entries(params)) {
@@ -232,7 +232,8 @@ export interface ArticleSupplierPricePayload {
 }
 
 export interface ClientOrderPayload {
-  clientId: string;
+  clientId?: string;
+  clientNom?: string;
   articleId?: string;
   reference?: string;
   designation: string;
@@ -432,7 +433,7 @@ export const articlesApi = {
 
 /** Commandes et livraisons clients (intermédiation). */
 export const clientOrdersApi = {
-  getAll: (params?: { clientId?: string }) =>
+  getAll: (params?: { clientId?: string; walkIn?: boolean }) =>
     request<any[]>(`/client-orders${buildQuery(params)}`),
   getOne: (id: string) => request<any>(`/client-orders/${id}`),
   create: (data: ClientOrderPayload) =>
@@ -443,7 +444,7 @@ export const clientOrdersApi = {
 };
 
 export const clientDeliveriesApi = {
-  getAll: (params?: { clientId?: string; clientOrderId?: string }) =>
+  getAll: (params?: { clientId?: string; clientOrderId?: string; walkIn?: boolean }) =>
     request<any[]>(`/client-deliveries${buildQuery(params)}`),
   getOne: (id: string) => request<any>(`/client-deliveries/${id}`),
   create: (data: ClientDeliveryPayload) =>
@@ -473,6 +474,7 @@ export interface SupplierLoadingPayload {
   unite?: string;
   montantBon?: number;
   dateChargement: string;
+  dateLivraison?: string;
   statut?: SupplierLoadingStatusPayload;
   modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
   camionId?: string;

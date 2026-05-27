@@ -229,7 +229,8 @@ export interface ArticleSupplierPrice {
 
 export interface ClientOrder {
   id: string;
-  clientId: string;
+  clientId?: string;
+  clientNom?: string;
   articleId?: string;
   invoiceId?: string;
   reference?: string;
@@ -249,7 +250,8 @@ export interface ClientOrder {
 export interface ClientDelivery {
   id: string;
   clientOrderId: string;
-  clientId: string;
+  clientId?: string;
+  clientNom?: string;
   invoiceId?: string;
   lieuLivraison: string;
   modeSortie?: 'retrait_hub' | 'livraison_agent' | 'livraison_directe';
@@ -290,6 +292,7 @@ export interface SupplierLoading {
   unite?: string;
   montantBon?: number;
   dateChargement: string;
+  dateLivraison?: string;
   statut: SupplierLoadingStatus;
   modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
   camionId?: string;
@@ -664,7 +667,8 @@ function normalizeClientDelivery(r: Record<string, unknown>): ClientDelivery {
   return {
     id: String(r.id),
     clientOrderId: String(r.clientOrderId),
-    clientId: String(r.clientId),
+    clientId: r.clientId ? String(r.clientId) : undefined,
+    clientNom: r.clientNom ? String(r.clientNom) : undefined,
     invoiceId: r.invoiceId ? String(r.invoiceId) : undefined,
     lieuLivraison: String(r.lieuLivraison ?? ''),
     modeSortie:
@@ -708,7 +712,12 @@ function normalizeSupplierLoadingAssignment(
     orderDesignation: order?.designation != null ? String(order.designation) : undefined,
     orderReference: order?.reference ? String(order.reference) : undefined,
     clientId: order?.clientId ? String(order.clientId) : undefined,
-    clientNom: client?.nom != null ? String(client.nom) : undefined,
+    clientNom:
+      client?.nom != null
+        ? String(client.nom)
+        : order?.clientNom != null
+          ? String(order.clientNom)
+          : undefined,
   };
 }
 
@@ -732,6 +741,7 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
     unite: r.unite ? String(r.unite) : undefined,
     montantBon: r.montantBon != null ? parseNum(r.montantBon) : undefined,
     dateChargement: String(r.dateChargement ?? ''),
+    dateLivraison: r.dateLivraison ? String(r.dateLivraison) : undefined,
     statut: r.statut as SupplierLoadingStatus,
     modeEntree:
       r.modeEntree === 'bon_simple' ||
@@ -758,7 +768,8 @@ function normalizeClientOrder(r: Record<string, unknown>): ClientOrder {
     : undefined;
   return {
     id: String(r.id),
-    clientId: String(r.clientId),
+    clientId: r.clientId ? String(r.clientId) : undefined,
+    clientNom: r.clientNom ? String(r.clientNom) : undefined,
     articleId: r.articleId ? String(r.articleId) : undefined,
     invoiceId: r.invoiceId ? String(r.invoiceId) : undefined,
     reference: r.reference ? String(r.reference) : undefined,

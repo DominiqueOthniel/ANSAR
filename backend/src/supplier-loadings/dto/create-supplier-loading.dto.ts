@@ -69,6 +69,10 @@ export class CreateSupplierLoadingDto {
 
   @IsOptional()
   @IsString()
+  dateLivraison?: string;
+
+  @IsOptional()
+  @IsString()
   @IsIn(STATUTS)
   statut?: (typeof STATUTS)[number];
 

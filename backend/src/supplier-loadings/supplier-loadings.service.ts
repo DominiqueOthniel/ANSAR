@@ -171,6 +171,7 @@ export class SupplierLoadingsService {
       unite,
       montantBon: dto.montantBon != null ? String(dto.montantBon) : undefined,
       dateChargement: dto.dateChargement,
+      dateLivraison: dto.dateLivraison?.trim() || undefined,
       statut,
       modeEntree,
       camionId,
@@ -275,6 +276,7 @@ export class SupplierLoadingsService {
       loading.montantBon = dto.montantBon != null ? String(dto.montantBon) : undefined;
     }
     if (dto.dateChargement != null) loading.dateChargement = dto.dateChargement;
+    if (dto.dateLivraison !== undefined) loading.dateLivraison = dto.dateLivraison?.trim() || undefined;
     if (dto.modeEntree != null) loading.modeEntree = dto.modeEntree;
     if (dto.camionId !== undefined || dto.modeEntree != null) {
       const nextMode = dto.modeEntree ?? loading.modeEntree;
@@ -369,8 +371,10 @@ export class SupplierLoadingsService {
       if (cancelled.length > 0) {
         throw new BadRequestException('Impossible d’affecter à une commande annulée.');
       }
-      const clientIds = new Set(orders.map((o) => o.clientId));
-      if (clientIds.size > 1) {
+      const clientKeys = new Set(
+        orders.map((o) => o.clientId ?? `comptoir:${o.clientNom ?? 'Client comptoir'}`),
+      );
+      if (clientKeys.size > 1) {
         throw new BadRequestException(
           'Un bon ne peut être affecté qu’à un seul client.',
         );

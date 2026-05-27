@@ -10,8 +10,14 @@ import {
 } from 'class-validator';
 
 export class CreateClientOrderDto {
+  @IsOptional()
   @IsUUID()
-  clientId: string;
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  clientNom?: string;
 
   @IsOptional()
   @IsUUID()
