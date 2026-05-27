@@ -18,7 +18,7 @@ import {
   getClientAgeYears,
 } from '@/lib/client-profile';
 import {
-  exportToExcelWithDetails,
+  exportBlocksToExcel,
   exportToPrintablePDFWithDetails,
   type ExportDetailBlock,
   type ExportTotal,
@@ -396,6 +396,32 @@ function buildClientDetailBlocks(
   ];
 }
 
+function buildClientLedgerBlock(
+  client: ThirdParty,
+  ctx: ClientsExportContext,
+): ExportDetailBlock {
+  const orders = stableSort(
+    ctx.clientOrders.filter((o) => o.clientId === client.id),
+    (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
+  );
+  const orderIds = new Set(orders.map((o) => o.id));
+  const deliveries = stableSort(
+    ctx.clientDeliveries.filter((d) => d.clientId === client.id),
+    (a, b) => frCollator.compare(b.datePrevue ?? '', a.datePrevue ?? ''),
+  );
+  const deliveryIds = new Set(deliveries.map((d) => d.id));
+  const clientInvoices = stableSort(
+    invoicesForClient(client.id, ctx.invoices, orderIds, deliveryIds),
+    (a, b) => frCollator.compare(b.dateCreation, a.dateCreation),
+  );
+
+  return {
+    title: client.nom,
+    columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'N°CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
+    rows: buildClientLedgerRows(client, orders, deliveries, clientInvoices, ctx),
+  };
+}
+
 export async function buildSoldeInitialMap(
   clients: ThirdParty[],
 ): Promise<Map<string, number>> {
@@ -456,15 +482,12 @@ function summaryColumns(ctx: ClientsExportContext) {
 
 export function exportClientsDetailedExcel(ctx: ClientsExportContext): void {
   const prefix = ctx.fileNamePrefix ?? 'clients';
-  exportToExcelWithDetails({
-    title: 'Liste des clients — détail complet',
-    fileName: `${prefix}_${new Date().toISOString().split('T')[0]}.xlsx`,
-    sheetName: 'Clients',
+  exportBlocksToExcel({
+    title: 'Comptes clients',
+    fileName: `${prefix}_comptes_${new Date().toISOString().split('T')[0]}.xlsx`,
+    sheetName: 'Comptes clients',
     filtersDescription: ctx.filtersDescription,
-    columns: summaryColumns(ctx),
-    rows: ctx.clients,
-    buildDetailBlocks: (c) => buildClientDetailBlocks(c, ctx),
-    getDetailHeading: (c) => c.nom,
+    blocks: ctx.clients.map((c) => buildClientLedgerBlock(c, ctx)),
   });
 }
 

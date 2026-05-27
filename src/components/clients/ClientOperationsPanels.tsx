@@ -52,9 +52,11 @@ import {
 import {
   DELIVERY_EXIT_MODE_OPTIONS,
   HUB_PRESETS,
+  LOADING_ENTRY_MODE_OPTIONS,
   deliveryLieuForExitMode,
   formatDeliveryExitModeFr,
   type ClientDeliveryExitMode,
+  type LoadingEntryMode,
 } from '@/lib/hub-transit';
 import { checkPretAccordePlafond } from '@/lib/client-credit-plafond';
 import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
@@ -98,6 +100,7 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     createClientDelivery,
     updateClientDelivery,
     deleteClientDelivery,
+    createSupplierLoading,
     setSupplierLoadingAssignments,
   } = useApp();
   const { isSubmitting, withGuard } = useSubmitGuard();
@@ -127,6 +130,15 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     [thirdParties],
   );
 
+  const activeTrucks = useMemo(
+    () =>
+      stableSort(
+        trucks.filter((t) => t.statut === 'actif'),
+        (a, b) => frCollator.compare(a.immatriculation, b.immatriculation),
+      ),
+    [trucks],
+  );
+
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<ClientOrder | null>(null);
   const catalogArticles = useMemo(
@@ -151,6 +163,20 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     paiementMode: 'en_attente' as PaymentAtCreationMode,
     montantAvance: undefined as number | undefined,
     datePaiement: todayIso(),
+  });
+
+  const [loadingDialogOpen, setLoadingDialogOpen] = useState(false);
+  const [loadingForm, setLoadingForm] = useState({
+    fournisseurId: '',
+    numeroBon: '',
+    modeEntree: 'bon_simple' as LoadingEntryMode,
+    camionId: '',
+    hubArrivee: HUB_PRESETS[0] as string,
+    dateChargement: todayIso(),
+    designation: '',
+    quantite: undefined as number | undefined,
+    unite: '',
+    notes: '',
   });
 
   const selectableLoadings = useMemo(
@@ -211,6 +237,71 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
       prixUnitaire: pu ?? p.prixUnitaire,
       montant: calculated ?? p.montant,
     }));
+  };
+
+  const openCreateLoadingForOrder = () => {
+    setLoadingForm({
+      fournisseurId: '',
+      numeroBon: orderForm.reference,
+      modeEntree: 'bon_simple',
+      camionId: '',
+      hubArrivee: HUB_PRESETS[0],
+      dateChargement: orderForm.dateCommande || todayIso(),
+      designation: orderForm.designation,
+      quantite: orderForm.quantite,
+      unite: orderForm.unite,
+      notes: orderForm.destination ? `Client: ${orderForm.destination}` : '',
+    });
+    setLoadingDialogOpen(true);
+  };
+
+  const submitLoadingFromClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loadingForm.fournisseurId) {
+      toast.error('Choisissez un fournisseur.');
+      return;
+    }
+    if (!loadingForm.designation.trim()) {
+      toast.error('Désignation du bon obligatoire.');
+      return;
+    }
+    if (loadingForm.modeEntree === 'camion_ansar' && !loadingForm.camionId) {
+      toast.error('Choisissez le camion ANSAR utilisé pour ce bon.');
+      return;
+    }
+
+    await withGuard(async () => {
+      try {
+        const isCamrail = loadingForm.modeEntree === 'rail';
+        const isCamionAnsar =
+          loadingForm.modeEntree === 'camion_ansar' || loadingForm.modeEntree === 'camion';
+        const created = await createSupplierLoading({
+          fournisseurId: loadingForm.fournisseurId,
+          numeroBon: loadingForm.numeroBon.trim() || undefined,
+          designation: loadingForm.designation.trim(),
+          quantite: loadingForm.quantite,
+          unite: loadingForm.unite.trim() || undefined,
+          dateChargement: loadingForm.dateChargement,
+          modeEntree: loadingForm.modeEntree,
+          camionId: isCamionAnsar ? loadingForm.camionId || undefined : undefined,
+          hubArrivee: isCamrail ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0] : undefined,
+          lieu: isCamrail ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0] : undefined,
+          notes: loadingForm.notes.trim() || undefined,
+        });
+        setOrderForm((p) => ({
+          ...p,
+          supplierLoadingId: created.id,
+          reference: p.reference.trim() ? p.reference : created.numeroBon ?? p.reference,
+          designation: p.designation.trim() ? p.designation : created.designation,
+          quantite: p.quantite ?? created.quantite,
+          unite: p.unite.trim() ? p.unite : created.unite ?? p.unite,
+        }));
+        setLoadingDialogOpen(false);
+        toast.success('Bon créé et sélectionné pour la commande.');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur lors de la création du bon');
+      }
+    });
   };
 
   const linkOrderToLoading = async (orderId: string, loadingId: string, qty?: number) => {
@@ -599,8 +690,6 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
     });
   };
 
-  const activeTrucks = trucks.filter((t) => t.statut === 'actif');
-
   return (
     <div className="space-y-6">
       <section>
@@ -816,9 +905,15 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitOrder} className="space-y-3">
-            {selectableLoadings.length > 0 ? (
-              <div className="space-y-1">
-                <Label>Bon de chargement existant</Label>
+            <div className="space-y-1 rounded-md border border-dashed p-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Bon de chargement</Label>
+                <Button type="button" size="sm" variant="secondary" onClick={openCreateLoadingForOrder}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Créer un bon
+                </Button>
+              </div>
+              {selectableLoadings.length > 0 ? (
                 <Select
                   value={orderForm.supplierLoadingId || '_none'}
                   onValueChange={(v) => {
@@ -842,16 +937,16 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
-                Aucun bon disponible. Créez-en un dans{' '}
-                <Link to="/chargements" className="text-primary font-medium hover:underline">
-                  Chargements
-                </Link>
-                .
-              </p>
-            )}
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Aucun bon disponible pour ce client. Créez-le ici ou depuis{' '}
+                  <Link to="/chargements" className="text-primary font-medium hover:underline">
+                    Chargements
+                  </Link>
+                  .
+                </p>
+              )}
+            </div>
             <div>
               <Label>Réf. commande</Label>
               <Input
@@ -1043,6 +1138,180 @@ export function ClientOperationsPanels({ clientId, defaultDestination }: Props) 
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Enregistrer
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={loadingDialogOpen} onOpenChange={setLoadingDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Créer un bon fournisseur</DialogTitle>
+            <DialogDescription className="sr-only">
+              Création rapide d&apos;un bon de chargement depuis la commande client.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitLoadingFromClient} className="space-y-3">
+            <div>
+              <Label>Fournisseur *</Label>
+              <ThirdPartyPicker
+                options={fournisseurs}
+                value={loadingForm.fournisseurId}
+                onValueChange={(fournisseurId) =>
+                  setLoadingForm((p) => ({ ...p, fournisseurId }))
+                }
+                placeholder="Choisir un fournisseur"
+              />
+            </div>
+            <div>
+              <Label>N° bon</Label>
+              <Input
+                value={loadingForm.numeroBon}
+                onChange={(e) => setLoadingForm((p) => ({ ...p, numeroBon: e.target.value }))}
+                placeholder="Ex. BL-001"
+              />
+            </div>
+            <div>
+              <Label>Mode d&apos;entrée</Label>
+              <Select
+                value={loadingForm.modeEntree}
+                onValueChange={(v) =>
+                  setLoadingForm((p) => ({
+                    ...p,
+                    modeEntree: v as LoadingEntryMode,
+                    camionId: v === 'camion_ansar' ? p.camionId : '',
+                    hubArrivee: v === 'rail' ? p.hubArrivee || HUB_PRESETS[0] : HUB_PRESETS[0],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOADING_ENTRY_MODE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {loadingForm.modeEntree === 'camion_ansar' && (
+              <div>
+                <Label>Camion ANSAR *</Label>
+                <Select
+                  value={loadingForm.camionId}
+                  onValueChange={(camionId) => setLoadingForm((p) => ({ ...p, camionId }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir un camion" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeTrucks.length === 0 ? (
+                      <div className="p-3 text-sm text-muted-foreground">
+                        Aucun camion actif disponible.
+                      </div>
+                    ) : (
+                      activeTrucks.map((truck) => (
+                        <SelectItem key={truck.id} value={truck.id}>
+                          {truck.immatriculation} · {truck.modele}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {loadingForm.modeEntree === 'rail' && (
+              <div>
+                <Label>Hub CAMRAIL</Label>
+                <Select
+                  value={(HUB_PRESETS as readonly string[]).includes(loadingForm.hubArrivee) ? loadingForm.hubArrivee : 'Autre hub'}
+                  onValueChange={(hubArrivee) =>
+                    setLoadingForm((p) => ({
+                      ...p,
+                      hubArrivee: hubArrivee === 'Autre hub' ? '' : hubArrivee,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HUB_PRESETS.map((hub) => (
+                      <SelectItem key={hub} value={hub}>
+                        {hub}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!(HUB_PRESETS as readonly string[]).slice(0, -1).includes(loadingForm.hubArrivee) && (
+                  <Input
+                    className="mt-2"
+                    placeholder="Nom du hub"
+                    value={loadingForm.hubArrivee}
+                    onChange={(e) =>
+                      setLoadingForm((p) => ({ ...p, hubArrivee: e.target.value }))
+                    }
+                  />
+                )}
+              </div>
+            )}
+            <div>
+              <Label>Date du bon *</Label>
+              <Input
+                type="date"
+                value={loadingForm.dateChargement}
+                onChange={(e) =>
+                  setLoadingForm((p) => ({ ...p, dateChargement: e.target.value }))
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label>Désignation *</Label>
+              <Input
+                value={loadingForm.designation}
+                onChange={(e) =>
+                  setLoadingForm((p) => ({ ...p, designation: e.target.value }))
+                }
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Quantité</Label>
+                <NumberInput
+                  min={0}
+                  value={loadingForm.quantite}
+                  onChange={(quantite) => setLoadingForm((p) => ({ ...p, quantite }))}
+                />
+              </div>
+              <div>
+                <Label>Unité</Label>
+                <Input
+                  value={loadingForm.unite}
+                  onChange={(e) => setLoadingForm((p) => ({ ...p, unite: e.target.value }))}
+                  placeholder="sac, t…"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={loadingForm.notes}
+                onChange={(e) => setLoadingForm((p) => ({ ...p, notes: e.target.value }))}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setLoadingDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Créer et sélectionner
               </Button>
             </div>
           </form>

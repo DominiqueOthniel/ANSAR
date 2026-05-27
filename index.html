@@ -5,14 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#6c3ad6" />
     <title>ANSAR</title>
-    <meta name="description" content="Application professionnelle de gestion de flotte de camions au Cameroun - Suivi des trajets, dépenses, factures et chauffeurs" />
+    <script>
+      // Verrouille le titre avant le chargement React pour éviter les anciens noms de projet en cache.
+      document.title = 'ANSAR';
+      new MutationObserver(() => {
+        if (document.title !== 'ANSAR') document.title = 'ANSAR';
+      }).observe(document.querySelector('title'), { childList: true });
+    </script>
+    <meta name="description" content="ANSAR" />
     <meta name="author" content="ANSAR" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <meta property="og:title" content="ANSAR - Gestion de Flotte" />
-    <meta property="og:description" content="Gérez efficacement votre flotte de camions au Cameroun" />
+    <meta property="og:title" content="ANSAR" />
+    <meta property="og:description" content="ANSAR" />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
 

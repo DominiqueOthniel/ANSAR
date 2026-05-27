@@ -148,6 +148,29 @@ function appendDetailBlockRows(
   data.push([]);
 }
 
+export function exportBlocksToExcel(options: {
+  title: string;
+  fileName: string;
+  sheetName?: string;
+  filtersDescription?: string;
+  blocks: ExportDetailBlock[];
+}): void {
+  const { title, fileName, sheetName = 'Données', filtersDescription, blocks } = options;
+  const data: (string | number)[][] = [];
+  const tableRanges: ExcelTableRange[] = [];
+
+  data.push([title]);
+  if (filtersDescription) data.push([filtersDescription]);
+  data.push([]);
+  blocks.forEach((block) => appendDetailBlockRows(data, block, tableRanges));
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  applyExcelTableFormatting(worksheet, data, tableRanges);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, fileName);
+}
+
 /** Export Excel : tableau de synthèse puis, pour chaque ligne, blocs de détail structurés. */
 export function exportToExcelWithDetails<T>(options: ExportWithDetailsOptions<T>) {
   const {
