@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 20 dépenses (expenses) — alignées sur les seeds existants
--- Truck Track / Supabase — SQL Editor
+-- ANSAR / Supabase — SQL Editor
 --
 -- PRÉREQUIS (dans l’ordre recommandé) :
 --   1. backend/supabase-schema.sql

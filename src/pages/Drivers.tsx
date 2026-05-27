@@ -711,7 +711,7 @@ export default function Drivers() {
           ${driversContent}
           
           <div class="footer">
-            Document généré automatiquement par TruckTrack • ${currentDate}
+            Document généré automatiquement par ANSAR • ${currentDate}
           </div>
         </body>
       </html>

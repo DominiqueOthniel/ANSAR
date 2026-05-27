@@ -102,7 +102,7 @@ export default function Users() {
 
   const handleExportExcel = () => {
     exportToExcel({
-      title: 'Utilisateurs TruckTrack',
+      title: 'Utilisateurs ANSAR',
       fileName: `utilisateurs_${new Date().toISOString().split('T')[0]}.xlsx`,
       columns: [
         { header: 'Login', value: (u) => u.login },
@@ -115,7 +115,7 @@ export default function Users() {
 
   const handleExportPDF = () => {
     exportToPrintablePDF({
-      title: 'Utilisateurs TruckTrack',
+      title: 'Utilisateurs ANSAR',
       fileName: `utilisateurs_${new Date().toISOString().split('T')[0]}.pdf`,
       headerColor: '#7c3aed',
       accentColor: '#7c3aed',

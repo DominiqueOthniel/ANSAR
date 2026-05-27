@@ -155,6 +155,32 @@ export async function appendEntreeFromInvoicePayment(params: {
   }
 }
 
+export async function appendSortieFromExpenseInvoicePayment(params: {
+  montant: number;
+  date: string;
+  factureNumero: string;
+  factureId: string;
+  modeLibelle?: string;
+}): Promise<void> {
+  if (params.montant <= 0) return;
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const tx: CaisseTransaction = {
+    id,
+    type: 'sortie',
+    montant: params.montant,
+    date: params.date,
+    description: `Paiement fournisseur facture ${params.factureNumero}${params.modeLibelle ? ` (${params.modeLibelle})` : ''}`,
+    reference: `facture-depense:${params.factureId}`,
+    categorie: 'Factures fournisseurs',
+  };
+  if (isRemoteCaisse()) {
+    await caisseApi.createTransaction(payloadFromTx(tx));
+    await refreshCaisseFromApi();
+  } else {
+    setCaisseTransactions([...getCaisseTransactions(), tx]);
+  }
+}
+
 export function isPaiementVersBanque(mode: string | undefined): boolean {
   if (!mode) return false;
   return mode.trim().toLowerCase().includes('virement');

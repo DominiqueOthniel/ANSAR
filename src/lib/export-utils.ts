@@ -219,7 +219,7 @@ export function exportDocumentToPDF(options: PDFDocumentOptions): void {
       </div>
       ${detailHtml}
       ${totalsHtml}
-      <div class="pdf-footer">Truck Track · ${currentDate}</div>
+      <div class="pdf-footer">ANSAR · ${currentDate}</div>
     `,
   });
 }
@@ -748,7 +748,7 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
         </div>
         ` : ''}
         <div class="footer">
-          Document généré automatiquement par TruckTrack • ${currentDate}
+          Document généré automatiquement par ANSAR • ${currentDate}
         </div>
       </body>
     </html>

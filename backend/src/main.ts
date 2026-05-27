@@ -64,7 +64,7 @@ async function bootstrap() {
   const httpAdapter = app.getHttpAdapter();
   httpAdapter.get('/', (req: any, res: any) => {
     res.json({
-      name: 'Truck Track API',
+      name: 'ANSAR API',
       version: '1.0.0',
       api: '/api',
       docs: 'GET /api pour l’API, GET /api/health pour le health check.',
@@ -85,7 +85,7 @@ async function bootstrap() {
   const host = process.env.HOST || '0.0.0.0';
   await app.listen(port, host);
 
-  console.log(`🚚 Truck Track API: http://${host}:${port}/api`);
+  console.log(`🚚 ANSAR API: http://${host}:${port}/api`);
 }
 
 bootstrap();

@@ -1,4 +1,4 @@
-# PostgreSQL pour développement local (Truck Track)
+# PostgreSQL pour développement local (ANSAR)
 services:
   postgres:
     image: postgres:16-alpine

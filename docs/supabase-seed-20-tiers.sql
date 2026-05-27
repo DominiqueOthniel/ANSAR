@@ -1,5 +1,5 @@
 -- =============================================================================
--- 20 tiers (third_parties) — Truck Track / Supabase
+-- 20 tiers (third_parties) — ANSAR / Supabase
 -- Exécuter dans SQL Editor après création de la table (backend/supabase-schema.sql)
 --
 -- type : 'proprietaire' | 'client' | 'fournisseur'

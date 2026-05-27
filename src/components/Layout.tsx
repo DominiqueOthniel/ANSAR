@@ -321,7 +321,7 @@ function SidebarContent({
         <div className="flex items-center gap-2 min-w-0">
           <AppLogo variant="sidebar" />
           <div className="min-w-0">
-            <p className="font-bold text-sm text-sidebar-foreground leading-none truncate">Truck Track</p>
+            <p className="font-bold text-sm text-sidebar-foreground leading-none truncate">ANSAR</p>
             <p className="text-[10px] text-sidebar-foreground/40 leading-none mt-0.5">Cameroun</p>
           </div>
         </div>
@@ -388,7 +388,7 @@ function SidebarContent({
           Déconnexion
         </button>
         <p className="text-center text-[10px] text-sidebar-foreground/25 mt-3">
-          © {new Date().getFullYear()} Truck Track
+          © {new Date().getFullYear()} ANSAR
         </p>
       </div>
     </div>

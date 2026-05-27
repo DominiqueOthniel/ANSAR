@@ -35,7 +35,11 @@ import {
   getBankAccounts,
   getBankTransactions,
 } from '@/lib/bank-local';
-import { appendEntreeFromInvoicePayment, isPaiementVersBanque } from '@/lib/caisse-local';
+import {
+  appendEntreeFromInvoicePayment,
+  appendSortieFromExpenseInvoicePayment,
+  isPaiementVersBanque,
+} from '@/lib/caisse-local';
 import { COMPANY_NAME, COMPANY_TAGLINE } from '@/lib/invoice-branding';
 import { buildSingleInvoicePdfInnerHtml } from '@/lib/invoice-single-pdf-html';
 import { openPdfPrintWindow } from '@/lib/pdf-print';
@@ -374,7 +378,8 @@ export default function Invoices() {
     if (!invoice) return;
     
     setSelectedInvoice(invoice);
-    setPaymentAmount(0); // Montant du nouveau paiement à ajouter (pré-rempli à 0)
+    const resteAPayer = Math.max(0, Number(invoice.montantTTC) - Number(invoice.montantPaye ?? 0));
+    setPaymentAmount(invoice.expenseId ? resteAPayer : 0);
     setPaymentPayerParticipantId('');
     const trip = invoice.trajetId ? trips.find((t) => t.id === invoice.trajetId) : undefined;
     if (trip) {
@@ -452,6 +457,11 @@ export default function Invoices() {
     const datePaiementJour = new Date().toISOString().split('T')[0];
     const isExpenseInvoice = Boolean(selectedInvoice.expenseId);
 
+    if (isExpenseInvoice && Math.abs(paymentAmount - resteAPayer) > tol) {
+      toast.error('Une facture de dépense doit être réglée en une seule fois pour le solde restant.');
+      return;
+    }
+
     await withPaymentGuard(async () => {
       try {
         if (
@@ -520,20 +530,33 @@ export default function Invoices() {
           }
         } else if (paymentAmount > 0 && !isPaiementVersBanque(mode)) {
           try {
-            await appendEntreeFromInvoicePayment({
-              montant: paymentAmount,
-              date: datePaiementJour,
-              factureNumero: selectedInvoice.numero,
-              factureId: selectedInvoice.id,
-              modeLibelle: mode,
-              payeurNote: payeurDescription || undefined,
-            });
             const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
-            toast.success(
-              factureSoldée
-                ? `Facture soldée — ${paymentAmount.toLocaleString('fr-FR')} FCFA enregistrés en caisse`
-                : `Encaissement caisse ${paymentAmount.toLocaleString('fr-FR')} FCFA — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA sur la facture`,
-            );
+            if (isExpenseInvoice) {
+              await appendSortieFromExpenseInvoicePayment({
+                montant: paymentAmount,
+                date: datePaiementJour,
+                factureNumero: selectedInvoice.numero,
+                factureId: selectedInvoice.id,
+                modeLibelle: mode,
+              });
+              toast.success(
+                `Facture fournisseur soldée — ${paymentAmount.toLocaleString('fr-FR')} FCFA sortis de caisse`,
+              );
+            } else {
+              await appendEntreeFromInvoicePayment({
+                montant: paymentAmount,
+                date: datePaiementJour,
+                factureNumero: selectedInvoice.numero,
+                factureId: selectedInvoice.id,
+                modeLibelle: mode,
+                payeurNote: payeurDescription || undefined,
+              });
+              toast.success(
+                factureSoldée
+                  ? `Facture soldée — ${paymentAmount.toLocaleString('fr-FR')} FCFA enregistrés en caisse`
+                  : `Encaissement caisse ${paymentAmount.toLocaleString('fr-FR')} FCFA — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA sur la facture`,
+              );
+            }
           } catch {
             toast.error(
               'Facture mise à jour, mais l’écriture caisse a échoué. Vérifie la page Caisse ou réessaie.',
@@ -2765,12 +2788,12 @@ export default function Invoices() {
                   <div className="border-b pb-4 print:pb-3 print:border-slate-300">
                     <div className="grid grid-cols-2 gap-6">
                       <div>
-                        <h3 className="font-bold text-lg mb-2">Truck Track Cameroun</h3>
+                        <h3 className="font-bold text-lg mb-2">ANSAR</h3>
                         <p className="text-sm text-muted-foreground">
                           Transport de marchandises<br />
                           Douala, Cameroun<br />
                           Tél: +237 6 XX XX XX XX<br />
-                          Email: contact@trucktrack.cm
+                          Email: contact@ansar.cm
                         </p>
                       </div>
                       <div className="text-right">
@@ -3323,18 +3346,26 @@ export default function Invoices() {
                 })()}
 
               <div>
-                <Label htmlFor="paymentAmount">Montant payé (FCFA) *</Label>
+                <Label htmlFor="paymentAmount">
+                  {selectedInvoice.expenseId ? 'Montant à débiter (FCFA) *' : 'Montant payé (FCFA) *'}
+                </Label>
                 <NumberInput
                   id="paymentAmount"
                   value={paymentAmount}
-                  onChange={(value) => setPaymentAmount(value || 0)}
+                  onChange={(value) => {
+                    if (selectedInvoice.expenseId) return;
+                    setPaymentAmount(value || 0);
+                  }}
                   min={0}
                   max={selectedInvoice.montantTTC - (selectedInvoice.montantPaye || 0)}
                   placeholder="0"
                   className="mt-1"
+                  disabled={Boolean(selectedInvoice.expenseId)}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Le montant peut être partiel. Maximum: {(selectedInvoice.montantTTC - (selectedInvoice.montantPaye || 0)).toLocaleString('fr-FR')} FCFA
+                  {selectedInvoice.expenseId
+                    ? 'Les factures de dépenses se règlent en une fois et créent uniquement une sortie (caisse ou banque).'
+                    : `Le montant peut être partiel. Maximum: ${(selectedInvoice.montantTTC - (selectedInvoice.montantPaye || 0)).toLocaleString('fr-FR')} FCFA`}
                 </p>
               </div>
 
@@ -3461,9 +3492,23 @@ export default function Invoices() {
               )}
 
               {paymentAmount > 0 && !isPaiementVersBanque(selectedInvoice.modePaiement) && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-3 text-sm text-emerald-900 dark:text-emerald-200">
-                  Ce montant sera enregistré en <strong>caisse</strong> (espèces, chèque, mobile money, etc.). Seul le{' '}
-                  <strong>virement bancaire</strong> est crédité sur la banque.
+                <div
+                  className={
+                    selectedInvoice.expenseId
+                      ? 'rounded-lg border border-red-500/30 bg-red-500/5 dark:bg-red-950/20 p-3 text-sm text-red-900 dark:text-red-200'
+                      : 'rounded-lg border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-3 text-sm text-emerald-900 dark:text-emerald-200'
+                  }
+                >
+                  {selectedInvoice.expenseId ? (
+                    <>
+                      Ce règlement sera enregistré en <strong>sortie de caisse</strong>. Une dépense ne crée pas d’encaissement.
+                    </>
+                  ) : (
+                    <>
+                      Ce montant sera enregistré en <strong>caisse</strong> (espèces, chèque, mobile money, etc.). Seul le{' '}
+                      <strong>virement bancaire</strong> est crédité sur la banque.
+                    </>
+                  )}
                 </div>
               )}
 

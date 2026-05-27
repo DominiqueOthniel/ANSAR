@@ -1,5 +1,5 @@
 -- =============================================
--- Truck Track - Schéma complet pour Supabase (PostgreSQL)
+-- ANSAR - Schéma complet pour Supabase (PostgreSQL)
 -- Exécuter dans SQL Editor de Supabase (Dashboard → SQL Editor → New query)
 -- =============================================
 

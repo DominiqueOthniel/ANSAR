@@ -181,7 +181,7 @@ export default function Login() {
 
           {/* Footer */}
           <p className="text-center text-white/25 text-xs mt-6">
-            Truck Track Cameroun © {new Date().getFullYear()}
+            ANSAR © {new Date().getFullYear()}
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 10 trajets différents — Truck Track / Supabase
+-- 10 trajets différents — ANSAR / Supabase
 -- Exécuter dans SQL Editor après création des tables (backend/supabase-schema.sql)
 --
 -- PRÉREQUIS : les chauffeurs et camions ci-dessous doivent exister (voir
