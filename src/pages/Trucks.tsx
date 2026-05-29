@@ -420,9 +420,6 @@ export default function Trucks() {
       columns: [
         { header: 'Immatriculation tracteur', value: exportTracteurImmat },
         { header: 'Immatriculation remorque', value: exportRemorqueImmat },
-        { header: 'Modèle', value: (t) => t.modele },
-        { header: 'Type', value: (t) => labelTruckType(t) },
-        { header: 'Statut', value: (t) => t.statut === 'actif' ? 'Actif' : 'Inactif' },
         { header: 'Chauffeur attitré', value: (t) => {
           const chauffeur = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
           return chauffeur ? `${chauffeur.prenom} ${chauffeur.nom}` : '-';
