@@ -31,3 +31,6 @@ backend/*.sqlite
 *.njsproj
 *.sln
 *.sw?
+
+# Raccourcis Windows
+*.lnk
