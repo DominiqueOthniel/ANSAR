@@ -23,6 +23,7 @@ import type { TripClientParticipant } from '@/lib/trip-client-participants';
 import { normalizeInvoicePaymentSlices, type InvoicePaymentEncaissement } from '@/lib/invoice-payment-slices';
 import { refreshCaisseFromApi, isRemoteCaisse } from '@/lib/caisse-local';
 import { refreshBankFromApi } from '@/lib/bank-local';
+import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
 
 // Types
 export type TruckType = 'tracteur' | 'remorqueuse';
@@ -743,15 +744,9 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
     dateChargement: String(r.dateChargement ?? ''),
     dateLivraison: r.dateLivraison ? String(r.dateLivraison) : undefined,
     statut: r.statut as SupplierLoadingStatus,
-    modeEntree:
-      r.modeEntree === 'bon_simple' ||
-      r.modeEntree === 'camion_ansar' ||
-      r.modeEntree === 'rendu_fournisseur' ||
-      r.modeEntree === 'rail' ||
-      r.modeEntree === 'autre' ||
-      r.modeEntree === 'camion'
-        ? r.modeEntree
-        : 'bon_simple',
+    modeEntree: normalizeLoadingEntryMode(
+      r.modeEntree != null ? String(r.modeEntree) : undefined,
+    ),
     camionId: r.camionId ? String(r.camionId) : undefined,
     hubArrivee: r.hubArrivee ? String(r.hubArrivee) : undefined,
     dateArriveeHub: r.dateArriveeHub ? String(r.dateArriveeHub) : undefined,

@@ -73,6 +73,39 @@ const EXIT_LABELS: Record<ClientDeliveryExitMode, string> = {
   livraison_directe: 'Direct',
 };
 
+/** Valeurs acceptées par d’anciennes API (avant bon_simple / camion_ansar). */
+export type LegacyLoadingEntryMode = 'camion' | 'rail' | 'autre';
+
+const LOADING_ENTRY_MODES: LoadingEntryMode[] = [
+  'bon_simple',
+  'camion_ansar',
+  'rail',
+  'rendu_fournisseur',
+  'camion',
+  'autre',
+];
+
+/** Convertit vers l’API legacy Render encore non redéployée. */
+export function toLegacyLoadingEntryMode(mode: LoadingEntryMode): LegacyLoadingEntryMode {
+  if (mode === 'rail') return 'rail';
+  if (mode === 'camion_ansar' || mode === 'camion') return 'camion';
+  return 'autre';
+}
+
+/** Normalise les valeurs lues en base (legacy ou nouvelles). */
+export function normalizeLoadingEntryMode(mode: string | undefined): LoadingEntryMode {
+  if (!mode) return 'bon_simple';
+  if (mode === 'camion') return 'camion_ansar';
+  if (mode === 'autre') return 'bon_simple';
+  if (LOADING_ENTRY_MODES.includes(mode as LoadingEntryMode)) return mode as LoadingEntryMode;
+  return 'bon_simple';
+}
+
+export function isLegacyModeEntreeValidationError(message: unknown): boolean {
+  const text = Array.isArray(message) ? message.join(' ') : String(message ?? '');
+  return /modeEntree must be one of the following values:\s*camion,\s*rail,\s*autre/i.test(text);
+}
+
 export function formatLoadingEntryModeFr(m: LoadingEntryMode | string | undefined): string {
   if (!m) return '—';
   return ENTRY_LABELS[m as LoadingEntryMode] ?? m;

@@ -4,6 +4,11 @@
  */
 
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
+import {
+  isLegacyModeEntreeValidationError,
+  toLegacyLoadingEntryMode,
+  type LoadingEntryMode,
+} from '@/lib/hub-transit';
 
 /**
  * URL de base incluant `/api`. Si VITE_API_URL est `https://host` sans `/api`,
@@ -79,7 +84,10 @@ async function request<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message || `Erreur ${res.status}`);
+    const message = Array.isArray(err.message)
+      ? err.message.join(', ')
+      : err.message || `Erreur ${res.status}`;
+    throw new Error(message);
   }
 
   if (res.status === 204) return undefined as T;
@@ -490,6 +498,24 @@ export interface SupplierLoadingAssignmentPayload {
   notes?: string;
 }
 
+async function supplierLoadingWrite<T>(
+  endpoint: string,
+  method: 'POST' | 'PATCH',
+  data: SupplierLoadingPayload | Partial<SupplierLoadingPayload>,
+): Promise<T> {
+  try {
+    return await request<T>(endpoint, { method, body: JSON.stringify(data) });
+  } catch (e) {
+    const mode = data.modeEntree as LoadingEntryMode | undefined;
+    if (!mode || !isLegacyModeEntreeValidationError(e instanceof Error ? e.message : e)) {
+      throw e;
+    }
+    const legacy = toLegacyLoadingEntryMode(mode);
+    if (legacy === mode) throw e;
+    return request<T>(endpoint, { method, body: JSON.stringify({ ...data, modeEntree: legacy }) });
+  }
+}
+
 /** Bons de chargement fournisseur et affectation aux commandes clients. */
 export const supplierLoadingsApi = {
   getAll: (params?: {
@@ -510,9 +536,9 @@ export const supplierLoadingsApi = {
     ),
   getOne: (id: string) => request<any>(`/supplier-loadings/${id}`),
   create: (data: SupplierLoadingPayload) =>
-    request<any>('/supplier-loadings', { method: 'POST', body: JSON.stringify(data) }),
+    supplierLoadingWrite<any>('/supplier-loadings', 'POST', data),
   update: (id: string, data: Partial<SupplierLoadingPayload>) =>
-    request<any>(`/supplier-loadings/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    supplierLoadingWrite<any>(`/supplier-loadings/${id}`, 'PATCH', data),
   delete: (id: string) => request<void>(`/supplier-loadings/${id}`, { method: 'DELETE' }),
   setAssignments: (id: string, assignments: SupplierLoadingAssignmentPayload[]) =>
     request<any>(`/supplier-loadings/${id}/assignments`, {
