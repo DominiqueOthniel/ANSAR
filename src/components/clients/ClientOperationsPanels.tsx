@@ -188,7 +188,9 @@ export function ClientOperationsPanels({
     designation: '',
     quantite: undefined as number | undefined,
     unite: '',
+    prixUnitaireFournisseur: undefined as number | undefined,
     montantBon: undefined as number | undefined,
+    montantBonTouched: false,
     lieu: '',
     notes: '',
   });
@@ -226,6 +228,25 @@ export function ClientOperationsPanels({
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
     computeLineAmount(quantite, prixUnitaire);
+
+  const syncLoadingBonValue = (
+    base: typeof loadingForm,
+    patch: Partial<typeof loadingForm>,
+  ): typeof loadingForm => {
+    const next = { ...base, ...patch };
+    const article = next.articleId
+      ? articles.find((a) => a.id === next.articleId)
+      : undefined;
+    const prixUnitaire =
+      next.prixUnitaireFournisseur ??
+      (next.fournisseurId ? getArticleSupplierUnitPrice(article, next.fournisseurId) : undefined);
+    const montantBon = computeLineAmount(next.quantite, prixUnitaire);
+    return {
+      ...next,
+      prixUnitaireFournisseur: prixUnitaire,
+      montantBon: next.montantBonTouched ? next.montantBon : montantBon ?? next.montantBon,
+    };
+  };
 
   useEffect(() => {
     const next = recalcMontant(orderForm.quantite, orderForm.prixUnitaire);
@@ -284,7 +305,9 @@ export function ClientOperationsPanels({
       designation: orderForm.designation,
       quantite: orderForm.quantite,
       unite: orderForm.unite,
+      prixUnitaireFournisseur: undefined,
       montantBon: undefined,
+      montantBonTouched: false,
       lieu: '',
       notes: orderForm.destination ? `Client: ${orderForm.destination}` : '',
     });
@@ -332,10 +355,16 @@ export function ClientOperationsPanels({
         setOrderForm((p) => ({
           ...p,
           supplierLoadingId: created.id,
+          articleId: p.articleId || created.articleId || '',
           reference: p.reference.trim() ? p.reference : created.numeroBon ?? p.reference,
           designation: p.designation.trim() ? p.designation : created.designation,
           quantite: p.quantite ?? created.quantite,
           unite: p.unite.trim() ? p.unite : created.unite ?? p.unite,
+          prixUnitaire: p.prixUnitaire ?? loadingForm.prixUnitaireFournisseur,
+          montant:
+            p.montant ??
+            computeLineAmount(p.quantite ?? created.quantite, loadingForm.prixUnitaireFournisseur) ??
+            p.montant,
         }));
         setLoadingDialogOpen(false);
         toast.success('Bon créé et sélectionné pour la commande.');
@@ -1203,11 +1232,18 @@ export function ClientOperationsPanels({
                 options={fournisseurs}
                 value={loadingForm.fournisseurId}
                 onValueChange={(fournisseurId) =>
-                  setLoadingForm((p) => ({
-                    ...p,
-                    fournisseurId,
-                    articleId: '',
-                  }))
+                  setLoadingForm((p) =>
+                    syncLoadingBonValue(
+                      {
+                        ...p,
+                        fournisseurId,
+                        articleId: '',
+                        prixUnitaireFournisseur: undefined,
+                        montantBonTouched: false,
+                      },
+                      {},
+                    ),
+                  )
                 }
                 placeholder="Choisir un fournisseur"
               />
@@ -1336,20 +1372,30 @@ export function ClientOperationsPanels({
                 disabled={!loadingForm.fournisseurId}
                 onValueChange={(articleId) => {
                   if (articleId === '_none') {
-                    setLoadingForm((p) => ({ ...p, articleId: '' }));
+                    setLoadingForm((p) =>
+                      syncLoadingBonValue(
+                        {
+                          ...p,
+                          articleId: '',
+                          prixUnitaireFournisseur: undefined,
+                          montantBonTouched: false,
+                        },
+                        {},
+                      ),
+                    );
                     return;
                   }
                   const article = articles.find((a) => a.id === articleId);
                   const pu = getArticleSupplierUnitPrice(article, loadingForm.fournisseurId);
-                  const montantBon = computeLineAmount(loadingForm.quantite, pu);
-                  setLoadingForm((p) => ({
-                    ...p,
-                    articleId,
-                    designation: article?.libelle ?? p.designation,
-                    unite: article?.unite || p.unite,
-                    notes: p.notes,
-                    ...(montantBon != null ? { montantBon } : {}),
-                  }));
+                  setLoadingForm((p) =>
+                    syncLoadingBonValue(p, {
+                      articleId,
+                      designation: article?.libelle ?? p.designation,
+                      unite: article?.unite || p.unite,
+                      prixUnitaireFournisseur: pu,
+                      montantBonTouched: false,
+                    }),
+                  );
                 }}
               >
                 <SelectTrigger>
@@ -1377,7 +1423,7 @@ export function ClientOperationsPanels({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                La sélection remplit la désignation et l’unité du bon.
+                La sélection remplit l’article catalogue, la désignation, l’unité, le prix et la valeur du bon.
               </p>
             </div>
             {loadingForm.modeEntree !== 'rail' && (
@@ -1434,17 +1480,11 @@ export function ClientOperationsPanels({
                 <NumberInput
                   min={0}
                   value={loadingForm.quantite}
-                  onChange={(quantite) => {
-                    const article = loadingForm.articleId
-                      ? articles.find((a) => a.id === loadingForm.articleId)
-                      : undefined;
-                    const pu = getArticleSupplierUnitPrice(article, loadingForm.fournisseurId);
-                    setLoadingForm((p) => ({
-                      ...p,
-                      quantite,
-                      montantBon: computeLineAmount(quantite, pu) ?? p.montantBon,
-                    }));
-                  }}
+                  onChange={(quantite) =>
+                    setLoadingForm((p) =>
+                      syncLoadingBonValue(p, { quantite, montantBonTouched: false }),
+                    )
+                  }
                 />
               </div>
               <div>
@@ -1456,6 +1496,45 @@ export function ClientOperationsPanels({
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Prix unitaire fournisseur (FCFA)</Label>
+                <NumberInput
+                  allowEmpty
+                  min={0}
+                  value={loadingForm.prixUnitaireFournisseur}
+                  onChange={(prixUnitaireFournisseur) =>
+                    setLoadingForm((p) =>
+                      syncLoadingBonValue(p, {
+                        prixUnitaireFournisseur,
+                        montantBonTouched: false,
+                      }),
+                    )
+                  }
+                />
+              </div>
+              <div>
+                <Label>Valeur du bon / montant prévu (FCFA)</Label>
+                <NumberInput
+                  allowEmpty
+                  min={0}
+                  value={loadingForm.montantBon}
+                  onChange={(montantBon) =>
+                    setLoadingForm((p) => ({ ...p, montantBon, montantBonTouched: true }))
+                  }
+                />
+              </div>
+            </div>
+            {loadingForm.quantite != null &&
+              loadingForm.prixUnitaireFournisseur != null &&
+              loadingForm.quantite > 0 &&
+              loadingForm.prixUnitaireFournisseur > 0 && (
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Calcul auto : {loadingForm.quantite} ×{' '}
+                  {loadingForm.prixUnitaireFournisseur.toLocaleString('fr-FR')} ={' '}
+                  {formatFcfa(loadingForm.quantite * loadingForm.prixUnitaireFournisseur)}
+                </p>
+              )}
             <div>
               <Label>Notes</Label>
               <Textarea
