@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
-import { BRAND_NAME } from '@/lib/brand';
 
 /** Titre d’onglet strict : évite les anciens préfixes de projet ou caches externes. */
-const BRAND = BRAND_NAME;
+const BRAND = 'SIA-ANSAR';
 
 export function DocumentTitle() {
   useEffect(() => {

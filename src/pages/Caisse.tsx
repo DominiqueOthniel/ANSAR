@@ -54,6 +54,12 @@ const CAISSE_SORT_OPTIONS = [
 
 export type { CaisseTransaction };
 
+type CaisseTransactionRow = CaisseTransaction & {
+  entree: number | undefined;
+  sortie: number | undefined;
+  solde: number;
+};
+
 export default function Caisse() {
   const { invoices } = useApp();
   const { canManageTreasury, user } = useAuth();
@@ -461,6 +467,31 @@ export default function Caisse() {
     }
   }, [filteredTransactions, listSort]);
 
+  const transactionBalances = useMemo(() => {
+    let solde = soldeInitial;
+    const map = new Map<string, number>();
+    const chronological = stableSort(
+      [...transactions],
+      (a, b) => parseDateMs(a.date) - parseDateMs(b.date) || a.id.localeCompare(b.id),
+    );
+    chronological.forEach((t) => {
+      solde += t.type === 'entree' ? t.montant : -t.montant;
+      map.set(t.id, solde);
+    });
+    return map;
+  }, [soldeInitial, transactions]);
+
+  const sortedTransactionRows = useMemo<CaisseTransactionRow[]>(
+    () =>
+      sortedTransactions.map((t) => ({
+        ...t,
+        entree: t.type === 'entree' ? t.montant : undefined,
+        sortie: t.type === 'sortie' ? t.montant : undefined,
+        solde: transactionBalances.get(t.id) ?? soldeInitial,
+      })),
+    [soldeInitial, sortedTransactions, transactionBalances],
+  );
+
   const handleExportExcel = () => {
     exportToExcel({
       title: 'Mouvements de Caisse',
@@ -469,7 +500,9 @@ export default function Caisse() {
       columns: [
         { header: 'Date', value: (t) => new Date(t.date).toLocaleDateString('fr-FR') },
         { header: 'Type', value: (t) => t.type === 'entree' ? 'Entrée' : 'Sortie' },
-        { header: 'Montant (FCFA)', value: (t) => t.montant },
+        { header: 'Entrée (FCFA)', value: (t) => t.entree ?? '' },
+        { header: 'Sortie (FCFA)', value: (t) => t.sortie ?? '' },
+        { header: 'Solde (FCFA)', value: (t) => t.solde },
         { header: 'Description', value: (t) => t.description },
         { header: 'Utilisateur', value: (t) => t.utilisateur || '-' },
         { header: 'Catégorie', value: (t) => t.categorie || '-' },
@@ -478,7 +511,7 @@ export default function Caisse() {
           value: (t) => (isFinancementEntree(t) ? 'Oui' : '—'),
         },
       ],
-      rows: sortedTransactions,
+      rows: sortedTransactionRows,
     });
   };
 
@@ -529,17 +562,20 @@ export default function Caisse() {
         { header: 'Date', value: (t) => `${EMOJI.date} ${new Date(t.date).toLocaleDateString('fr-FR')}` },
         { header: 'Type', value: (t) => t.type === 'entree' ? `${EMOJI.entree} Entrée` : `${EMOJI.sortie} Sortie`, cellStyle: (t) => t.type === 'entree' ? 'positive' : 'negative' },
         {
-          header: 'Montant (FCFA)',
-          value: (t) =>
-            t.type === 'entree'
-              ? `+${t.montant.toLocaleString('fr-FR')}`
-              : `-${t.montant.toLocaleString('fr-FR')}`,
-          cellStyle: (t) => (t.type === 'entree' ? 'positive' : 'negative'),
+          header: 'Entrée (FCFA)',
+          value: (t) => (t.entree != null ? `+${t.entree.toLocaleString('fr-FR')}` : '—'),
+          cellStyle: (t) => (t.entree != null ? 'positive' : 'neutral'),
         },
+        {
+          header: 'Sortie (FCFA)',
+          value: (t) => (t.sortie != null ? `-${t.sortie.toLocaleString('fr-FR')}` : '—'),
+          cellStyle: (t) => (t.sortie != null ? 'negative' : 'neutral'),
+        },
+        { header: 'Solde (FCFA)', value: (t) => `${t.solde.toLocaleString('fr-FR')}` },
         { header: 'Description', value: (t) => t.description },
         { header: 'Utilisateur', value: (t) => t.utilisateur || '-' },
       ],
-      rows: sortedTransactions,
+      rows: sortedTransactionRows,
     });
   };
 
@@ -936,31 +972,42 @@ export default function Caisse() {
           </div>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-            <Table className="min-w-[560px]">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Montant</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Utilisateur</TableHead>
-                  <TableHead className="whitespace-nowrap">Banque</TableHead>
-                  <TableHead>Référence</TableHead>
+                  <TableHead rowSpan={2}>Date</TableHead>
+                  <TableHead rowSpan={2}>Type</TableHead>
+                  <TableHead colSpan={2} className="text-center border-x">
+                    Montant
+                  </TableHead>
+                  <TableHead rowSpan={2}>Solde</TableHead>
+                  <TableHead rowSpan={2}>Description</TableHead>
+                  <TableHead rowSpan={2}>Utilisateur</TableHead>
+                  <TableHead rowSpan={2} className="whitespace-nowrap">Banque</TableHead>
+                  <TableHead rowSpan={2}>Référence</TableHead>
                   {canManageTreasury && (
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead rowSpan={2} className="text-right">Actions</TableHead>
                   )}
+                </TableRow>
+                <TableRow>
+                  <TableHead className="text-right text-green-700 dark:text-green-400 border-l">
+                    Entrée
+                  </TableHead>
+                  <TableHead className="text-right text-red-700 dark:text-red-400 border-r">
+                    Sortie
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedTransactions.length === 0 ? (
+                {sortedTransactionRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManageTreasury ? 9 : 8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={canManageTreasury ? 10 : 9} className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-12 w-12 mx-auto mb-2 opacity-50" />
                       <p>Aucune transaction enregistrée</p>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  sortedTransactions.map(t => (
+                  sortedTransactionRows.map(t => (
                     <TableRow key={t.id}>
                       <TableCell>{new Date(t.date).toLocaleDateString('fr-FR')}</TableCell>
                       <TableCell>
@@ -976,8 +1023,14 @@ export default function Caisse() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className={t.type === 'entree' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-                        {t.type === 'entree' ? '+' : '-'}{t.montant.toLocaleString('fr-FR')} FCFA
+                      <TableCell className="text-right font-semibold text-green-700 dark:text-green-400">
+                        {t.entree != null ? `+${t.entree.toLocaleString('fr-FR')} FCFA` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-red-700 dark:text-red-400">
+                        {t.sortie != null ? `-${t.sortie.toLocaleString('fr-FR')} FCFA` : '—'}
+                      </TableCell>
+                      <TableCell className={t.solde >= 0 ? 'text-right font-semibold tabular-nums' : 'text-right font-semibold tabular-nums text-red-600'}>
+                        {t.solde.toLocaleString('fr-FR')} FCFA
                       </TableCell>
                       <TableCell>{t.description}</TableCell>
                       <TableCell>

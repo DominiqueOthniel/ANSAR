@@ -1,5 +1,5 @@
 -- =============================================================================
--- 10 trajets différents — ANSAR / Supabase
+-- 10 trajets différents — SIA-ANSAR / Supabase
 -- Exécuter dans SQL Editor après création des tables (backend/supabase-schema.sql)
 --
 -- PRÉREQUIS : les chauffeurs et camions ci-dessous doivent exister (voir

@@ -1,5 +1,4 @@
 import * as XLSX from 'xlsx-js-style';
-import { BRAND_NAME } from '@/lib/brand';
 import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
 import {
   buildPdfBrandHtml,
@@ -312,7 +311,7 @@ export function exportDocumentToPDF(options: PDFDocumentOptions): void {
       </div>
       ${detailHtml}
       ${totalsHtml}
-      <div class="pdf-footer">${BRAND_NAME} · ${currentDate}</div>
+      <div class="pdf-footer">SIA-ANSAR · ${currentDate}</div>
     `,
   });
 }
@@ -841,7 +840,7 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
         </div>
         ` : ''}
         <div class="footer">
-          Document généré automatiquement par ${BRAND_NAME} • ${currentDate}
+          Document généré automatiquement par SIA-ANSAR • ${currentDate}
         </div>
       </body>
     </html>

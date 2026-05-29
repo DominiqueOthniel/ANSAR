@@ -1,4 +1,4 @@
-# PostgreSQL pour développement local (ANSAR)
+# PostgreSQL pour développement local (SIA-ANSAR)
 services:
   postgres:
     image: postgres:16-alpine

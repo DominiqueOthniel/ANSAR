@@ -1,5 +1,5 @@
 -- =============================================
--- ANSAR - Schéma complet pour Supabase (PostgreSQL)
+-- SIA-ANSAR - Schéma complet pour Supabase (PostgreSQL)
 -- Exécuter dans SQL Editor de Supabase (Dashboard → SQL Editor → New query)
 -- =============================================
 

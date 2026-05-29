@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Shield, Eye, EyeOff, Lock } from 'lucide-react';
 import { AppLogo } from '@/components/AppLogo';
-import { BRAND_NAME } from '@/lib/brand';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLE_META, formatRoleLabel } from '@/lib/auth-users';
 import { toast } from 'sonner';
@@ -96,7 +95,7 @@ export default function Login() {
             </div>
 
             <h1 className="text-3xl font-bold text-white mb-1">
-              <span className="bg-gradient-to-r from-violet-300 via-white to-indigo-300 bg-clip-text text-transparent">{BRAND_NAME}</span>
+              <span className="bg-gradient-to-r from-violet-300 via-white to-indigo-300 bg-clip-text text-transparent">SIA-ANSAR</span>
             </h1>
             <p className="text-white/50 text-sm">Gestion de flotte · Cameroun</p>
           </div>
@@ -182,7 +181,7 @@ export default function Login() {
 
           {/* Footer */}
           <p className="text-center text-white/25 text-xs mt-6">
-            {BRAND_NAME} © {new Date().getFullYear()}
+            SIA-ANSAR © {new Date().getFullYear()}
           </p>
         </div>
       </div>

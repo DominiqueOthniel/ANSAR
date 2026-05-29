@@ -1,5 +1,5 @@
 -- =============================================================================
--- ANSAR — Jeu de données : 10 cas de figure (mouvements métier)
+-- SIA-ANSAR — Jeu de données : 10 cas de figure (mouvements métier)
 -- Coller dans Supabase → SQL Editor → Run
 --
 -- PRÉREQUIS : tables créées (voir backend/supabase-schema.sql)

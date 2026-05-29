@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 20 dépenses (expenses) — alignées sur les seeds existants
--- ANSAR / Supabase — SQL Editor
+-- SIA-ANSAR / Supabase — SQL Editor
 --
 -- PRÉREQUIS (dans l’ordre recommandé) :
 --   1. backend/supabase-schema.sql
