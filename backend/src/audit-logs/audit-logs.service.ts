@@ -55,7 +55,7 @@ export class AuditLogsService {
     if (query.actorLogin) qb.andWhere('a.actorLogin ILIKE :actorLogin', { actorLogin: `%${query.actorLogin}%` });
     if (query.from) qb.andWhere('a.createdAt >= :from', { from: query.from });
     if (query.to) qb.andWhere('a.createdAt <= :to', { to: query.to });
-    qb.take(query.limit ?? 200);
+    qb.take(query.limit ?? 5000);
     return qb.getMany();
   }
 }

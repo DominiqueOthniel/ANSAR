@@ -172,6 +172,19 @@ export default function Fournisseurs() {
 
   const buildSupplierDetailBlocks = (s: SupplierSummary) => [
     {
+      title: `Catalogue fournisseur (${s.catalogue.length})`,
+      columns: ['Désignation / qualité', 'Unité', 'Prix fournisseur (FCFA)', 'Notes'],
+      rows:
+        s.catalogue.length > 0
+          ? s.catalogue.map((item) => [
+              item.libelle,
+              item.unite,
+              Math.round(item.prixUnitaire),
+              item.notes ?? '—',
+            ])
+          : [['—', 'Aucune désignation enregistrée', '', '']],
+    },
+    {
       title: `Activités récentes (${s.activites.length})`,
       columns: ['Date', 'Type', 'Libellé', 'Détail', 'Montant (FCFA)', 'Statut'],
       rows:
@@ -505,6 +518,38 @@ export default function Fournisseurs() {
                       </span>
                     </div>
                   )}
+
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                      Catalogue qualités / désignations
+                    </p>
+                    {selected.catalogue.length === 0 ? (
+                      <div className="rounded-lg border border-dashed px-3 py-3 text-sm text-muted-foreground">
+                        Aucune désignation propre à ce fournisseur. Ajoutez-la depuis la page{' '}
+                        <Link to="/articles" className="text-primary font-medium hover:underline">
+                          Articles
+                        </Link>
+                        {' '}en créant un tarif fournisseur.
+                      </div>
+                    ) : (
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {selected.catalogue.map((item) => (
+                          <div key={`${item.articleId}-${item.libelle}`} className="rounded-lg border px-3 py-2 text-sm">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-medium">{item.libelle}</p>
+                              <Badge variant="outline" className="shrink-0">
+                                {item.unite}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatFcfa(item.prixUnitaire)}
+                              {item.notes ? ` · ${item.notes}` : ''}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">

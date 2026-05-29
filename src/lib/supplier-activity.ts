@@ -20,6 +20,14 @@ export interface SupplierActivityItem {
   linkTo?: string;
 }
 
+export interface SupplierCatalogueItem {
+  articleId: string;
+  libelle: string;
+  unite: string;
+  prixUnitaire: number;
+  notes?: string;
+}
+
 export interface SupplierSummary {
   fournisseurId: string;
   nom: string;
@@ -32,6 +40,7 @@ export interface SupplierSummary {
   montantDepensesRecentes: number;
   transportsDirectClient: number;
   tarifsArticles: number;
+  catalogue: SupplierCatalogueItem[];
   derniereActivite?: string;
   activites: SupplierActivityItem[];
 }
@@ -111,12 +120,21 @@ export function buildSupplierSummaries(params: {
         d.statut !== 'annulee',
     );
 
-    let tarifsArticles = 0;
+    const catalogue: SupplierCatalogueItem[] = [];
     for (const art of articles) {
-      tarifsArticles += (art.supplierPrices ?? []).filter(
-        (p) => p.fournisseurId === f.id,
-      ).length;
+      for (const p of art.supplierPrices ?? []) {
+        if (p.fournisseurId !== f.id) continue;
+        catalogue.push({
+          articleId: art.id,
+          libelle: art.libelle,
+          unite: art.unite,
+          prixUnitaire: p.prixUnitaire,
+          notes: p.notes,
+        });
+      }
     }
+    catalogue.sort((a, b) => a.libelle.localeCompare(b.libelle, 'fr'));
+    const tarifsArticles = catalogue.length;
 
     const activites: SupplierActivityItem[] = [];
 
@@ -199,6 +217,7 @@ export function buildSupplierSummaries(params: {
       montantDepensesRecentes,
       transportsDirectClient: transportsDirect.length,
       tarifsArticles,
+      catalogue,
       derniereActivite,
       activites: activites.slice(0, 40),
     };

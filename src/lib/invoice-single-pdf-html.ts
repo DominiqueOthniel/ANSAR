@@ -276,7 +276,7 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
         <div style="padding:8px 10px;border:1px solid ${S.border};border-radius:6px;">
           <p style="margin:0 0 4px;font-size:7pt;text-transform:uppercase;letter-spacing:0.1em;color:${S.muted};font-weight:700;">Émetteur</p>
           <p style="margin:0;font-size:9.5pt;font-weight:700;color:${S.ink};">${COMPANY_NAME}</p>
-          <p style="margin:3px 0 0;font-size:7.5pt;color:${S.muted};line-height:1.4;">Douala, Cameroun<br/>${COMPANY_CONTACT}</p>
+          <p style="margin:3px 0 0;font-size:7.5pt;color:${S.muted};line-height:1.4;">${COMPANY_CONTACT}</p>
         </div>
         <div style="padding:8px 10px;border:1px solid ${S.border};border-radius:6px;text-align:right;">
           <p style="margin:0 0 4px;font-size:7pt;text-transform:uppercase;letter-spacing:0.1em;color:${S.muted};font-weight:700;">${partyLabel}</p>

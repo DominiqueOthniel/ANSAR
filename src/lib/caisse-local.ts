@@ -113,7 +113,7 @@ function payloadFromTx(t: CaisseTransaction): CaisseTransactionPayload {
     montant: t.montant,
     date: t.date,
     description: t.description,
-    utilisateur: t.utilisateur,
+    utilisateur: t.utilisateur?.trim() || 'Système',
     categorie: t.categorie,
     reference: t.reference,
     compteBanqueId: t.compteBanqueId,
@@ -146,6 +146,7 @@ export async function appendEntreeFromInvoicePayment(params: {
     description,
     reference: `facture:${params.factureId}`,
     categorie: 'Encaissements clients',
+    utilisateur: 'Système',
   };
   if (isRemoteCaisse()) {
     await caisseApi.createTransaction(payloadFromTx(tx));
@@ -172,6 +173,7 @@ export async function appendSortieFromExpenseInvoicePayment(params: {
     description: `Paiement fournisseur facture ${params.factureNumero}${params.modeLibelle ? ` (${params.modeLibelle})` : ''}`,
     reference: `facture-depense:${params.factureId}`,
     categorie: 'Factures fournisseurs',
+    utilisateur: 'Système',
   };
   if (isRemoteCaisse()) {
     await caisseApi.createTransaction(payloadFromTx(tx));
@@ -212,6 +214,7 @@ export async function upsertSortieFromExpense(expense: {
     description: `Dépense — ${expense.description}`,
     reference: ref,
     categorie: expense.categorie || 'Dépenses',
+    utilisateur: 'Système',
   };
   if (isRemoteCaisse()) {
     await caisseApi.upsertByReference(ref, payloadFromTx(tx));

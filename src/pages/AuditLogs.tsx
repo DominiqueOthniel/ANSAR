@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ArrowDownLeft, ArrowUpRight, History, Loader2, RefreshCw, Database, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, History, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { auditLogsApi, setApiActor, type AuditLogRow } from '@/lib/api';
-import { useApp } from '@/contexts/AppContext';
-import { runSeed, clearDemoData } from '@/lib/seed-data';
 import {
   actionLabel,
   extractAuditAmount,
@@ -40,6 +38,7 @@ import {
 
 const ALL = '_all';
 const MOVEMENTS_ONLY = '_movements';
+const MAX_AUDIT_LIMIT = 5000;
 
 const MODULE_OPTIONS = [
   { value: ALL, label: 'Tous les modules' },
@@ -91,24 +90,14 @@ function actionBadgeVariant(
 
 export default function AuditLogs() {
   const { user } = useAuth();
-  const {
-    refreshTrucks,
-    refreshDrivers,
-    refreshTrips,
-    refreshParcelExpeditions,
-    refreshExpenses,
-    refreshInvoices,
-    refreshThirdParties,
-  } = useApp();
   const [rows, setRows] = useState<AuditLogRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [seedOp, setSeedOp] = useState<null | 'clear' | 'reload'>(null);
   const [moduleFilter, setModuleFilter] = useState(MOVEMENTS_ONLY);
   const [actionFilter, setActionFilter] = useState(ALL);
   const [actorLogin, setActorLogin] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [limit, setLimit] = useState('500');
+  const [limit, setLimit] = useState(String(MAX_AUDIT_LIMIT));
 
   const load = useCallback(async () => {
     if (user) {
@@ -116,7 +105,7 @@ export default function AuditLogs() {
     }
     setLoading(true);
     try {
-      const parsedLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 500));
+      const parsedLimit = Math.min(MAX_AUDIT_LIMIT, Math.max(1, parseInt(limit, 10) || MAX_AUDIT_LIMIT));
       const movementOnly = moduleFilter === MOVEMENTS_ONLY;
 
       const data = movementOnly
@@ -171,70 +160,6 @@ export default function AuditLogs() {
   if (!user || user.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
-
-  const refreshers = {
-    refreshTrucks,
-    refreshDrivers,
-    refreshTrips,
-    refreshParcelExpeditions,
-    refreshExpenses,
-    refreshInvoices,
-    refreshThirdParties,
-  };
-
-  const handleClearDemo = async () => {
-    if (
-      !window.confirm(
-        'Supprimer toutes les données ? La base sera vidée et la banque, la caisse et les créances en local seront effacées. Aucune donnée ne sera recréée automatiquement.',
-      )
-    ) {
-      return;
-    }
-    setSeedOp('clear');
-    setApiActor({ login: user.login, role: user.role });
-    try {
-      const { success, errors } = await clearDemoData(refreshers);
-      if (success.length) {
-        toast.success(success.join(' · '));
-      }
-      if (errors.length) {
-        toast.error(errors.join(' · '));
-      } else {
-        toast.message('Données supprimées. Utilisez « Recharger le jeu de démo » pour recréer le scénario.');
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Échec de la suppression');
-    } finally {
-      setSeedOp(null);
-    }
-  };
-
-  const handleReloadDemo = async () => {
-    if (
-      !window.confirm(
-        'Recharger le jeu de données de démonstration ? Les données en base seront d’abord effacées, puis le scénario complet sera recréé (banque, caisse et créances locales incluses).',
-      )
-    ) {
-      return;
-    }
-    setSeedOp('reload');
-    setApiActor({ login: user.login, role: user.role });
-    try {
-      const { success, errors } = await runSeed(refreshers);
-      if (success.length) {
-        toast.success(success.join(' · '));
-      }
-      if (errors.length) {
-        toast.error(errors.join(' · '));
-      } else {
-        toast.message('Parcourez Dashboard, Clients, Factures, Caisse, etc. pour voir les cas de figure.');
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Échec du rechargement démo');
-    } finally {
-      setSeedOp(null);
-    }
-  };
 
   const getFiltersDescription = () => {
     const parts: string[] = [];
@@ -318,48 +243,6 @@ export default function AuditLogs() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Database className="h-4 w-4" />
-            Données de démonstration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>
-            <span className="font-medium text-foreground">Supprimer</span> vide la base et les caches locaux (banque,
-            caisse), sans recréer de données.
-            <span className="font-medium text-foreground"> Recharger le jeu de démo</span> efface puis recrée un
-            scénario riche : clients avec plafonds, trajets variés, expéditions colis, factures, banque, caisse et
-            caches locaux.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-destructive/40 text-destructive hover:bg-destructive/10"
-              disabled={seedOp !== null}
-              onClick={() => void handleClearDemo()}
-            >
-              {seedOp === 'clear' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              <span className="ml-2">Supprimer toutes les données</span>
-            </Button>
-            <Button type="button" variant="secondary" disabled={seedOp !== null} onClick={() => void handleReloadDemo()}>
-              {seedOp === 'reload' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4" />
-              )}
-              <span className="ml-2">Recharger le jeu de démo</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
           <CardTitle className="text-base">Filtres</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -417,7 +300,7 @@ export default function AuditLogs() {
                 id="audit-limit"
                 type="number"
                 min={1}
-                max={500}
+                max={MAX_AUDIT_LIMIT}
                 value={limit}
                 onChange={(e) => setLimit(e.target.value)}
               />
@@ -437,7 +320,7 @@ export default function AuditLogs() {
           <CardTitle className="text-base">Mouvements enregistrés ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 pt-0">
-            <Table>
+            <Table containerClassName="max-h-[calc(100vh-18rem)] min-h-[420px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-nowrap">Date</TableHead>

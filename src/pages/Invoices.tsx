@@ -40,7 +40,14 @@ import {
   appendSortieFromExpenseInvoicePayment,
   isPaiementVersBanque,
 } from '@/lib/caisse-local';
-import { COMPANY_NAME, COMPANY_TAGLINE } from '@/lib/invoice-branding';
+import {
+  COMPANY_BP,
+  COMPANY_EMAIL,
+  COMPANY_NAME,
+  COMPANY_NIU,
+  COMPANY_PHONE,
+  COMPANY_TAGLINE,
+} from '@/lib/invoice-branding';
 import { buildSingleInvoicePdfInnerHtml } from '@/lib/invoice-single-pdf-html';
 import { openPdfPrintWindow } from '@/lib/pdf-print';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
@@ -2401,12 +2408,13 @@ export default function Invoices() {
                   <div className="border-b pb-4 print:pb-3 print:border-slate-300">
                     <div className="grid grid-cols-2 gap-6">
                       <div>
-                        <h3 className="font-bold text-lg mb-2">SIA-ANSAR</h3>
+                        <h3 className="font-bold text-lg mb-2">{COMPANY_NAME}</h3>
                         <p className="text-sm text-muted-foreground">
-                          Transport de marchandises<br />
-                          Douala, Cameroun<br />
-                          Tél: +237 6 XX XX XX XX<br />
-                          Email: contact@ansar.cm
+                          {COMPANY_TAGLINE}<br />
+                          {COMPANY_BP}<br />
+                          Tél: {COMPANY_PHONE}<br />
+                          Email: {COMPANY_EMAIL}<br />
+                          NIU: {COMPANY_NIU}
                         </p>
                       </div>
                       <div className="text-right">

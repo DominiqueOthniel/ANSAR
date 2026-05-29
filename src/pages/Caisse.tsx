@@ -60,6 +60,10 @@ type CaisseTransactionRow = CaisseTransaction & {
   solde: number;
 };
 
+function formatCaisseUtilisateur(t: Pick<CaisseTransaction, 'utilisateur'>): string {
+  return t.utilisateur?.trim() || 'Système';
+}
+
 export default function Caisse() {
   const { invoices } = useApp();
   const { canManageTreasury, user } = useAuth();
@@ -504,7 +508,7 @@ export default function Caisse() {
         { header: 'Sortie (FCFA)', value: (t) => t.sortie ?? '' },
         { header: 'Solde (FCFA)', value: (t) => t.solde },
         { header: 'Description', value: (t) => t.description },
-        { header: 'Utilisateur', value: (t) => t.utilisateur || '-' },
+        { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Catégorie', value: (t) => t.categorie || '-' },
         {
           header: 'Financement (hors encaissement)',
@@ -573,7 +577,7 @@ export default function Caisse() {
         },
         { header: 'Solde (FCFA)', value: (t) => `${t.solde.toLocaleString('fr-FR')}` },
         { header: 'Description', value: (t) => t.description },
-        { header: 'Utilisateur', value: (t) => t.utilisateur || '-' },
+        { header: 'Utilisateur', value: formatCaisseUtilisateur },
       ],
       rows: sortedTransactionRows,
     });
@@ -1034,7 +1038,7 @@ export default function Caisse() {
                       </TableCell>
                       <TableCell>{t.description}</TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground">{t.utilisateur || '—'}</span>
+                        <span className="text-xs text-muted-foreground">{formatCaisseUtilisateur(t)}</span>
                       </TableCell>
                       <TableCell>
                         {t.bankTransactionId ? (
