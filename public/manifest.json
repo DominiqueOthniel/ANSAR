@@ -1,6 +1,6 @@
 {
-  "name": "ANSAR - Gestion de flotte",
-  "short_name": "ANSAR",
+  "name": "SIA-ANSAR - Gestion de flotte",
+  "short_name": "SIA-ANSAR",
   "description": "Application de gestion de flotte et logistique au Cameroun",
   "start_url": "/",
   "display": "standalone",

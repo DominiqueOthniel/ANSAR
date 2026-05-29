@@ -63,7 +63,7 @@ const variantConfig: Record<
 export function AppLogo({
   variant = 'sidebar',
   className,
-  alt = 'ANSAR — gestion de flotte',
+  alt = 'SIA-ANSAR — gestion de flotte',
 }: {
   variant?: AppLogoVariant;
   className?: string;

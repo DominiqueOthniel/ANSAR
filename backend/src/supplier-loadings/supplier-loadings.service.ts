@@ -151,11 +151,11 @@ export class SupplierLoadingsService {
     const camionId =
       modeEntree === 'camion_ansar' || modeEntree === 'camion' ? dto.camionId : undefined;
     if (modeEntree === 'camion_ansar' && !camionId) {
-      throw new BadRequestException('Choisissez le camion ANSAR utilisé pour ce bon.');
+      throw new BadRequestException('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
     }
     if ((modeEntree === 'camion_ansar' || modeEntree === 'camion') && camionId) {
       const truck = await this.truckRepo.findOne({ where: { id: camionId } });
-      if (!truck) throw new BadRequestException('Camion ANSAR introuvable.');
+      if (!truck) throw new BadRequestException('Camion SIA-ANSAR introuvable.');
       if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
     }
     const hubArrivee = dto.hubArrivee?.trim() || undefined;
@@ -285,11 +285,11 @@ export class SupplierLoadingsService {
           ? dto.camionId ?? loading.camionId
           : undefined;
       if (nextMode === 'camion_ansar' && !nextCamionId) {
-        throw new BadRequestException('Choisissez le camion ANSAR utilisé pour ce bon.');
+        throw new BadRequestException('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
       }
       if (nextCamionId) {
         const truck = await this.truckRepo.findOne({ where: { id: nextCamionId } });
-        if (!truck) throw new BadRequestException('Camion ANSAR introuvable.');
+        if (!truck) throw new BadRequestException('Camion SIA-ANSAR introuvable.');
         if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
       }
       loading.camionId = nextCamionId;

@@ -1,5 +1,5 @@
 /**
- * Client API pour ANSAR
+ * Client API pour SIA-ANSAR
  * Communique avec le backend NestJS (préfixe global `/api` sur le serveur).
  */
 

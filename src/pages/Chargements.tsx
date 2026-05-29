@@ -353,7 +353,7 @@ export default function Chargements() {
         return;
       }
       if (form.modeEntree === 'camion_ansar' && !form.camionId) {
-        toast.error('Choisissez le camion ANSAR utilisé pour ce bon.');
+        toast.error('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
         return;
       }
 
@@ -504,7 +504,7 @@ export default function Chargements() {
     { header: 'N° bon', value: (l: SupplierLoading) => l.numeroBon || '—' },
     { header: 'Désignation', value: (l: SupplierLoading) => l.designation },
     { header: 'Mode d’entrée', value: (l: SupplierLoading) => formatLoadingEntryModeFr(l.modeEntree) },
-    { header: 'Camion ANSAR', value: (l: SupplierLoading) => l.camionId ? truckLabelById.get(l.camionId) ?? '—' : '—' },
+    { header: 'Camion SIA-ANSAR', value: (l: SupplierLoading) => l.camionId ? truckLabelById.get(l.camionId) ?? '—' : '—' },
     {
       header: 'Quantité',
       value: (l: SupplierLoading) =>
@@ -771,7 +771,7 @@ export default function Chargements() {
                 </div>
                 {(form.modeEntree === 'camion_ansar' || form.modeEntree === 'camion') && (
                   <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/30">
-                    <Label>Camion direct ANSAR *</Label>
+                    <Label>Camion direct SIA-ANSAR *</Label>
                     <Select
                       value={form.camionId || ''}
                       onValueChange={(camionId) => setForm((f) => ({ ...f, camionId }))}
@@ -794,7 +794,7 @@ export default function Chargements() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      À utiliser quand ANSAR enlève directement la marchandise chez le fournisseur.
+                      À utiliser quand SIA-ANSAR enlève directement la marchandise chez le fournisseur.
                     </p>
                   </div>
                 )}
@@ -1057,7 +1057,7 @@ export default function Chargements() {
                         <span className="block">{formatLoadingEntryModeFr(l.modeEntree)}</span>
                         {l.camionId ? (
                           <span className="text-muted-foreground block mt-0.5">
-                            {truckLabelById.get(l.camionId) ?? 'Camion ANSAR'}
+                            {truckLabelById.get(l.camionId) ?? 'Camion SIA-ANSAR'}
                           </span>
                         ) : null}
                         {l.hubArrivee ? (

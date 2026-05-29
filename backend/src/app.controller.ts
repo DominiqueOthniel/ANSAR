@@ -39,7 +39,7 @@ export class AppController {
   @Get()
   getHello(): { name: string; version: string; api: string } {
     return {
-      name: 'ANSAR API',
+      name: 'SIA-ANSAR API',
       version: '1.0.0',
       api: '/api',
     };
@@ -194,7 +194,7 @@ export class AppController {
       },
     };
 
-    const filename = `ansar-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const filename = `sia-ansar-backup-${new Date().toISOString().split('T')[0]}.json`;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(JSON.stringify(backup, null, 2));

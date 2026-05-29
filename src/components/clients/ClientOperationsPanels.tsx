@@ -302,7 +302,7 @@ export function ClientOperationsPanels({
       return;
     }
     if (loadingForm.modeEntree === 'camion_ansar' && !loadingForm.camionId) {
-      toast.error('Choisissez le camion ANSAR utilisé pour ce bon.');
+      toast.error('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
       return;
     }
 
@@ -1247,7 +1247,7 @@ export function ClientOperationsPanels({
             </div>
             {loadingForm.modeEntree === 'camion_ansar' && (
               <div>
-                <Label>Camion ANSAR *</Label>
+                <Label>Camion SIA-ANSAR *</Label>
                 <Select
                   value={loadingForm.camionId}
                   onValueChange={(camionId) => setLoadingForm((p) => ({ ...p, camionId }))}

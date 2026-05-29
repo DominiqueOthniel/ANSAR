@@ -31,7 +31,7 @@ export const HUB_PRESETS = [
 
 export const LOADING_ENTRY_MODE_OPTIONS: { value: LoadingEntryMode; label: string }[] = [
   { value: 'bon_simple', label: 'Bon simple (client se débrouille)' },
-  { value: 'camion_ansar', label: 'Camion direct ANSAR' },
+  { value: 'camion_ansar', label: 'Camion direct SIA-ANSAR' },
   { value: 'rail', label: 'CAMRAIL' },
   { value: 'rendu_fournisseur', label: 'Rendu fournisseur' },
 ];
@@ -60,10 +60,10 @@ export const DELIVERY_EXIT_MODE_OPTIONS: {
 
 const ENTRY_LABELS: Record<LoadingEntryMode, string> = {
   bon_simple: 'Bon simple',
-  camion_ansar: 'Camion direct ANSAR',
+  camion_ansar: 'Camion direct SIA-ANSAR',
   rail: 'CAMRAIL',
   rendu_fournisseur: 'Rendu fournisseur',
-  camion: 'Camion direct ANSAR',
+  camion: 'Camion direct SIA-ANSAR',
   autre: 'Bon simple',
 };
 

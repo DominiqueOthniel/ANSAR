@@ -2,7 +2,9 @@
  * Identité visuelle commune aux PDF factures (liste + facture unitaire).
  */
 
-export const COMPANY_NAME = 'ANSAR';
+import { BRAND_NAME } from '@/lib/brand';
+
+export const COMPANY_NAME = BRAND_NAME;
 
 export const COMPANY_TAGLINE = 'Transport de marchandises · Douala, Cameroun';
 
