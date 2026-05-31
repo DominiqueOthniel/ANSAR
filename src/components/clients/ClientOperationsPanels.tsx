@@ -41,8 +41,11 @@ import {
   CLIENT_DELIVERY_STATUS_OPTIONS,
   formatClientOrderStatusFr,
   formatClientDeliveryStatusFr,
+  buildOrderClientFields,
   canDeleteClientOrder,
   isClientOrderEditable,
+  isValidUuid,
+  sanitizeOptionalUuid,
   type ClientOrderStatus,
   type ClientDeliveryStatus,
 } from '@/lib/client-operations';
@@ -545,10 +548,26 @@ export function ClientOperationsPanels({
           toast.error('Indiquez le montant de l’acompte encaissé.');
           return;
         }
+        if (!isWalkIn && !clientId?.trim()) {
+          toast.error('Client invalide : ouvrez la fiche client avant d’enregistrer.');
+          return;
+        }
+        if (!isWalkIn && !editingOrder && !isValidUuid(clientId)) {
+          toast.error('Identifiant client invalide : rouvrez la fiche client et réessayez.');
+          return;
+        }
+        let clientFields: { clientId?: string; clientNom?: string } = {};
+        if (!editingOrder) {
+          try {
+            clientFields = buildOrderClientFields(isWalkIn, clientId, clientLabel);
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Client invalide.');
+            return;
+          }
+        }
         const payload = {
-          clientId: isWalkIn ? undefined : clientId,
-          clientNom: isWalkIn ? clientLabel : undefined,
-          articleId: orderForm.articleId || undefined,
+          ...clientFields,
+          articleId: sanitizeOptionalUuid(orderForm.articleId),
           reference: orderForm.reference.trim() || undefined,
           designation: orderForm.designation.trim(),
           destination: orderForm.destination.trim() || undefined,

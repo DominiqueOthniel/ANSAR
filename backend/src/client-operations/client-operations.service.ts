@@ -299,7 +299,7 @@ export class ClientOperationsService {
     if (existing) {
       const beforePaye = Number(existing.montantPaye ?? 0);
       await this.syncInvoiceAmount(existing.id, montant, {
-        clientTierId: order.clientId,
+        clientTierId: order.clientId?.trim() || undefined,
         clientOrderId: order.id,
         clientDeliveryId: null,
         factureClientLibelle: libelle,
@@ -334,7 +334,7 @@ export class ClientOperationsService {
       id: uuidv4(),
       numero: await this.nextInvoiceNum('FAC-CMD'),
       clientOrderId: order.id,
-      clientTierId: order.clientId,
+      clientTierId: order.clientId?.trim() || undefined,
       statut,
       montantHT: montant,
       montantHTApresRemise: montant,

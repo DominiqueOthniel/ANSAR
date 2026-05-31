@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsString,
   IsOptional,
@@ -7,10 +7,15 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
+const emptyToUndefined = ({ value }: { value: unknown }) =>
+  value === '' || value === null ? undefined : value;
+
 export class CreateClientOrderDto {
-  @IsOptional()
+  @ValidateIf((o) => o.clientId != null && o.clientId !== '')
+  @Transform(emptyToUndefined)
   @IsUUID()
   clientId?: string;
 
@@ -19,7 +24,8 @@ export class CreateClientOrderDto {
   @MaxLength(255)
   clientNom?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.articleId != null && o.articleId !== '')
+  @Transform(emptyToUndefined)
   @IsUUID()
   articleId?: string;
 

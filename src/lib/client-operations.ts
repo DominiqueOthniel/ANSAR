@@ -1,3 +1,33 @@
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value?: string | null): value is string {
+  return typeof value === 'string' && UUID_RE.test(value.trim());
+}
+
+/** Nettoie un identifiant optionnel avant envoi API (évite « xxx must be a UUID »). */
+export function sanitizeOptionalUuid(value?: string | null): string | undefined {
+  const id = value?.trim();
+  return id && isValidUuid(id) ? id : undefined;
+}
+
+/** Client enregistré ou comptoir passager (sans UUID client). */
+export function buildOrderClientFields(
+  isWalkIn: boolean,
+  clientId?: string,
+  clientLabel?: string,
+): { clientId?: string; clientNom?: string } {
+  if (isWalkIn) {
+    return { clientNom: clientLabel?.trim() || 'Client comptoir' };
+  }
+  const id = clientId?.trim();
+  if (!id) return {};
+  if (!isValidUuid(id)) {
+    throw new Error('Identifiant client invalide : rouvrez la fiche client et réessayez.');
+  }
+  return { clientId: id };
+}
+
 export type ClientOrderStatus =
   | 'brouillon'
   | 'confirmee'
