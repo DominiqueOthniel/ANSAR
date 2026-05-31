@@ -66,6 +66,12 @@ import {
   getClientInvoiceKind,
   isSupersededClientDeliveryInvoice,
 } from '@/lib/invoice-client-display';
+import {
+  formatClientAccountKindFr,
+  formatClientDisplayName,
+  getClientAccountKind,
+  type ClientAccountKind,
+} from '@/lib/client-operations';
 
 const INVOICE_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date création (récent → ancien)' },
@@ -196,6 +202,7 @@ export default function Invoices() {
     tripId: '',
     driverId: '',
     status: '',
+    clientKind: '' as '' | ClientAccountKind,
     /** Solde encaissement : impayés, jamais payées, partiel, soldées (basé sur montants) */
     paiementSolde: '' as '' | 'impaye' | 'jamais_payee' | 'partiel' | 'soldee',
     dateFrom: '',
@@ -589,6 +596,50 @@ export default function Invoices() {
     return expenses.find(e => e.id === expenseId);
   };
 
+  const getClientInvoiceIdentity = (invoice: Invoice) => {
+    const delivery = invoice.clientDeliveryId
+      ? clientDeliveries.find((d) => d.id === invoice.clientDeliveryId)
+      : undefined;
+    const order =
+      (invoice.clientOrderId
+        ? clientOrders.find((o) => o.id === invoice.clientOrderId)
+        : undefined) ||
+      (delivery?.clientOrderId
+        ? clientOrders.find((o) => o.id === delivery.clientOrderId)
+        : undefined);
+
+    if (invoice.clientTierId) return { clientId: invoice.clientTierId };
+    if (order) return { clientId: order.clientId, clientNom: order.clientNom };
+    if (delivery) return { clientId: delivery.clientId, clientNom: delivery.clientNom };
+    return null;
+  };
+
+  const getInvoiceClientKind = (invoice: Invoice): ClientAccountKind | null => {
+    if (!getClientInvoiceKind(invoice)) return null;
+    const identity = getClientInvoiceIdentity(invoice);
+    return identity ? getClientAccountKind(identity) : null;
+  };
+
+  const getInvoiceCounterpartyName = (invoice: Invoice): string => {
+    if (invoice.expenseId) {
+      const expense = getExpense(invoice.expenseId);
+      const supplier = expense?.fournisseurId
+        ? thirdParties.find((tp) => tp.id === expense.fournisseurId)
+        : null;
+      return supplier?.nom || '';
+    }
+    if (invoice.parcelExpeditionId) {
+      const ex = getParcelExpedition(invoice.parcelExpeditionId);
+      return ex?.lots?.map((l) => l.clients).filter(Boolean).join(' · ') || '';
+    }
+    const identity = getClientInvoiceIdentity(invoice);
+    if (identity) {
+      return formatClientDisplayName(identity, (id) => thirdParties.find((tp) => tp.id === id)?.nom);
+    }
+    const trip = getTrip(invoice.trajetId);
+    return invoice.factureClientLibelle || trip?.client || '';
+  };
+
   // Fonction pour filtrer les factures
   const filteredInvoices = useMemo(
     () =>
@@ -604,12 +655,19 @@ export default function Invoices() {
           if (filters.type === 'expense' && !invoice.expenseId) return false;
           if (filters.type === 'trip' && !invoice.trajetId) return false;
           if (filters.type === 'parcel' && !invoice.parcelExpeditionId) return false;
+          if (filters.type === 'client' && !getClientInvoiceKind(invoice)) return false;
+        }
+
+        if (filters.clientKind) {
+          if (getInvoiceClientKind(invoice) !== filters.clientKind) return false;
         }
 
         // Filtre par recherche (nom client, numéro de facture, description de dépense)
         if (filters.searchTerm) {
           const searchLower = filters.searchTerm.toLowerCase();
-          const matchesClient = trip?.client?.toLowerCase().includes(searchLower);
+          const matchesClient =
+            trip?.client?.toLowerCase().includes(searchLower) ||
+            getInvoiceCounterpartyName(invoice).toLowerCase().includes(searchLower);
           const matchesNumber = invoice.numero.toLowerCase().includes(searchLower);
           const matchesExpense = expense?.description?.toLowerCase().includes(searchLower) || 
                                  expense?.categorie?.toLowerCase().includes(searchLower);
@@ -670,7 +728,7 @@ export default function Invoices() {
 
         return true;
       }),
-    [invoices, filters, trips, expenses, parcelExpeditions],
+    [invoices, filters, trips, expenses, parcelExpeditions, clientOrders, clientDeliveries, thirdParties],
   );
 
   const sortedInvoices = useMemo(() => {
@@ -687,14 +745,7 @@ export default function Invoices() {
         const clients = ex?.lots?.map((l) => l.clients).filter(Boolean).join(', ');
         return clients || ex?.reference || '';
       }
-      const trip = trips.find((t) => t.id === inv.trajetId);
-      if (inv.trajetId && trip) {
-        const tier = inv.clientTierId
-          ? thirdParties.find((tp) => tp.id === inv.clientTierId)
-          : null;
-        return inv.factureClientLibelle || tier?.nom || trip.client || '';
-      }
-      return '';
+      return getInvoiceCounterpartyName(inv);
     };
     const reste = (inv: Invoice) => Math.max(0, inv.montantTTC - (inv.montantPaye ?? 0));
     const list = [...filteredInvoices];
@@ -736,6 +787,7 @@ export default function Invoices() {
       tripId: '',
       driverId: '',
       status: '',
+      clientKind: '',
       paiementSolde: '',
       dateFrom: '',
       dateTo: '',
@@ -754,8 +806,12 @@ export default function Invoices() {
         expense: 'Dépense',
         trip: 'Trajet',
         parcel: 'Expédition',
+        client: 'Commande client',
       };
       parts.push(`Type: ${typeLabels[filters.type] ?? filters.type}`);
+    }
+    if (filters.clientKind) {
+      parts.push(formatClientAccountKindFr(filters.clientKind));
     }
     if (filters.tripId) parts.push(`Trajet filtré`);
     if (filters.driverId) parts.push(`Chauffeur filtré`);
@@ -799,8 +855,19 @@ export default function Invoices() {
         { header: 'Numéro', value: (inv) => inv.numero },
         {
           header: 'Type',
-          value: (inv) =>
-            inv.expenseId ? 'Dépense' : inv.parcelExpeditionId ? 'Expédition' : 'Trajet',
+          value: (inv) => {
+            const kind = getClientInvoiceKind(inv);
+            if (inv.expenseId) return 'Dépense';
+            if (inv.parcelExpeditionId) return 'Expédition';
+            return kind ? clientInvoiceTypeLabel(kind) : 'Trajet';
+          },
+        },
+        {
+          header: 'Nature client',
+          value: (inv) => {
+            const kind = getInvoiceClientKind(inv);
+            return kind ? formatClientAccountKindFr(kind) : '—';
+          },
         },
         {
           header: 'Statut mission',
@@ -830,19 +897,7 @@ export default function Invoices() {
         },
         {
           header: 'Client/Fournisseur',
-          value: (inv) => {
-            if (inv.expenseId) {
-              const expense = getExpense(inv.expenseId);
-              const supplier = expense?.fournisseurId ? thirdParties.find(tp => tp.id === expense.fournisseurId) : null;
-              return supplier?.nom || '';
-            }
-            if (inv.parcelExpeditionId) {
-              const ex = getParcelExpedition(inv.parcelExpeditionId);
-              return ex?.lots?.map((l) => l.clients).filter(Boolean).join(' · ') || '';
-            }
-            const trip = getTrip(inv.trajetId);
-            return trip?.client || '';
-          },
+          value: (inv) => getInvoiceCounterpartyName(inv),
         },
         {
           header: 'Catégorie / marchandise',
@@ -937,25 +992,23 @@ export default function Invoices() {
         },
         {
           header: 'Client / fournisseur',
+          value: (inv) => getInvoiceCounterpartyName(inv) || '—',
+        },
+        {
+          header: 'Nature client',
           value: (inv) => {
-            if (inv.expenseId) {
-              const expense = getExpense(inv.expenseId);
-              const supplier = expense?.fournisseurId ? thirdParties.find(tp => tp.id === expense.fournisseurId) : null;
-              return supplier?.nom || '—';
-            }
-            if (inv.parcelExpeditionId) {
-              const ex = getParcelExpedition(inv.parcelExpeditionId);
-              if (!ex) return '—';
-              const clients = [...new Set(ex.lots.map((l) => l.clients?.trim()).filter(Boolean) as string[])];
-              return clients.join(', ') || '—';
-            }
-            const trip = getTrip(inv.trajetId);
-            return trip?.client || '—';
+            const kind = getInvoiceClientKind(inv);
+            return kind ? formatClientAccountKindFr(kind) : '—';
           },
         },
         {
           header: 'Type',
-          value: (inv) => (inv.expenseId ? 'Dépense' : inv.parcelExpeditionId ? 'Expédition' : 'Trajet'),
+          value: (inv) => {
+            const kind = getClientInvoiceKind(inv);
+            if (inv.expenseId) return 'Dépense';
+            if (inv.parcelExpeditionId) return 'Expédition';
+            return kind ? clientInvoiceTypeLabel(kind) : 'Trajet';
+          },
         },
         {
           header: 'Statut mission',
@@ -1876,8 +1929,31 @@ export default function Invoices() {
                 <SelectContent>
                   <SelectItem value="all">Tous les types</SelectItem>
                   <SelectItem value="trip">{EMOJI.camion} Trajets</SelectItem>
+                  <SelectItem value="client">Commandes client</SelectItem>
                   <SelectItem value="parcel">📦 Expéditions</SelectItem>
                   <SelectItem value="expense">{EMOJI.argent} Dépenses</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="clientKindFilter" className="text-xs">Nature client</Label>
+              <Select
+                value={filters.clientKind || 'all'}
+                onValueChange={(value) =>
+                  setFilters({
+                    ...filters,
+                    clientKind: value === 'all' ? '' : (value as ClientAccountKind),
+                  })
+                }
+              >
+                <SelectTrigger id="clientKindFilter" className="h-9">
+                  <SelectValue placeholder="Tous les clients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  <SelectItem value="registered">Clients enregistrés</SelectItem>
+                  <SelectItem value="walk_in">Clients comptoir</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2104,6 +2180,7 @@ export default function Invoices() {
                       (id) =>
                         id ? thirdParties.find((tp) => tp.id === id)?.nom ?? '—' : '—',
                     );
+                  const invoiceAccountKind = getInvoiceClientKind(invoice);
                   const notesPreview = clientKind
                     ? clientInvoiceNotesPreview(invoice, clientKind)
                     : invoice.notes;
@@ -2186,7 +2263,14 @@ export default function Invoices() {
                           </div>
                         ) : clientDisplay ? (
                           <div>
-                            <div className="font-medium">{clientDisplay.title}</div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="font-medium">{clientDisplay.title}</span>
+                              {invoiceAccountKind && (
+                                <Badge variant="outline" className="text-[10px]">
+                                  {formatClientAccountKindFr(invoiceAccountKind)}
+                                </Badge>
+                              )}
+                            </div>
                             {clientDisplay.lines.map((line) => (
                               <div key={line} className="text-xs text-muted-foreground mt-0.5">
                                 {line}
@@ -2330,6 +2414,18 @@ export default function Invoices() {
                   ? drivers.find((d) => d.id === expense.chauffeurId)
                   : undefined;
             const isExpenseInvoice = !!selectedInvoice.expenseId;
+            const selectedClientKind = getClientInvoiceKind(selectedInvoice);
+            const selectedClientAccountKind = getInvoiceClientKind(selectedInvoice);
+            const selectedClientDisplay =
+              selectedClientKind &&
+              buildClientInvoiceDisplay(
+                selectedInvoice,
+                clientOrders,
+                clientDeliveries,
+                (id) => (id ? getDriverName(id) : '—'),
+                (id) => (id ? getTruckLabel(id) : '—'),
+                (id) => (id ? thirdParties.find((tp) => tp.id === id)?.nom ?? '—' : '—'),
+              );
             const expenseDriver = expense?.chauffeurId ? drivers.find(d => d.id === expense.chauffeurId) : null;
             const expenseTruck = expense?.camionId ? trucks.find(t => t.id === expense.camionId) : null;
             const expenseSupplier = expense?.fournisseurId ? thirdParties.find(tp => tp.id === expense.fournisseurId) : null;
@@ -2348,6 +2444,10 @@ export default function Invoices() {
                       ) : isParcelInvoice ? (
                         <Badge variant="outline" className="bg-sky-100 text-sky-800 dark:bg-sky-950/30 dark:text-sky-300 border-sky-300">
                           📦 Expédition
+                        </Badge>
+                      ) : selectedClientKind ? (
+                        <Badge variant="outline" className="bg-violet-100 text-violet-800 dark:bg-violet-950/30 dark:text-violet-300 border-violet-300">
+                          {clientInvoiceTypeLabel(selectedClientKind)}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-300">
@@ -2433,7 +2533,16 @@ export default function Invoices() {
                         ) : (
                           <>
                             <p className="text-sm text-muted-foreground">Client:</p>
-                            <p className="font-semibold">{trip?.client || 'N/A'}</p>
+                            <p className="font-semibold">
+                              {selectedClientDisplay
+                                ? getInvoiceCounterpartyName(selectedInvoice)
+                                : trip?.client || 'N/A'}
+                            </p>
+                            {selectedClientAccountKind && (
+                              <p className="text-xs text-muted-foreground">
+                                {formatClientAccountKindFr(selectedClientAccountKind)}
+                              </p>
+                            )}
                           </>
                         )}
                       </div>

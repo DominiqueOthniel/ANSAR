@@ -66,6 +66,12 @@ export type ClientsExportContext = {
   fileNamePrefix?: string;
 };
 
+export const WALK_IN_EXPORT_CLIENT_ID = '__client_comptoir__';
+
+function isWalkInExportClient(client: ThirdParty): boolean {
+  return client.id === WALK_IN_EXPORT_CLIENT_ID;
+}
+
 type ClientLedgerEntry = {
   date: string;
   qtes: string | number;
@@ -104,6 +110,21 @@ function getInvoiceCreditForClient(inv: Invoice, client: ThirdParty): number {
   return slices
     .filter((p) => p.clientTierId === client.id || p.payeurLibelle === client.nom)
     .reduce((sum, p) => sum + p.montant, 0);
+}
+
+function ordersForExportClient(client: ThirdParty, orders: ClientOrder[]): ClientOrder[] {
+  return isWalkInExportClient(client)
+    ? orders.filter((o) => !o.clientId)
+    : orders.filter((o) => o.clientId === client.id);
+}
+
+function deliveriesForExportClient(
+  client: ThirdParty,
+  deliveries: ClientDelivery[],
+): ClientDelivery[] {
+  return isWalkInExportClient(client)
+    ? deliveries.filter((d) => !d.clientId)
+    : deliveries.filter((d) => d.clientId === client.id);
 }
 
 function buildClientLedgerRows(
@@ -213,12 +234,12 @@ function buildClientDetailBlocks(
   ctx: ClientsExportContext,
 ): ExportDetailBlock[] {
   const orders = stableSort(
-    ctx.clientOrders.filter((o) => o.clientId === client.id),
+    ordersForExportClient(client, ctx.clientOrders),
     (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
   );
   const orderIds = new Set(orders.map((o) => o.id));
   const deliveries = stableSort(
-    ctx.clientDeliveries.filter((d) => d.clientId === client.id),
+    deliveriesForExportClient(client, ctx.clientDeliveries),
     (a, b) => frCollator.compare(b.datePrevue ?? '', a.datePrevue ?? ''),
   );
   const deliveryIds = new Set(deliveries.map((d) => d.id));
@@ -239,6 +260,7 @@ function buildClientDetailBlocks(
       : null;
 
   const ficheRows: (string | number)[][] = [
+    ['Nature', isWalkInExportClient(client) ? 'Client comptoir' : 'Client enregistré'],
     ['Téléphone', cell(client.telephone)],
     ['Email', cell(client.email)],
     ['Adresse', cell(client.adresse)],
@@ -401,12 +423,12 @@ function buildClientLedgerBlock(
   ctx: ClientsExportContext,
 ): ExportDetailBlock {
   const orders = stableSort(
-    ctx.clientOrders.filter((o) => o.clientId === client.id),
+    ordersForExportClient(client, ctx.clientOrders),
     (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
   );
   const orderIds = new Set(orders.map((o) => o.id));
   const deliveries = stableSort(
-    ctx.clientDeliveries.filter((d) => d.clientId === client.id),
+    deliveriesForExportClient(client, ctx.clientDeliveries),
     (a, b) => frCollator.compare(b.datePrevue ?? '', a.datePrevue ?? ''),
   );
   const deliveryIds = new Set(deliveries.map((d) => d.id));
@@ -428,6 +450,10 @@ export async function buildSoldeInitialMap(
   const map = new Map<string, number>();
   await Promise.all(
     clients.map(async (c) => {
+      if (isWalkInExportClient(c)) {
+        map.set(c.id, 0);
+        return;
+      }
       const m = await getClientInitialBalanceMontant(c.id, c.nom);
       map.set(c.id, m);
     }),
@@ -438,6 +464,11 @@ export async function buildSoldeInitialMap(
 function summaryColumns(ctx: ClientsExportContext) {
   return [
     { header: 'Nom', value: (c: ThirdParty) => c.nom },
+    {
+      header: 'Nature',
+      value: (c: ThirdParty) =>
+        isWalkInExportClient(c) ? 'Client comptoir' : 'Client enregistré',
+    },
     { header: 'Téléphone', value: (c: ThirdParty) => cell(c.telephone) },
     { header: 'Email', value: (c: ThirdParty) => cell(c.email) },
     { header: 'Adresse', value: (c: ThirdParty) => cell(c.adresse) },
@@ -470,12 +501,12 @@ function summaryColumns(ctx: ClientsExportContext) {
     {
       header: 'Nb commandes',
       value: (c: ThirdParty) =>
-        ctx.clientOrders.filter((o) => o.clientId === c.id).length,
+        ordersForExportClient(c, ctx.clientOrders).length,
     },
     {
       header: 'Nb livraisons',
       value: (c: ThirdParty) =>
-        ctx.clientDeliveries.filter((d) => d.clientId === c.id).length,
+        deliveriesForExportClient(c, ctx.clientDeliveries).length,
     },
   ];
 }

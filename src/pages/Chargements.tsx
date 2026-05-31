@@ -20,7 +20,14 @@ import {
   formatLoadingEntryModeFr,
   type LoadingEntryMode,
 } from '@/lib/hub-transit';
-import { formatClientOrderStatusFr } from '@/lib/client-operations';
+import {
+  formatClientAccountKindFr,
+  formatClientDisplayName,
+  formatClientOrderStatusFr,
+  getClientAccountKey,
+  getClientAccountKind,
+  type ClientAccountKind,
+} from '@/lib/client-operations';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -66,6 +73,7 @@ import {
 } from '@/lib/article-pricing';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const WALK_IN_CLIENT_KEY = 'comptoir:Client comptoir';
 
 function statusBadgeVariant(
   statut: SupplierLoadingStatus,
@@ -142,6 +150,7 @@ export default function Chargements() {
   const [filterStatut, setFilterStatut] = useState<string>('all');
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [auHubOnly, setAuHubOnly] = useState(false);
+  const [filterClientKind, setFilterClientKind] = useState<'all' | ClientAccountKind>('all');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierLoading | null>(null);
@@ -176,6 +185,12 @@ export default function Chargements() {
     for (const tp of clients) m.set(tp.id, tp.nom);
     return m;
   }, [clients]);
+
+  const getOrderClientName = (order: { clientId?: string; clientNom?: string }) =>
+    formatClientDisplayName(order, (id) => clientsById.get(id));
+
+  const getClientKeyLabel = (key: string) =>
+    key.startsWith('comptoir:') ? 'Client comptoir' : clientsById.get(key) ?? '—';
 
   const activeTrucks = useMemo(
     () =>
@@ -214,6 +229,11 @@ export default function Chargements() {
     if (auHubOnly) {
       list = list.filter((l) => isLoadingAtHub(l.statut) || l.modeEntree === 'rail');
     }
+    if (filterClientKind !== 'all') {
+      list = list.filter((l) =>
+        (l.assignments ?? []).some((a) => getClientAccountKind(a) === filterClientKind),
+      );
+    }
     if (q) {
       list = list.filter((l) => {
         const inMain =
@@ -231,7 +251,7 @@ export default function Chargements() {
       });
     }
     return list;
-  }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly, auHubOnly]);
+  }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly, auHubOnly, filterClientKind]);
 
   const openCreate = () => {
     setEditing(null);
@@ -430,13 +450,13 @@ export default function Chargements() {
     return stableSort(
       clientOrders.filter((o) => {
         if (o.statut === 'annulee') return false;
-        if (o.clientId !== assignClientId) return false;
+        if (getClientAccountKey(o) !== assignClientId) return false;
         return true;
       }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
     ).filter((o) => {
       if (!q) return true;
-      const clientNom = o.clientId ? clientsById.get(o.clientId) ?? '' : o.clientNom ?? 'Client comptoir';
+      const clientNom = getOrderClientName(o);
       return (
         o.designation.toLowerCase().includes(q) ||
         (o.reference ?? '').toLowerCase().includes(q) ||
@@ -448,14 +468,14 @@ export default function Chargements() {
   const toggleOrderInAssign = (orderId: string) => {
     const order = clientOrders.find((o) => o.id === orderId);
     if (!order) return;
-    if (assignClientId && order.clientId !== assignClientId) {
+    if (assignClientId && getClientAccountKey(order) !== assignClientId) {
       toast.error('Ce bon ne peut être affecté qu’à un seul client.');
       return;
     }
     setAssignRows((prev) => {
       const exists = prev.find((r) => r.clientOrderId === orderId);
       if (exists) return prev.filter((r) => r.clientOrderId !== orderId);
-      if (!assignClientId && order.clientId) setAssignClientId(order.clientId);
+      if (!assignClientId) setAssignClientId(getClientAccountKey(order));
       return [...prev, { clientOrderId: orderId }];
     });
   };
@@ -471,12 +491,15 @@ export default function Chargements() {
   const saveAssignments = () =>
     withGuard(async () => {
       if (!assignLoading) return;
-      const clientIds = new Set(
+      const clientKeys = new Set(
         assignRows
-          .map((r) => clientOrders.find((o) => o.id === r.clientOrderId)?.clientId)
-          .filter((id): id is string => Boolean(id)),
+          .map((r) => {
+            const order = clientOrders.find((o) => o.id === r.clientOrderId);
+            return order ? getClientAccountKey(order) : '';
+          })
+          .filter(Boolean),
       );
-      if (clientIds.size > 1) {
+      if (clientKeys.size > 1) {
         toast.error('Un bon ne peut être affecté qu’à un seul client.');
         return;
       }
@@ -493,6 +516,7 @@ export default function Chargements() {
       if (f) parts.push(`Fournisseur: ${f.nom}`);
     }
     if (filterStatut !== 'all') parts.push(`Statut: ${formatSupplierLoadingStatusFr(filterStatut as SupplierLoadingStatus)}`);
+    if (filterClientKind !== 'all') parts.push(formatClientAccountKindFr(filterClientKind));
     if (unassignedOnly) parts.push('Non affectés uniquement');
     return parts.length > 0 ? parts.join(' · ') : undefined;
   };
@@ -515,6 +539,13 @@ export default function Chargements() {
       value: (l: SupplierLoading) => (l.montantBon != null ? Math.round(l.montantBon) : '—'),
     },
     { header: 'Statut', value: (l: SupplierLoading) => formatSupplierLoadingStatusFr(l.statut) },
+    {
+      header: 'Nature client',
+      value: (l: SupplierLoading) => {
+        const kinds = [...new Set((l.assignments ?? []).map((a) => formatClientAccountKindFr(getClientAccountKind(a))))];
+        return kinds.length ? kinds.join(' / ') : '—';
+      },
+    },
     { header: 'Lieu', value: (l: SupplierLoading) => l.lieu || '—' },
   ];
 
@@ -523,17 +554,18 @@ export default function Chargements() {
     return [
       {
         title: `Affectations (${assigns.length})`,
-        columns: ['Client', 'Commande', 'Réf. commande', 'Qté affectée', 'Notes'],
+        columns: ['Client', 'Nature client', 'Commande', 'Réf. commande', 'Qté affectée', 'Notes'],
         rows:
           assigns.length > 0
             ? assigns.map((a) => [
                 a.clientNom ?? '—',
+                formatClientAccountKindFr(getClientAccountKind(a)),
                 a.orderDesignation ?? '—',
                 a.orderReference ?? '—',
                 a.quantiteAffectee != null ? a.quantiteAffectee : '—',
                 a.notes ?? '—',
               ])
-            : [['—', 'Aucune commande liée', '', '', '']],
+            : [['—', '—', 'Aucune commande liée', '', '', '']],
       },
     ];
   };
@@ -998,6 +1030,22 @@ export default function Chargements() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="w-[200px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Nature client</Label>
+              <Select
+                value={filterClientKind}
+                onValueChange={(v) => setFilterClientKind(v as 'all' | ClientAccountKind)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les clients</SelectItem>
+                  <SelectItem value="registered">Clients enregistrés</SelectItem>
+                  <SelectItem value="walk_in">Clients comptoir</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
               <Checkbox
                 checked={unassignedOnly}
@@ -1093,7 +1141,10 @@ export default function Chargements() {
                           <ul className="text-sm space-y-0.5">
                             {(l.assignments ?? []).map((a) => (
                               <li key={a.id}>
-                                {a.clientNom ?? 'Client'} — {a.orderDesignation}
+                                <span>{a.clientNom ?? 'Client'} — {a.orderDesignation}</span>
+                                <Badge variant="outline" className="ml-1 text-[10px]">
+                                  {formatClientAccountKindFr(getClientAccountKind(a))}
+                                </Badge>
                                 {a.quantiteAffectee != null ? ` (${a.quantiteAffectee})` : ''}
                               </li>
                             ))}
@@ -1176,13 +1227,23 @@ export default function Chargements() {
                   onValueChange={setAssignClientId}
                   placeholder="Choisir un client…"
                   searchPlaceholder="Rechercher un client…"
+                  topChoices={[
+                    {
+                      id: WALK_IN_CLIENT_KEY,
+                      label: 'Client comptoir',
+                      keywords: 'passager sans fiche comptoir',
+                    },
+                  ]}
+                  orphanLabel={
+                    assignClientId.startsWith('comptoir:') ? 'Client comptoir' : undefined
+                  }
                   disabled={assignClientLocked}
                 />
                 <p className="text-xs text-muted-foreground">
                   {assignClientLocked
-                    ? `Bon réservé au client : ${clientsById.get(assignClientId) ?? '—'}`
+                    ? `Bon réservé au client : ${getClientKeyLabel(assignClientId)}`
                     : assignClientId
-                      ? `${ordersForAssign.length} commande(s) — ${clientsById.get(assignClientId) ?? 'client'}`
+                      ? `${ordersForAssign.length} commande(s) — ${getClientKeyLabel(assignClientId)}`
                       : 'Choisissez un client pour afficher ses commandes.'}
                 </p>
               </div>
@@ -1214,7 +1275,8 @@ export default function Chargements() {
                       <div className="flex-1 min-w-[180px]">
                         <p className="font-medium text-sm">{o.designation}</p>
                         <p className="text-xs text-muted-foreground">
-                          {o.clientId ? clientsById.get(o.clientId) ?? 'Client' : o.clientNom ?? 'Client comptoir'} ·{' '}
+                          {getOrderClientName(o)} ·{' '}
+                          {formatClientAccountKindFr(getClientAccountKind(o))} ·{' '}
                           {formatClientOrderStatusFr(o.statut)} · {o.dateCommande}
                           {o.reference ? ` · ${o.reference}` : ''}
                         </p>

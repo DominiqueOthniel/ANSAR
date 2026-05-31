@@ -28,6 +28,34 @@ export function buildOrderClientFields(
   return { clientId: id };
 }
 
+export type ClientAccountKind = 'registered' | 'walk_in';
+
+export type ClientIdentityLike = {
+  clientId?: string | null;
+  clientNom?: string | null;
+};
+
+export function getClientAccountKind(row?: ClientIdentityLike | null): ClientAccountKind {
+  return row?.clientId ? 'registered' : 'walk_in';
+}
+
+export function formatClientAccountKindFr(kind: ClientAccountKind): string {
+  return kind === 'registered' ? 'Client enregistré' : 'Client comptoir';
+}
+
+export function getClientAccountKey(row?: ClientIdentityLike | null): string {
+  if (row?.clientId) return row.clientId;
+  return `comptoir:${row?.clientNom?.trim() || 'Client comptoir'}`;
+}
+
+export function formatClientDisplayName(
+  row: ClientIdentityLike | undefined | null,
+  getRegisteredClientName: (id: string) => string | undefined,
+): string {
+  if (row?.clientId) return getRegisteredClientName(row.clientId) ?? 'Client enregistré';
+  return row?.clientNom?.trim() || 'Client comptoir';
+}
+
 export type ClientOrderStatus =
   | 'brouillon'
   | 'confirmee'

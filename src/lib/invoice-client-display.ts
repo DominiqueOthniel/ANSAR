@@ -59,11 +59,14 @@ export function buildClientInvoiceDisplay(
   const kind = getClientInvoiceKind(invoice);
   if (!kind) return null;
 
-  const clientName =
-    getClientName(invoice.clientTierId) || invoice.factureClientLibelle?.trim() || 'Client';
-
   if (kind === 'order') {
     const order = orders.find((o) => o.id === invoice.clientOrderId);
+    const clientName =
+      (order?.clientId ? getClientName(order.clientId) : undefined) ||
+      order?.clientNom?.trim() ||
+      (invoice.clientTierId ? getClientName(invoice.clientTierId) : undefined) ||
+      invoice.factureClientLibelle?.trim() ||
+      'Client';
     const orderDeliveries = deliveries.filter(
       (d) => d.clientOrderId === order?.id && deliveryBillsTransport(d),
     );
@@ -108,6 +111,14 @@ export function buildClientInvoiceDisplay(
   const order = delivery
     ? orders.find((o) => o.id === delivery.clientOrderId)
     : orders.find((o) => o.id === invoice.clientOrderId);
+  const clientName =
+    (delivery?.clientId ? getClientName(delivery.clientId) : undefined) ||
+    delivery?.clientNom?.trim() ||
+    (order?.clientId ? getClientName(order.clientId) : undefined) ||
+    order?.clientNom?.trim() ||
+    (invoice.clientTierId ? getClientName(invoice.clientTierId) : undefined) ||
+    invoice.factureClientLibelle?.trim() ||
+    'Client';
 
   const lines: string[] = [
     `Client : ${clientName}`,

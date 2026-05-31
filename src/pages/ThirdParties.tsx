@@ -19,7 +19,9 @@ import {
   buildSoldeInitialMap,
   exportClientsDetailedExcel,
   exportClientsDetailedPDF,
+  WALK_IN_EXPORT_CLIENT_ID,
 } from '@/lib/client-export';
+import { type ClientAccountKind } from '@/lib/client-operations';
 import { loadCreditsForPlafond } from '@/lib/client-initial-balance';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
@@ -80,6 +82,7 @@ const CLIENT_SORT_OPTIONS = [
 
 type ClientPlafondFilter = 'all' | 'defined' | 'none';
 type ClientOrderFilter = 'all' | 'yes' | 'no';
+type ClientAccountFilter = 'all' | ClientAccountKind;
 type ClientContactFilter =
   | 'all'
   | 'phone_set'
@@ -93,6 +96,13 @@ const typeOrder = (t: string) =>
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+}
+
+function matchesWalkInClientSearch(searchTerm: string): boolean {
+  const q = searchTerm.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = 'client comptoir passager sans fiche';
+  return haystack.includes(q) || q.split(/\s+/).some((word) => haystack.includes(word));
 }
 
 function invoiceStatutLabel(s: Invoice['statut']): string {
@@ -129,6 +139,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const [listSort, setListSort] = useState<string>('nom_asc');
   const [clientFilterPlafond, setClientFilterPlafond] = useState<ClientPlafondFilter>('all');
   const [clientFilterOrder, setClientFilterOrder] = useState<ClientOrderFilter>('all');
+  const [clientFilterAccount, setClientFilterAccount] = useState<ClientAccountFilter>('all');
   const [clientFilterContact, setClientFilterContact] = useState<ClientContactFilter>('all');
   const [clientAdvancedFilters, setClientAdvancedFilters] =
     useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
@@ -155,6 +166,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const resetClientFilters = () => {
     setClientFilterPlafond('all');
     setClientFilterOrder('all');
+    setClientFilterAccount('all');
     setClientFilterContact('all');
     setClientAdvancedFilters(EMPTY_CLIENT_FILTERS);
   };
@@ -383,6 +395,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       if (!matchSearch) return false;
     }
     if (isClientsScope && tp.type === 'client') {
+      if (clientFilterAccount === 'walk_in') return false;
       if (
         !matchesClientAdvancedFilters(tp, clientAdvancedFilters, {
           invoices,
@@ -518,9 +531,14 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   }, [isClientsScope]);
 
   const clientsWithOrders = useMemo(() => {
-    const ids = new Set(clientOrders.map((o) => o.clientId));
+    const ids = new Set(clientOrders.map((o) => o.clientId).filter(Boolean));
     return ids.size;
   }, [clientOrders]);
+
+  const walkInOrders = useMemo(
+    () => clientOrders.filter((o) => !o.clientId),
+    [clientOrders],
+  );
 
   useEffect(() => {
     if (!detailClient || detailClient.type !== 'client') {
@@ -566,6 +584,11 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     yes: 'Au moins une commande',
     no: 'Sans commande',
   };
+  const clientAccountFilterLabel: Record<ClientAccountFilter, string> = {
+    all: '',
+    registered: 'Clients enregistrés',
+    walk_in: 'Clients comptoir',
+  };
   const clientContactFilterLabel: Record<ClientContactFilter, string> = {
     all: '',
     phone_set: 'Téléphone renseigné',
@@ -578,6 +601,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const anyClientFilterActive =
     clientFilterPlafond !== 'all' ||
     clientFilterOrder !== 'all' ||
+    clientFilterAccount !== 'all' ||
     clientFilterContact !== 'all' ||
     hasActiveClientFilters(clientAdvancedFilters);
 
@@ -588,6 +612,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       filters.push('Vue clients');
       if (clientFilterPlafond !== 'all') filters.push(clientPlafondFilterLabel[clientFilterPlafond]);
       if (clientFilterOrder !== 'all') filters.push(clientOrderFilterLabel[clientFilterOrder]);
+      if (clientFilterAccount !== 'all') filters.push(clientAccountFilterLabel[clientFilterAccount]);
       if (clientFilterContact !== 'all') filters.push(clientContactFilterLabel[clientFilterContact]);
       if (clientAdvancedFilters.sexe !== 'all')
         filters.push(CLIENT_SEXE_FILTER_LABELS[clientAdvancedFilters.sexe]);
@@ -610,7 +635,22 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   };
 
   const buildClientsExportContext = async () => {
-    const clients = sortedThirdParties.filter((tp) => tp.type === 'client');
+    const includeWalkIn =
+      isClientsScope &&
+      clientFilterAccount !== 'registered' &&
+      clientFilterOrder !== 'no' &&
+      matchesWalkInClientSearch(searchTerm) &&
+      (walkInOrders.length > 0 || clientFilterAccount === 'walk_in');
+    const walkInClient: ThirdParty = {
+      id: WALK_IN_EXPORT_CLIENT_ID,
+      nom: 'Client comptoir',
+      type: 'client',
+      notes: 'Client passager sans fiche enregistrée',
+    };
+    const clients = [
+      ...sortedThirdParties.filter((tp) => tp.type === 'client'),
+      ...(includeWalkIn ? [walkInClient] : []),
+    ];
     const credits =
       creditsForPlafondSheet.length > 0
         ? creditsForPlafondSheet
@@ -712,6 +752,14 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     });
   };
 
+  const showWalkInClientCard =
+    isClientsScope &&
+    clientFilterAccount !== 'registered' &&
+    clientFilterOrder !== 'no' &&
+    matchesWalkInClientSearch(searchTerm) &&
+    (walkInOrders.length > 0 || clientFilterAccount === 'walk_in');
+  const walkInDeliveriesCount = clientDeliveries.filter((d) => !d.clientId).length;
+
   return (
     <div className="space-y-6 p-1">
       <PageHeader
@@ -736,6 +784,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                   value: clientsWithOrders,
                   icon: <ClipboardList className="h-4 w-4" />,
                   color: 'text-teal-600 dark:text-teal-400',
+                },
+                {
+                  label: 'Commandes comptoir',
+                  value: walkInOrders.length,
+                  icon: <ClipboardList className="h-4 w-4" />,
+                  color: 'text-amber-600 dark:text-amber-400',
                 },
               ]
             : [
@@ -1150,6 +1204,19 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       </button>
                     </Badge>
                   )}
+                  {clientFilterAccount !== 'all' && (
+                    <Badge variant="secondary" className="bg-amber-500/10 text-amber-900 dark:text-amber-300 border-amber-500/20 px-3 py-1.5">
+                      {clientAccountFilterLabel[clientFilterAccount]}
+                      <button
+                        type="button"
+                        onClick={() => setClientFilterAccount('all')}
+                        className="ml-2 hover:bg-amber-500/20 rounded-full p-0.5"
+                        aria-label="Retirer le filtre nature client"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
                   {clientFilterContact !== 'all' && (
                     <Badge variant="secondary" className="bg-slate-500/10 text-slate-800 dark:text-slate-300 border-slate-500/20 px-3 py-1.5">
                       {clientContactFilterLabel[clientFilterContact]}
@@ -1307,7 +1374,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             </div>
 
             {isClientsScope && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-2 border-t border-dashed">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 pt-2 border-t border-dashed">
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground mb-2">Plafond encours (fiche)</Label>
                   <Select
@@ -1337,6 +1404,22 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                       <SelectItem value="all">Indifférent</SelectItem>
                       <SelectItem value="yes">Au moins une commande</SelectItem>
                       <SelectItem value="no">Sans commande</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground mb-2">Nature client</Label>
+                  <Select
+                    value={clientFilterAccount}
+                    onValueChange={(v) => setClientFilterAccount(v as ClientAccountFilter)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Tous" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous</SelectItem>
+                      <SelectItem value="registered">Clients enregistrés</SelectItem>
+                      <SelectItem value="walk_in">Clients comptoir</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1542,7 +1625,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {sortedThirdParties.length === 0 ? (
+        {sortedThirdParties.length === 0 && !showWalkInClientCard ? (
           <div className="col-span-full text-center py-12">
             <p className="text-muted-foreground">
               {searchTerm ||
@@ -1557,7 +1640,50 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
             </p>
           </div>
         ) : (
-          sortedThirdParties.map((thirdParty) => {
+          <>
+          {showWalkInClientCard && (
+            <Card className="hover:shadow-lg transition-all duration-300 border-2 border-amber-200 dark:border-amber-900 group">
+              <CardHeader className="bg-gradient-to-br from-amber-50 to-muted/20 dark:from-amber-950/20 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CardTitle className="text-lg">Client comptoir</CardTitle>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant="secondary" className="bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                        <ClipboardList className="h-3.5 w-3.5 mr-1" />
+                        Client comptoir
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        Sans fiche client
+                      </Badge>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setWalkInClientOpen(true)}
+                    className="opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity duration-300"
+                  >
+                    <PanelRight className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Détails</span>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">
+                    Client passager utilisé pour les opérations sans profil enregistré.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{walkInOrders.length} commande{walkInOrders.length > 1 ? 's' : ''}</Badge>
+                    <Badge variant="outline">{walkInDeliveriesCount} livraison{walkInDeliveriesCount > 1 ? 's' : ''}</Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {sortedThirdParties.map((thirdParty) => {
             const trucksCount = trucks.filter(t => t.proprietaireId === thirdParty.id).length;
             
             return (
@@ -1708,7 +1834,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 </CardContent>
               </Card>
             );
-          })
+          })}
+          </>
         )}
       </div>
 

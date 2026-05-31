@@ -43,6 +43,8 @@ import {
   formatClientDeliveryStatusFr,
   buildOrderClientFields,
   canDeleteClientOrder,
+  formatClientAccountKindFr,
+  getClientAccountKind,
   isClientOrderEditable,
   isValidUuid,
   sanitizeOptionalUuid,
@@ -818,6 +820,9 @@ export function ClientOperationsPanels({
                     <Badge variant="outline" className="shrink-0 text-xs">
                       {formatClientOrderStatusFr(o.statut)}
                     </Badge>
+                    <Badge variant="secondary" className="shrink-0 text-xs">
+                      {formatClientAccountKindFr(getClientAccountKind(o))}
+                    </Badge>
                   </div>
                   <div className="flex flex-wrap gap-x-3 mt-1 text-xs text-muted-foreground">
                     {o.montant != null && o.montant > 0 && (
@@ -927,6 +932,9 @@ export function ClientOperationsPanels({
                       </Badge>
                       <Badge variant="outline" className="text-[10px]">
                         {formatDeliveryExitModeFr(d.modeSortie)}
+                      </Badge>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {formatClientAccountKindFr(getClientAccountKind(d))}
                       </Badge>
                     </div>
                   </div>
