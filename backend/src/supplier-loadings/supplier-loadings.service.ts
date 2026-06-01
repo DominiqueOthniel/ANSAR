@@ -216,7 +216,7 @@ export class SupplierLoadingsService {
       list = list.filter(
         (l) =>
           l.statut !== 'annule' &&
-          (!l.assignments || l.assignments.length === 0),
+          !(l.assignments ?? []).some((a) => a.clientOrder?.statut !== 'annulee'),
       );
     }
 
@@ -355,7 +355,9 @@ export class SupplierLoadingsService {
     if (dto.assignments.length > 1) {
       throw new BadRequestException('Un bon ne peut être affecté qu’à une seule commande client.');
     }
-    const existingAssignments = loading.assignments ?? [];
+    const existingAssignments = (loading.assignments ?? []).filter(
+      (a) => a.clientOrder?.statut !== 'annulee',
+    );
     const nextOrderId = dto.assignments[0]?.clientOrderId;
     const alreadyLinkedToAnotherOrder = existingAssignments.some(
       (a) => nextOrderId && a.clientOrderId !== nextOrderId,

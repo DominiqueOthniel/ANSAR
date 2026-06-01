@@ -282,6 +282,7 @@ export interface SupplierLoadingAssignment {
   notes?: string;
   orderDesignation?: string;
   orderReference?: string;
+  orderStatus?: ClientOrderStatus;
   clientId?: string;
   clientNom?: string;
 }
@@ -720,6 +721,7 @@ function normalizeSupplierLoadingAssignment(
     notes: r.notes ? String(r.notes) : undefined,
     orderDesignation: order?.designation != null ? String(order.designation) : undefined,
     orderReference: order?.reference ? String(order.reference) : undefined,
+    orderStatus: order?.statut ? (String(order.statut) as ClientOrderStatus) : undefined,
     clientId: order?.clientId ? String(order.clientId) : undefined,
     clientNom:
       client?.nom != null

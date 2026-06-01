@@ -65,26 +65,29 @@ export function canLinkClientOrderToLoading(statut: SupplierLoadingStatus): bool
 }
 
 export function findSupplierLoadingForOrder(
-  loadings: { id: string; assignments?: { clientOrderId: string }[] }[],
+  loadings: { id: string; assignments?: { clientOrderId: string; orderStatus?: string }[] }[],
   orderId: string,
 ) {
-  return loadings.find((l) => l.assignments?.some((a) => a.clientOrderId === orderId));
+  return loadings.find((l) =>
+    l.assignments?.some((a) => a.clientOrderId === orderId && a.orderStatus !== 'annulee'),
+  );
 }
 
 export function isSupplierLoadingAvailableForOrder(
-  loading: { assignments?: { clientOrderId: string }[] },
+  loading: { assignments?: { clientOrderId: string; orderStatus?: string }[] },
   orderId?: string,
 ): boolean {
-  const assignments = loading.assignments ?? [];
+  const assignments = (loading.assignments ?? []).filter((a) => a.orderStatus !== 'annulee');
   if (assignments.length === 0) return true;
   return Boolean(orderId && assignments.length === 1 && assignments[0].clientOrderId === orderId);
 }
 
 /** Client déjà lié au bon via une affectation existante. */
 export function getLoadingAssignedClientId(loading: {
-  assignments?: { clientId?: string; clientNom?: string }[];
+  assignments?: { clientId?: string; clientNom?: string; orderStatus?: string }[];
 }): string | undefined {
   for (const a of loading.assignments ?? []) {
+    if (a.orderStatus === 'annulee') continue;
     if (a.clientId) return a.clientId;
     if (a.clientNom) return `comptoir:${a.clientNom}`;
   }

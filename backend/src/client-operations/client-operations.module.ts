@@ -6,6 +6,7 @@ import { ClientDelivery } from '../entities/client-delivery.entity';
 import { ThirdParty } from '../entities/third-party.entity';
 import { Article } from '../entities/article.entity';
 import { Invoice } from '../entities/invoice.entity';
+import { SupplierLoading } from '../entities/supplier-loading.entity';
 import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignment.entity';
 import { ClientOperationsService } from './client-operations.service';
 import { ClientOperationsController } from './client-operations.controller';
@@ -18,6 +19,7 @@ import { ClientOperationsController } from './client-operations.controller';
       ThirdParty,
       Article,
       Invoice,
+      SupplierLoading,
       SupplierLoadingAssignment,
     ]),
     AuditLogsModule,

@@ -391,11 +391,13 @@ export function ClientOperationsPanels({
       toast.error('Ce bon est déjà affecté à un autre client.');
       return;
     }
-    const existing = (loading.assignments ?? []).map((a) => ({
-      clientOrderId: a.clientOrderId,
-      quantiteAffectee: a.quantiteAffectee,
-      notes: a.notes,
-    }));
+    const existing = (loading.assignments ?? [])
+      .filter((a) => a.orderStatus !== 'annulee')
+      .map((a) => ({
+        clientOrderId: a.clientOrderId,
+        quantiteAffectee: a.quantiteAffectee,
+        notes: a.notes,
+      }));
     if (existing.some((a) => a.clientOrderId === orderId)) return;
     if (existing.length > 0) {
       toast.error('Ce bon est déjà affecté à une autre commande.');

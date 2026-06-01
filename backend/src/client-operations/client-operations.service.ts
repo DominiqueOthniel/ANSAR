@@ -17,6 +17,7 @@ import {
 import { ThirdParty } from '../entities/third-party.entity';
 import { Article } from '../entities/article.entity';
 import { Invoice } from '../entities/invoice.entity';
+import { SupplierLoading } from '../entities/supplier-loading.entity';
 import { SupplierLoadingAssignment } from '../entities/supplier-loading-assignment.entity';
 import { CreateClientOrderDto } from './dto/create-client-order.dto';
 import { UpdateClientOrderDto } from './dto/update-client-order.dto';
@@ -41,6 +42,8 @@ export class ClientOperationsService {
     private readonly articleRepo: Repository<Article>,
     @InjectRepository(Invoice)
     private readonly invoiceRepo: Repository<Invoice>,
+    @InjectRepository(SupplierLoading)
+    private readonly loadingRepo: Repository<SupplierLoading>,
     @InjectRepository(SupplierLoadingAssignment)
     private readonly loadingAssignmentRepo: Repository<SupplierLoadingAssignment>,
     private readonly auditLogsService: AuditLogsService,
@@ -53,6 +56,36 @@ export class ClientOperationsService {
       throw new BadRequestException('Le tiers doit être une fiche client.');
     }
     return tp;
+  }
+
+  private supplierLoadingFreeStatus(loading: SupplierLoading): SupplierLoading['statut'] {
+    if (loading.statut === 'annule' || loading.statut === 'brouillon') return loading.statut;
+    if (loading.statut === 'en_transit') return 'en_transit';
+    const isHubFlow =
+      loading.modeEntree === 'rail' ||
+      Boolean(loading.hubArrivee?.trim()) ||
+      loading.statut === 'au_hub' ||
+      loading.statut === 'en_dispatch' ||
+      loading.statut === 'solde';
+    return isHubFlow ? 'au_hub' : 'en_attente_affectation';
+  }
+
+  private async releaseSupplierLoadingsForOrder(orderId: string): Promise<void> {
+    const assignments = await this.loadingAssignmentRepo.find({ where: { clientOrderId: orderId } });
+    if (assignments.length === 0) return;
+    const loadingIds = [...new Set(assignments.map((a) => a.loadingId))];
+    await this.loadingAssignmentRepo.delete({ clientOrderId: orderId });
+    for (const loadingId of loadingIds) {
+      const loading = await this.loadingRepo.findOne({
+        where: { id: loadingId },
+        relations: ['assignments'],
+      });
+      if (!loading || loading.assignments?.length) continue;
+      const nextStatus = this.supplierLoadingFreeStatus(loading);
+      if (nextStatus !== loading.statut) {
+        await this.loadingRepo.update(loading.id, { statut: nextStatus });
+      }
+    }
   }
 
   private resolveMontant(
@@ -611,6 +644,9 @@ export class ClientOperationsService {
     if (dto.notes !== undefined) patch.notes = dto.notes.trim() || undefined;
 
     await this.orderRepo.update(id, patch);
+    if (patch.statut === 'annulee') {
+      await this.releaseSupplierLoadingsForOrder(id);
+    }
     if (
       (dto.clientId !== undefined && dto.clientId !== existing.clientId) ||
       (dto.clientNom !== undefined && dto.clientNom !== existing.clientNom) ||
@@ -673,7 +709,7 @@ export class ClientOperationsService {
         'Impossible de supprimer : une facture est liée à cette commande. Annulez la commande ou retirez la facture d’abord.',
       );
     }
-    await this.loadingAssignmentRepo.delete({ clientOrderId: id });
+    await this.releaseSupplierLoadingsForOrder(id);
     await this.orderRepo.delete(id);
     await this.auditLogsService.log({
       module: 'client-orders',

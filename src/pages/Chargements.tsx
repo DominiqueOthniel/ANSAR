@@ -430,11 +430,13 @@ export default function Chargements() {
   const openAssign = (l: SupplierLoading) => {
     setAssignLoading(l);
     setAssignRows(
-      (l.assignments ?? []).map((a) => ({
-        clientOrderId: a.clientOrderId,
-        quantiteAffectee: a.quantiteAffectee,
-        notes: a.notes,
-      })),
+      (l.assignments ?? [])
+        .filter((a) => a.orderStatus !== 'annulee')
+        .map((a) => ({
+          clientOrderId: a.clientOrderId,
+          quantiteAffectee: a.quantiteAffectee,
+          notes: a.notes,
+        })),
     );
     setAssignSearch('');
     setAssignClientId(getLoadingAssignedClientId(l) ?? '');
