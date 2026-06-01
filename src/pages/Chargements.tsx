@@ -11,6 +11,7 @@ import {
   getLoadingAssignedClientId,
   isLoadingUnassigned,
   isLoadingAtHub,
+  isSupplierLoadingAvailableForOrder,
 } from '@/lib/supplier-loadings';
 import {
   HUB_PRESETS,
@@ -476,7 +477,10 @@ export default function Chargements() {
       const exists = prev.find((r) => r.clientOrderId === orderId);
       if (exists) return prev.filter((r) => r.clientOrderId !== orderId);
       if (!assignClientId) setAssignClientId(getClientAccountKey(order));
-      return [...prev, { clientOrderId: orderId }];
+      if (prev.length > 0) {
+        toast.error('Un bon ne peut être affecté qu’à une seule commande.');
+      }
+      return [{ clientOrderId: orderId }];
     });
   };
 
@@ -491,6 +495,10 @@ export default function Chargements() {
   const saveAssignments = () =>
     withGuard(async () => {
       if (!assignLoading) return;
+      if (assignRows.length > 1) {
+        toast.error('Un bon ne peut être affecté qu’à une seule commande.');
+        return;
+      }
       const clientKeys = new Set(
         assignRows
           .map((r) => {
@@ -501,6 +509,14 @@ export default function Chargements() {
       );
       if (clientKeys.size > 1) {
         toast.error('Un bon ne peut être affecté qu’à un seul client.');
+        return;
+      }
+      const targetOrderId = assignRows[0]?.clientOrderId;
+      if (
+        targetOrderId &&
+        !isSupplierLoadingAvailableForOrder(assignLoading, targetOrderId)
+      ) {
+        toast.error('Ce bon est déjà affecté à une autre commande.');
         return;
       }
       await setSupplierLoadingAssignments(assignLoading.id, assignRows);

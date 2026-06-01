@@ -352,6 +352,17 @@ export class SupplierLoadingsService {
     if (loading.statut === 'annule') {
       throw new BadRequestException('Un bon annulé ne peut plus être affecté.');
     }
+    if (dto.assignments.length > 1) {
+      throw new BadRequestException('Un bon ne peut être affecté qu’à une seule commande client.');
+    }
+    const existingAssignments = loading.assignments ?? [];
+    const nextOrderId = dto.assignments[0]?.clientOrderId;
+    const alreadyLinkedToAnotherOrder = existingAssignments.some(
+      (a) => nextOrderId && a.clientOrderId !== nextOrderId,
+    );
+    if (alreadyLinkedToAnotherOrder) {
+      throw new BadRequestException('Ce bon est déjà affecté à une autre commande client.');
+    }
 
     const orderIds = dto.assignments.map((a) => a.clientOrderId);
     const uniqueIds = new Set(orderIds);

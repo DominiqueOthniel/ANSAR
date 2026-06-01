@@ -71,6 +71,15 @@ export function findSupplierLoadingForOrder(
   return loadings.find((l) => l.assignments?.some((a) => a.clientOrderId === orderId));
 }
 
+export function isSupplierLoadingAvailableForOrder(
+  loading: { assignments?: { clientOrderId: string }[] },
+  orderId?: string,
+): boolean {
+  const assignments = loading.assignments ?? [];
+  if (assignments.length === 0) return true;
+  return Boolean(orderId && assignments.length === 1 && assignments[0].clientOrderId === orderId);
+}
+
 /** Client déjà lié au bon via une affectation existante. */
 export function getLoadingAssignedClientId(loading: {
   assignments?: { clientId?: string; clientNom?: string }[];

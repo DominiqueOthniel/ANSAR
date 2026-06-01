@@ -56,6 +56,7 @@ import {
   canLinkClientOrderToLoading,
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
+  isSupplierLoadingAvailableForOrder,
 } from '@/lib/supplier-loadings';
 import {
   DELIVERY_EXIT_MODE_OPTIONS,
@@ -227,11 +228,12 @@ export function ClientOperationsPanels({
         supplierLoadings.filter(
           (l) =>
             canLinkClientOrderToLoading(l.statut) &&
-            canAssignClientOrderToLoading(l, clientId),
+            canAssignClientOrderToLoading(l, clientId) &&
+            isSupplierLoadingAvailableForOrder(l, editingOrder?.id),
         ),
         (a, b) => b.dateChargement.localeCompare(a.dateChargement),
       ),
-    [supplierLoadings, clientId],
+    [supplierLoadings, clientId, editingOrder?.id],
   );
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
@@ -395,6 +397,10 @@ export function ClientOperationsPanels({
       notes: a.notes,
     }));
     if (existing.some((a) => a.clientOrderId === orderId)) return;
+    if (existing.length > 0) {
+      toast.error('Ce bon est déjà affecté à une autre commande.');
+      return;
+    }
     await setSupplierLoadingAssignments(loading.id, [
       ...existing,
       { clientOrderId: orderId, quantiteAffectee: qty },
@@ -615,10 +621,21 @@ export function ClientOperationsPanels({
               }
             : {}),
         };
+        const selectedLoadingId = orderForm.supplierLoadingId.trim();
+        if (selectedLoadingId) {
+          const selectedLoading = supplierLoadings.find((l) => l.id === selectedLoadingId);
+          if (
+            selectedLoading &&
+            !isSupplierLoadingAvailableForOrder(selectedLoading, editingOrder?.id)
+          ) {
+            toast.error('Ce bon est déjà affecté à une autre commande.');
+            return;
+          }
+        }
         if (editingOrder) {
           await updateClientOrder(editingOrder.id, payload);
           const prevLoading = findSupplierLoadingForOrder(supplierLoadings, editingOrder.id);
-          const nextId = orderForm.supplierLoadingId.trim();
+          const nextId = selectedLoadingId;
           if (prevLoading && prevLoading.id !== nextId) {
             const remaining = (prevLoading.assignments ?? [])
               .filter((a) => a.clientOrderId !== editingOrder.id)
