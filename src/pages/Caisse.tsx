@@ -530,7 +530,12 @@ export default function Caisse() {
       oddRowColor: '#ffffff',
       accentColor: '#059669',
       totals: [
-        { label: 'Solde initial', value: `${soldeInitial.toLocaleString('fr-FR')} FCFA`, style: 'neutral', icon: EMOJI.argent },
+        {
+          label: 'Solde caisse',
+          value: `${soldeActuel >= 0 ? '+' : '-'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
+          style: soldeActuel >= 0 ? 'positive' : 'negative',
+          icon: EMOJI.argent,
+        },
         {
           label: 'Entrées activité (hors financement)',
           value: `+${totalEntreesActivite.toLocaleString('fr-FR')} FCFA`,
@@ -548,12 +553,6 @@ export default function Caisse() {
           value: `+${totalEntrees.toLocaleString('fr-FR')} FCFA`,
           style: 'positive',
           icon: EMOJI.entree,
-        },
-        {
-          label: 'Sorties caisse',
-          value: `-${totalSortiesActivite.toLocaleString('fr-FR')} FCFA`,
-          style: 'negative',
-          icon: EMOJI.sortie,
         },
         {
           label: 'Total sorties caisse',

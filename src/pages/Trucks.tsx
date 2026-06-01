@@ -116,6 +116,7 @@ export default function Trucks() {
 
   const [formData, setFormData] = useState({
     immatriculation: '',
+    nom: '',
     remorqueImmatriculation: '',
     modele: '',
     type: 'tracteur' as TruckType,
@@ -130,6 +131,7 @@ export default function Trucks() {
   const resetForm = () => {
     setFormData({
       immatriculation: '',
+      nom: '',
       remorqueImmatriculation: '',
       modele: '',
       type: 'tracteur',
@@ -176,6 +178,7 @@ export default function Trucks() {
       }
       const truckData = {
         immatriculation: imm,
+        nom: formData.nom.trim(),
         remorqueImmatriculation: undefined as string | undefined,
         modele: formData.modele,
         type: 'remorqueuse' as const,
@@ -223,6 +226,7 @@ export default function Trucks() {
     /** En jumelé : envoyer uniquement la plaque tracteur ; le backend compose `tracteur-remorque` (évite double concaténation). */
     const truckData = {
       immatriculation: tracteurImmat,
+      nom: formData.nom.trim(),
       remorqueImmatriculation: isJumele ? remorqueImmat : undefined,
       modele: formData.modele,
       type: 'tracteur' as const,
@@ -259,6 +263,7 @@ export default function Trucks() {
     setFormData({
       immatriculation:
         truck.type === 'tracteur' ? tracteurImmatForForm(truck) : truck.immatriculation,
+      nom: truck.nom || '',
       remorqueImmatriculation: truck.remorqueImmatriculation || '',
       modele: truck.modele,
       type: truck.type,
@@ -316,11 +321,12 @@ export default function Trucks() {
       // Recherche générale
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
+        const matchesNom = truck.nom?.toLowerCase().includes(search);
         const matchesImmatriculation = truck.immatriculation.toLowerCase().includes(search);
         const matchesModele = truck.modele?.toLowerCase().includes(search);
         const matchesProprietaire = truck.proprietaireId ? (thirdParties.find(tp => tp.id === truck.proprietaireId)?.nom || '').toLowerCase().includes(search) : false;
         
-        if (!matchesImmatriculation && !matchesModele && !matchesProprietaire) {
+        if (!matchesNom && !matchesImmatriculation && !matchesModele && !matchesProprietaire) {
           return false;
         }
       }
@@ -418,6 +424,7 @@ export default function Trucks() {
       fileName: `camions_${new Date().toISOString().split('T')[0]}.xlsx`,
       filtersDescription: getFiltersDescription(),
       columns: [
+        { header: 'Nom du camion', value: (t) => t.nom || '-' },
         { header: 'Immatriculation tracteur', value: exportTracteurImmat },
         { header: 'Immatriculation remorque', value: exportRemorqueImmat },
         { header: 'Chauffeur attitré', value: (t) => {
@@ -463,6 +470,7 @@ export default function Trucks() {
         { label: 'Bénéfice Net', value: `${totalBenefice >= 0 ? '+' : ''}${totalBenefice.toLocaleString('fr-FR')} FCFA`, style: totalBenefice >= 0 ? 'positive' : 'negative', icon: '📊' },
       ],
       columns: [
+        { header: 'Nom du camion', value: (t) => t.nom || '-' },
         { header: 'Immat. tracteur', value: exportTracteurImmat },
         { header: 'Immat. remorque', value: exportRemorqueImmat },
         { header: 'Modèle', value: (t) => t.modele },
@@ -566,6 +574,15 @@ export default function Trucks() {
               </DialogHeader>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
               <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="nom">Nom du camion</Label>
+                  <Input
+                    id="nom"
+                    value={formData.nom}
+                    onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                    placeholder="Ex. Alpha 12, Camion Nord..."
+                  />
+                </div>
                 <div>
                   <Label htmlFor="immatriculation">
                     Immatriculation {formData.type === 'remorqueuse' ? 'remorque (historique)' : 'tracteur'}
@@ -816,7 +833,7 @@ export default function Trucks() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search-trucks"
-                  placeholder="Rechercher (immat., modèle, propriétaire)"
+                  placeholder="Rechercher (nom, immat., modèle, propriétaire)"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 min-w-0 w-full"
@@ -1045,6 +1062,7 @@ export default function Trucks() {
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
+                <TableHead>Nom du camion</TableHead>
                 <TableHead>Immatriculation</TableHead>
                 <TableHead>Modèle</TableHead>
                 <TableHead>Type</TableHead>
@@ -1059,13 +1077,14 @@ export default function Trucks() {
             <TableBody>
               {sortedTrucks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Aucun camion ne correspond aux critères de filtrage sélectionnés
                   </TableCell>
                 </TableRow>
               ) : (
                 sortedTrucks.map((truck) => (
                 <TableRow key={truck.id} className="hover:bg-muted/50 transition-colors duration-200">
+                  <TableCell className="font-medium">{truck.nom || <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="font-semibold">{truck.immatriculation}</TableCell>
                   <TableCell>{truck.modele}</TableCell>
                   <TableCell>{labelTruckType(truck)}</TableCell>
@@ -1171,7 +1190,9 @@ export default function Trucks() {
       <Dialog open={!!viewingTruck} onOpenChange={(open) => !open && setViewingTruck(null)}>
         <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Photo du camion - {viewingTruck?.immatriculation}</DialogTitle>
+            <DialogTitle>
+              Photo du camion - {viewingTruck?.nom || viewingTruck?.immatriculation}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {viewingTruck?.photo && (
@@ -1184,6 +1205,10 @@ export default function Trucks() {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Nom du camion</p>
+                <p className="text-lg font-semibold">{viewingTruck?.nom || <span className="text-muted-foreground">—</span>}</p>
+              </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Immatriculation</p>
                 <p className="text-lg font-semibold">{viewingTruck?.immatriculation}</p>

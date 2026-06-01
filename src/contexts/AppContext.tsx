@@ -33,6 +33,7 @@ export type TruckSousType = 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seul
 export interface Truck {
   id: string;
   immatriculation: string;
+  nom?: string;
   modele: string;
   type: TruckType;
   sousType?: TruckSousType;
@@ -326,6 +327,7 @@ function normalizeTruck(r: Record<string, unknown>): Truck {
   return {
     id: String(r.id),
     immatriculation: String(r.immatriculation),
+    nom: r.nom ? String(r.nom) : undefined,
     modele: String(r.modele),
     type: r.type as TruckType,
     sousType: r.sousType ? (String(r.sousType) as TruckSousType) : undefined,

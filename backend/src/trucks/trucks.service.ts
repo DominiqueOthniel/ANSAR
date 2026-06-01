@@ -24,6 +24,8 @@ export class TrucksService {
   ): Partial<Truck> {
     const type = dto.type ?? current?.type;
     const immat = this.normalizeImmatriculation(dto.immatriculation ?? current?.immatriculation);
+    const nom =
+      dto.nom !== undefined ? dto.nom.trim() || undefined : current?.nom?.trim() || undefined;
     const remorqueImmat = this.normalizeImmatriculation(
       dto.remorqueImmatriculation ?? current?.remorqueImmatriculation,
     );
@@ -38,6 +40,7 @@ export class TrucksService {
       }
       return {
         ...dto,
+        nom,
         immatriculation: finalImmat,
         sousType,
         remorqueImmatriculation:
@@ -48,6 +51,7 @@ export class TrucksService {
     // Remorqueuse: sous-type cohérent et immat simple.
     return {
       ...dto,
+      nom,
       immatriculation: immat,
       sousType: 'remorque_seule',
       remorqueImmatriculation: undefined,

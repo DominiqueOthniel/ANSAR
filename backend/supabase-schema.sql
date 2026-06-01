@@ -46,6 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_driver_transactions_driver_id ON driver_transacti
 CREATE TABLE IF NOT EXISTS trucks (
   id UUID PRIMARY KEY,
   immatriculation VARCHAR NOT NULL,
+  nom VARCHAR,
   modele VARCHAR NOT NULL,
   type VARCHAR(20) NOT NULL CHECK (type IN ('tracteur', 'remorqueuse')),
   "sousType" VARCHAR(30),
@@ -265,6 +266,8 @@ ALTER TABLE IF EXISTS trucks
   ADD COLUMN IF NOT EXISTS "sousType" VARCHAR(30);
 ALTER TABLE IF EXISTS trucks
   ADD COLUMN IF NOT EXISTS "remorqueImmatriculation" VARCHAR;
+ALTER TABLE IF EXISTS trucks
+  ADD COLUMN IF NOT EXISTS nom VARCHAR;
 
 -- Chauffeurs : numéro de permis
 ALTER TABLE IF EXISTS drivers

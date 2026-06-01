@@ -97,6 +97,7 @@ async function request<T>(
 // Types (ré-export pour cohérence)
 export interface TruckPayload {
   immatriculation: string;
+  nom?: string;
   modele: string;
   type: 'tracteur' | 'remorqueuse';
   sousType?: 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';

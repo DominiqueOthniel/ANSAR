@@ -23,6 +23,9 @@ export class Truck {
   @Column()
   immatriculation: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  nom?: string;
+
   @Column()
   modele: string;
 

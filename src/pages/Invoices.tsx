@@ -1897,21 +1897,21 @@ export default function Invoices() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {/* Recherche par nom/número */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="search" className="text-xs">Recherche</Label>
               <Input
                 id="search"
                 placeholder="Client ou N° facture"
                 value={filters.searchTerm}
                 onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
-                className="h-9"
+                className="h-9 w-full"
               />
             </div>
 
             {/* Filtre par type de facture */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="typeFilter" className="text-xs">Type</Label>
               <Select
                 value={filters.type || 'all'}
@@ -1923,7 +1923,7 @@ export default function Invoices() {
                   })
                 }
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les types" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1936,7 +1936,7 @@ export default function Invoices() {
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="clientKindFilter" className="text-xs">Nature client</Label>
               <Select
                 value={filters.clientKind || 'all'}
@@ -1947,7 +1947,7 @@ export default function Invoices() {
                   })
                 }
               >
-                <SelectTrigger id="clientKindFilter" className="h-9">
+                <SelectTrigger id="clientKindFilter" className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les clients" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1959,13 +1959,13 @@ export default function Invoices() {
             </div>
 
             {/* Filtre par trajet */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="tripFilter" className="text-xs">Trajet</Label>
               <Select
                 value={filters.tripId || 'all'}
                 onValueChange={(value) => setFilters({ ...filters, tripId: value === 'all' ? '' : value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les trajets" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1984,13 +1984,13 @@ export default function Invoices() {
             </div>
 
             {/* Filtre par chauffeur */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="driverFilter" className="text-xs">Chauffeur</Label>
               <Select
                 value={filters.driverId || 'all'}
                 onValueChange={(value) => setFilters({ ...filters, driverId: value === 'all' ? '' : value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les chauffeurs" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2018,13 +2018,13 @@ export default function Invoices() {
             </div>
 
             {/* Filtre par statut */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="statusFilter" className="text-xs">Statut</Label>
               <Select
                 value={filters.status || 'all'}
                 onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? '' : value })}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les statuts" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2036,7 +2036,7 @@ export default function Invoices() {
             </div>
 
             {/* Filtre impayés / encaissement (montants) */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="paiementSoldeFilter" className="text-xs">Impayés / encaissement</Label>
               <Select
                 value={filters.paiementSolde || 'all'}
@@ -2047,7 +2047,7 @@ export default function Invoices() {
                   })
                 }
               >
-                <SelectTrigger id="paiementSoldeFilter" className="h-9">
+                <SelectTrigger id="paiementSoldeFilter" className="h-9 w-full min-w-0">
                   <SelectValue placeholder="Tous les soldes" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2061,30 +2061,30 @@ export default function Invoices() {
             </div>
 
             {/* Filtre par date (du) */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="dateFrom" className="text-xs">Date du</Label>
               <Input
                 id="dateFrom"
                 type="date"
                 value={filters.dateFrom}
                 onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                className="h-9"
+                className="h-9 w-full"
               />
             </div>
 
             {/* Filtre par date (au) */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="dateTo" className="text-xs">Date au</Label>
               <Input
                 id="dateTo"
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                className="h-9"
+                className="h-9 w-full"
               />
             </div>
 
-            <div className="space-y-2 sm:col-span-2 lg:col-span-3">
+            <div className="space-y-2 min-w-0 sm:col-span-2 xl:col-span-4">
               <ListSortSelect
                 id="sort-invoices"
                 value={listSort}

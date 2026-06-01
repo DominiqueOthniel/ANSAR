@@ -4,6 +4,10 @@ export class CreateTruckDto {
   @IsString()
   immatriculation: string;
 
+  @IsOptional()
+  @IsString()
+  nom?: string;
+
   @IsString()
   modele: string;
 
