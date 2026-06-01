@@ -78,6 +78,15 @@ export class CaisseService {
     }
   }
 
+  async assertSortieAvailable(montant: number, excludeReference?: string): Promise<void> {
+    if (!Number.isFinite(montant) || montant <= 0) return;
+    const existing = excludeReference
+      ? await this.txRepo.findOne({ where: { reference: excludeReference } })
+      : null;
+    const disponible = await this.computeBalanceExcluding(existing?.id);
+    this.assertSortieAllowed(disponible, montant);
+  }
+
   async create(dto: CreateCaisseTransactionDto, actor?: AuditActor): Promise<CaisseTransactionEntity> {
     if (dto.type === 'sortie') {
       const disponible = await this.computeBalanceExcluding();

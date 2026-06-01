@@ -19,7 +19,14 @@ import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
-import { removeCaisseLienDepense, upsertSortieFromExpense } from '@/lib/caisse-local';
+import {
+  assertCaisseSortieAllowed,
+  getCaisseSoldeInitialSync,
+  getCaisseTransactions,
+  InsufficientCaisseError,
+  removeCaisseLienDepense,
+  upsertSortieFromExpense,
+} from '@/lib/caisse-local';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import {
@@ -303,6 +310,23 @@ export default function Expenses() {
       date: formData.date,
       description: formData.description,
     };
+
+    try {
+      const txs = getCaisseTransactions();
+      const existingCaisseTx = editingExpense
+        ? txs.find((t) => t.reference === `depense:${editingExpense.id}`)
+        : undefined;
+      assertCaisseSortieAllowed(
+        getCaisseSoldeInitialSync(),
+        txs,
+        finalMontant,
+        existingCaisseTx?.id,
+      );
+    } catch (err) {
+      toast.error(err instanceof InsufficientCaisseError ? err.message : 'Solde caisse insuffisant.');
+      return;
+    }
+
     await withGuard(async () => {
       try {
         if (editingExpense) {
@@ -354,13 +378,22 @@ export default function Expenses() {
           toast.success('Dépense modifiée');
         } else {
           const created = await createExpense(payload);
-          await upsertSortieFromExpense({
-            id: created.id,
-            montant: created.montant,
-            date: created.date,
-            description: created.description,
-            categorie: created.categorie,
-          });
+          try {
+            await upsertSortieFromExpense({
+              id: created.id,
+              montant: created.montant,
+              date: created.date,
+              description: created.description,
+              categorie: created.categorie,
+            });
+          } catch (cashErr) {
+            try {
+              await deleteExpense(created.id);
+            } catch (rollbackErr) {
+              console.error('Rollback dépense après refus caisse impossible:', rollbackErr);
+            }
+            throw cashErr;
+          }
           try {
             const pay = payment ?? { montantPaye: 0, statut: 'en_attente' as const };
             await createInvoice({

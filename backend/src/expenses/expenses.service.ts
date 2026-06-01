@@ -6,6 +6,7 @@ import { Expense } from '../entities/expense.entity';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { AuditActor, AuditLogsService } from '../audit-logs/audit-logs.service';
+import { CaisseService } from '../caisse/caisse.service';
 
 @Injectable()
 export class ExpensesService {
@@ -13,6 +14,7 @@ export class ExpensesService {
     @InjectRepository(Expense)
     private readonly expenseRepository: Repository<Expense>,
     private readonly auditLogsService: AuditLogsService,
+    private readonly caisseService: CaisseService,
   ) {}
 
   private normalizeOptionalString(value: unknown): string | undefined {
@@ -34,6 +36,7 @@ export class ExpensesService {
 
   async create(dto: CreateExpenseDto, actor?: AuditActor): Promise<Expense> {
     const safeDto = this.sanitizeDto(dto as unknown as Record<string, unknown>);
+    await this.caisseService.assertSortieAvailable(Number(safeDto.montant) || 0);
     const expense = this.expenseRepository.create({
       id: uuidv4(),
       ...safeDto,
@@ -69,6 +72,9 @@ export class ExpensesService {
   async update(id: string, dto: UpdateExpenseDto, actor?: AuditActor): Promise<Expense> {
     const before = await this.findOne(id);
     const safeDto = this.sanitizeDto(dto as unknown as Record<string, unknown>);
+    if (safeDto.montant !== undefined) {
+      await this.caisseService.assertSortieAvailable(Number(safeDto.montant) || 0, `depense:${id}`);
+    }
     await this.expenseRepository.update(id, safeDto as Partial<Expense>);
     const after = await this.findOne(id);
     await this.auditLogsService.log({
