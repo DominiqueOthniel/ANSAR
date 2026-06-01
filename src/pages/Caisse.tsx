@@ -39,6 +39,9 @@ import {
   getCaisseSoldeInitialSync,
   saveCaisseTransactionRemote,
   deleteCaisseTransactionRemote,
+  assertCaisseSortieAllowed,
+  computeCaisseSoldeActuel,
+  InsufficientCaisseError,
 } from '@/lib/caisse-local';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
@@ -176,9 +179,7 @@ export default function Caisse() {
     }
   };
 
-  const soldeActuel = soldeInitial + transactions.reduce((sum, t) => {
-    return t.type === 'entree' ? sum + t.montant : sum - t.montant;
-  }, 0);
+  const soldeActuel = computeCaisseSoldeActuel(soldeInitial, transactions);
 
   /** Après soldeActuel : évite ReferenceError (TDZ) si déclaré trop tôt. */
   const tresorerieTotale = soldeActuel + statsBanque.totalDisponible;
@@ -217,6 +218,20 @@ export default function Caisse() {
     if (!Number.isFinite(montant) || montant <= 0) {
       toast.error('Indique un montant valide.');
       return;
+    }
+
+    if (formData.type === 'sortie') {
+      try {
+        assertCaisseSortieAllowed(
+          soldeInitial,
+          transactions,
+          montant,
+          editingTransaction?.id,
+        );
+      } catch (err) {
+        toast.error(err instanceof InsufficientCaisseError ? err.message : 'Solde caisse insuffisant.');
+        return;
+      }
     }
 
     await withGuard(async () => {
@@ -267,14 +282,9 @@ export default function Caisse() {
       }
 
       try {
-        if (isRemoteCaisse()) {
-          await saveCaisseTransactionRemote(base, false);
-          setTransactions(getCaisseTransactions());
-          setSoldeInitial(getCaisseSoldeInitialSync());
-        } else {
-          const updated = transactions.map((t) => (t.id === editingTransaction.id ? base : t));
-          saveTransactions(updated);
-        }
+        await saveCaisseTransactionRemote(base, false);
+        setTransactions(getCaisseTransactions());
+        setSoldeInitial(getCaisseSoldeInitialSync());
         toast.success('Transaction modifiée avec succès');
         setIsDialogOpen(false);
         resetForm();
@@ -311,13 +321,9 @@ export default function Caisse() {
     }
 
     try {
-      if (isRemoteCaisse()) {
-        await saveCaisseTransactionRemote(newTransaction, true);
-        setTransactions(getCaisseTransactions());
-        setSoldeInitial(getCaisseSoldeInitialSync());
-      } else {
-        saveTransactions([...transactions, newTransaction]);
-      }
+      await saveCaisseTransactionRemote(newTransaction, true);
+      setTransactions(getCaisseTransactions());
+      setSoldeInitial(getCaisseSoldeInitialSync());
       toast.success('Transaction ajoutée avec succès');
       setIsDialogOpen(false);
       resetForm();

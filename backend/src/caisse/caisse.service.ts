@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -58,7 +58,31 @@ export class CaisseService {
     return { soldeInitial: Number(config.soldeInitial), soldeActuel: solde };
   }
 
+  private async computeBalanceExcluding(excludeId?: string): Promise<number> {
+    const config = await this.getOrCreateConfig();
+    const txs = await this.txRepo.find();
+    let solde = Number(config.soldeInitial);
+    for (const t of txs) {
+      if (excludeId && t.id === excludeId) continue;
+      const m = Number(t.montant);
+      solde += t.type === 'entree' ? m : -m;
+    }
+    return solde;
+  }
+
+  private assertSortieAllowed(disponible: number, montant: number): void {
+    if (montant > disponible) {
+      throw new BadRequestException(
+        `Solde caisse insuffisant. Solde disponible : ${Math.max(0, disponible).toLocaleString('fr-FR')} FCFA, sortie demandée : ${montant.toLocaleString('fr-FR')} FCFA.`,
+      );
+    }
+  }
+
   async create(dto: CreateCaisseTransactionDto, actor?: AuditActor): Promise<CaisseTransactionEntity> {
+    if (dto.type === 'sortie') {
+      const disponible = await this.computeBalanceExcluding();
+      this.assertSortieAllowed(disponible, dto.montant);
+    }
     const id = dto.id?.trim() || uuidv4();
     const utilisateur = dto.utilisateur?.trim() || actor?.login || 'Système';
     const row = this.txRepo.create({
@@ -90,6 +114,14 @@ export class CaisseService {
   async update(id: string, dto: UpdateCaisseTransactionDto, actor?: AuditActor): Promise<CaisseTransactionEntity> {
     const existing = await this.txRepo.findOne({ where: { id } });
     if (!existing) throw new NotFoundException(`Mouvement caisse ${id} introuvable`);
+
+    const newType = dto.type ?? existing.type;
+    const newMontant = dto.montant !== undefined ? dto.montant : Number(existing.montant);
+    if (newType === 'sortie') {
+      const disponible = await this.computeBalanceExcluding(id);
+      this.assertSortieAllowed(disponible, newMontant);
+    }
+
     const patch: Partial<CaisseTransactionEntity> = {};
     if (dto.type !== undefined) patch.type = dto.type;
     if (dto.montant !== undefined) patch.montant = String(dto.montant);

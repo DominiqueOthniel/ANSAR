@@ -508,9 +508,11 @@ export default function Invoices() {
                   : `Encaissement caisse ${paymentAmount.toLocaleString('fr-FR')} FCFA — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA sur la facture`,
               );
             }
-          } catch {
+          } catch (err) {
             toast.error(
-              'Facture mise à jour, mais l’écriture caisse a échoué. Vérifie la page Caisse ou réessaie.',
+              err instanceof Error
+                ? err.message
+                : 'Facture mise à jour, mais l’écriture caisse a échoué. Vérifie la page Caisse ou réessaie.',
             );
           }
         } else if (nouveauTotalPaye >= selectedInvoice.montantTTC) {
