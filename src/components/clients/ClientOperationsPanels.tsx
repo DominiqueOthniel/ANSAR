@@ -164,6 +164,9 @@ export function ClientOperationsPanels({
   const [orderForm, setOrderForm] = useState({
     supplierLoadingId: '',
     articleId: '',
+    clientNom: '',
+    clientTelephone: '',
+    clientAdresse: '',
     reference: '',
     designation: '',
     destination: defaultDestination ?? '',
@@ -435,6 +438,9 @@ export function ClientOperationsPanels({
     setOrderForm({
       supplierLoadingId: '',
       articleId: '',
+      clientNom: '',
+      clientTelephone: '',
+      clientAdresse: '',
       reference: '',
       designation: '',
       destination: defaultDestination ?? '',
@@ -501,6 +507,9 @@ export function ClientOperationsPanels({
     setOrderForm({
       supplierLoadingId: linked?.id ?? '',
       articleId: o.articleId ?? '',
+      clientNom: o.clientNom ?? '',
+      clientTelephone: o.clientTelephone ?? '',
+      clientAdresse: o.clientAdresse ?? '',
       reference: o.reference ?? '',
       designation: o.designation,
       destination: o.destination ?? '',
@@ -558,10 +567,27 @@ export function ClientOperationsPanels({
           toast.error('Identifiant client invalide : rouvrez la fiche client et réessayez.');
           return;
         }
-        let clientFields: { clientId?: string; clientNom?: string } = {};
-        if (!editingOrder) {
+        if (isWalkIn && !orderForm.clientNom.trim()) {
+          toast.error('Indiquez au moins le nom du client comptoir.');
+          return;
+        }
+        let clientFields: {
+          clientId?: string;
+          clientNom?: string;
+          clientTelephone?: string;
+          clientAdresse?: string;
+        } = {};
+        if (!editingOrder || isWalkIn) {
           try {
-            clientFields = buildOrderClientFields(isWalkIn, clientId, clientLabel);
+            clientFields = buildOrderClientFields(
+              isWalkIn,
+              clientId,
+              isWalkIn ? orderForm.clientNom : clientLabel,
+              {
+                telephone: orderForm.clientTelephone,
+                adresse: orderForm.clientAdresse,
+              },
+            );
           } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Client invalide.');
             return;
@@ -816,6 +842,12 @@ export function ClientOperationsPanels({
                         {o.reference ? ` · ${o.reference}` : ''}
                         {o.destination ? ` · ${o.destination}` : ''}
                       </p>
+                      {!o.clientId && o.clientNom && (
+                        <p className="text-xs font-medium text-primary mt-0.5">
+                          Client comptoir : {o.clientNom}
+                          {o.clientTelephone ? ` · ${o.clientTelephone}` : ''}
+                        </p>
+                      )}
                     </div>
                     <Badge variant="outline" className="shrink-0 text-xs">
                       {formatClientOrderStatusFr(o.statut)}
@@ -1005,6 +1037,44 @@ export function ClientOperationsPanels({
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitOrder} className="space-y-3">
+            {isWalkIn && (
+              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                <div>
+                  <Label>Nom du client comptoir *</Label>
+                  <Input
+                    value={orderForm.clientNom}
+                    onChange={(e) => setOrderForm((p) => ({ ...p, clientNom: e.target.value }))}
+                    placeholder="Ex. CIMAF 32,5R"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <Label>Téléphone</Label>
+                    <Input
+                      value={orderForm.clientTelephone}
+                      onChange={(e) =>
+                        setOrderForm((p) => ({ ...p, clientTelephone: e.target.value }))
+                      }
+                      placeholder="Ex. 6 99 00 00 00"
+                    />
+                  </div>
+                  <div>
+                    <Label>Adresse / infos</Label>
+                    <Input
+                      value={orderForm.clientAdresse}
+                      onChange={(e) =>
+                        setOrderForm((p) => ({ ...p, clientAdresse: e.target.value }))
+                      }
+                      placeholder="Ville, quartier, contact..."
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ces infos seront reprises sur la facture FAC-CMD et visibles dans la table Factures.
+                </p>
+              </div>
+            )}
             <div className="space-y-1 rounded-md border border-dashed p-2">
               <div className="flex items-center justify-between gap-2">
                 <Label>Bon de chargement</Label>

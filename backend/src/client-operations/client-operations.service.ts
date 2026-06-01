@@ -268,12 +268,14 @@ export class ClientOperationsService {
     const montant = marchandise + transportTotal;
     if (montant <= 0) return;
 
-    const libelle =
+    const designationLibelle =
       transportTotal > 0 && marchandise > 0
         ? `${order.designation} (marchandise + transport)`
         : transportTotal > 0
           ? `${order.designation} — transport`
           : order.designation;
+    const walkInName = !order.clientId?.trim() ? order.clientNom?.trim() : undefined;
+    const libelle = walkInName ? `${walkInName} — ${designationLibelle}` : designationLibelle;
     const notes = this.buildOrderInvoiceNotes(order, billableDeliveries);
     const existing = await this.findOrderInvoice(order);
     let paymentResolved = payment;
@@ -484,6 +486,8 @@ export class ClientOperationsService {
   async createOrder(dto: CreateClientOrderDto, actor?: AuditActor): Promise<ClientOrder> {
     if (dto.clientId) await this.assertClient(dto.clientId);
     const clientNom = dto.clientId ? undefined : dto.clientNom?.trim() || 'Client comptoir';
+    const clientTelephone = dto.clientId ? undefined : dto.clientTelephone?.trim() || undefined;
+    const clientAdresse = dto.clientId ? undefined : dto.clientAdresse?.trim() || undefined;
     const built = await this.buildOrderPayloadAsync(dto);
     const designation = (dto.designation?.trim() || built.designation || '').trim();
     if (!designation) {
@@ -493,6 +497,8 @@ export class ClientOperationsService {
       id: uuidv4(),
       clientId: dto.clientId,
       clientNom,
+      clientTelephone,
+      clientAdresse,
       articleId: built.articleId,
       reference: dto.reference?.trim() || undefined,
       designation,
@@ -570,6 +576,12 @@ export class ClientOperationsService {
     if (dto.clientNom !== undefined && !dto.clientId) {
       patch.clientNom = dto.clientNom.trim() || 'Client comptoir';
     }
+    if (dto.clientTelephone !== undefined && !dto.clientId) {
+      patch.clientTelephone = dto.clientTelephone.trim() || undefined;
+    }
+    if (dto.clientAdresse !== undefined && !dto.clientId) {
+      patch.clientAdresse = dto.clientAdresse.trim() || undefined;
+    }
     if (dto.articleId !== undefined || built.articleId !== undefined) {
       patch.articleId = built.articleId;
     }
@@ -601,13 +613,28 @@ export class ClientOperationsService {
     await this.orderRepo.update(id, patch);
     if (
       (dto.clientId !== undefined && dto.clientId !== existing.clientId) ||
-      (dto.clientNom !== undefined && dto.clientNom !== existing.clientNom)
+      (dto.clientNom !== undefined && dto.clientNom !== existing.clientNom) ||
+      (dto.clientTelephone !== undefined && dto.clientTelephone !== existing.clientTelephone) ||
+      (dto.clientAdresse !== undefined && dto.clientAdresse !== existing.clientAdresse)
     ) {
+      const nextClientId = dto.clientId !== undefined ? dto.clientId : existing.clientId;
+      const nextClientNom =
+        dto.clientNom !== undefined ? dto.clientNom.trim() || 'Client comptoir' : existing.clientNom;
+      const nextClientTelephone =
+        dto.clientTelephone !== undefined
+          ? dto.clientTelephone.trim() || undefined
+          : existing.clientTelephone;
+      const nextClientAdresse =
+        dto.clientAdresse !== undefined
+          ? dto.clientAdresse.trim() || undefined
+          : existing.clientAdresse;
       await this.deliveryRepo.update(
         { clientOrderId: id },
         {
-          clientId: dto.clientId || undefined,
-          clientNom: dto.clientId ? undefined : dto.clientNom?.trim() || 'Client comptoir',
+          clientId: nextClientId || undefined,
+          clientNom: nextClientId ? undefined : nextClientNom || 'Client comptoir',
+          clientTelephone: nextClientId ? undefined : nextClientTelephone,
+          clientAdresse: nextClientId ? undefined : nextClientAdresse,
         },
       );
     }
@@ -677,6 +704,8 @@ export class ClientOperationsService {
       clientOrderId: order.id,
       clientId: order.clientId,
       clientNom: order.clientNom,
+      clientTelephone: order.clientTelephone,
+      clientAdresse: order.clientAdresse,
       lieuLivraison: lieu,
       modeSortie,
       statut,
@@ -759,6 +788,8 @@ export class ClientOperationsService {
       patch.clientOrderId = order.id;
       patch.clientId = order.clientId;
       patch.clientNom = order.clientNom;
+      patch.clientTelephone = order.clientTelephone;
+      patch.clientAdresse = order.clientAdresse;
     }
     if (dto.lieuLivraison !== undefined) {
       const l = dto.lieuLivraison.trim();

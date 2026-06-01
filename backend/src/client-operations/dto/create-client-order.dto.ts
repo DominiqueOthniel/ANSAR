@@ -24,6 +24,16 @@ export class CreateClientOrderDto {
   @MaxLength(255)
   clientNom?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  clientTelephone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  clientAdresse?: string;
+
   @ValidateIf((o) => o.articleId != null && o.articleId !== '')
   @Transform(emptyToUndefined)
   @IsUUID()

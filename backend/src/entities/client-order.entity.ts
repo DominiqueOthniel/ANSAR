@@ -22,6 +22,12 @@ export class ClientOrder {
   @Column({ type: 'varchar', length: 255, nullable: true })
   clientNom?: string;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  clientTelephone?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  clientAdresse?: string;
+
   @Column({ type: 'uuid', nullable: true })
   articleId?: string;
 

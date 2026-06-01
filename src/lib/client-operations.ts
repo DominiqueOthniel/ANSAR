@@ -16,9 +16,14 @@ export function buildOrderClientFields(
   isWalkIn: boolean,
   clientId?: string,
   clientLabel?: string,
-): { clientId?: string; clientNom?: string } {
+  walkInInfo?: { telephone?: string; adresse?: string },
+): { clientId?: string; clientNom?: string; clientTelephone?: string; clientAdresse?: string } {
   if (isWalkIn) {
-    return { clientNom: clientLabel?.trim() || 'Client comptoir' };
+    return {
+      clientNom: clientLabel?.trim() || 'Client comptoir',
+      clientTelephone: walkInInfo?.telephone?.trim() || undefined,
+      clientAdresse: walkInInfo?.adresse?.trim() || undefined,
+    };
   }
   const id = clientId?.trim();
   if (!id) return {};
@@ -33,6 +38,8 @@ export type ClientAccountKind = 'registered' | 'walk_in';
 export type ClientIdentityLike = {
   clientId?: string | null;
   clientNom?: string | null;
+  clientTelephone?: string | null;
+  clientAdresse?: string | null;
 };
 
 export function getClientAccountKind(row?: ClientIdentityLike | null): ClientAccountKind {

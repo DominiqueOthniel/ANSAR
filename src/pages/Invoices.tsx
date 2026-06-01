@@ -611,8 +611,22 @@ export default function Invoices() {
         : undefined);
 
     if (invoice.clientTierId) return { clientId: invoice.clientTierId };
-    if (order) return { clientId: order.clientId, clientNom: order.clientNom };
-    if (delivery) return { clientId: delivery.clientId, clientNom: delivery.clientNom };
+    if (order) {
+      return {
+        clientId: order.clientId,
+        clientNom: order.clientNom,
+        clientTelephone: order.clientTelephone,
+        clientAdresse: order.clientAdresse,
+      };
+    }
+    if (delivery) {
+      return {
+        clientId: delivery.clientId,
+        clientNom: delivery.clientNom,
+        clientTelephone: delivery.clientTelephone,
+        clientAdresse: delivery.clientAdresse,
+      };
+    }
     return null;
   };
 
@@ -667,9 +681,25 @@ export default function Invoices() {
         // Filtre par recherche (nom client, numéro de facture, description de dépense)
         if (filters.searchTerm) {
           const searchLower = filters.searchTerm.toLowerCase();
+          const orderForSearch = invoice.clientOrderId
+            ? clientOrders.find((o) => o.id === invoice.clientOrderId)
+            : undefined;
+          const deliveryForSearch = invoice.clientDeliveryId
+            ? clientDeliveries.find((d) => d.id === invoice.clientDeliveryId)
+            : undefined;
+          const clientInfosHaystack = [
+            orderForSearch?.clientTelephone,
+            orderForSearch?.clientAdresse,
+            deliveryForSearch?.clientTelephone,
+            deliveryForSearch?.clientAdresse,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
           const matchesClient =
             trip?.client?.toLowerCase().includes(searchLower) ||
-            getInvoiceCounterpartyName(invoice).toLowerCase().includes(searchLower);
+            getInvoiceCounterpartyName(invoice).toLowerCase().includes(searchLower) ||
+            clientInfosHaystack.includes(searchLower);
           const matchesNumber = invoice.numero.toLowerCase().includes(searchLower);
           const matchesExpense = expense?.description?.toLowerCase().includes(searchLower) || 
                                  expense?.categorie?.toLowerCase().includes(searchLower);
@@ -1136,9 +1166,13 @@ export default function Invoices() {
         ? thirdParties.find((tp) => tp.id === expense.fournisseurId)
         : null;
 
-      const clientTier = selectedInvoice.clientTierId
-        ? thirdParties.find((tp) => tp.id === selectedInvoice.clientTierId)
-        : null;
+      const clientIdentity = getClientInvoiceIdentity(selectedInvoice);
+      const clientContactLines = clientIdentity && !clientIdentity.clientId
+        ? [
+            clientIdentity.clientTelephone ? `Tél. ${clientIdentity.clientTelephone}` : '',
+            clientIdentity.clientAdresse ? clientIdentity.clientAdresse : '',
+          ].filter(Boolean)
+        : undefined;
 
       openPdfPrintWindow({
         title: `Facture ${selectedInvoice.numero}`,
@@ -1153,7 +1187,8 @@ export default function Invoices() {
           parcelExpedition: parcelEx ?? null,
           driver: driver ?? null,
           fournisseurNom: expenseSupplier?.nom ?? null,
-          clientLabel: clientTier?.nom ?? selectedInvoice.factureClientLibelle ?? undefined,
+          clientLabel: getInvoiceCounterpartyName(selectedInvoice) || undefined,
+          clientContactLines,
           getTruckLabel,
         }),
       });
@@ -2540,6 +2575,24 @@ export default function Invoices() {
                                 ? getInvoiceCounterpartyName(selectedInvoice)
                                 : trip?.client || 'N/A'}
                             </p>
+                            {selectedClientDisplay && (() => {
+                              const identity = getClientInvoiceIdentity(selectedInvoice);
+                              if (!identity || identity.clientId) return null;
+                              return (
+                                <>
+                                  {identity.clientTelephone && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      Tél. {identity.clientTelephone}
+                                    </p>
+                                  )}
+                                  {identity.clientAdresse && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {identity.clientAdresse}
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
                             {selectedClientAccountKind && (
                               <p className="text-xs text-muted-foreground">
                                 {formatClientAccountKindFr(selectedClientAccountKind)}

@@ -243,6 +243,8 @@ export interface ArticleSupplierPricePayload {
 export interface ClientOrderPayload {
   clientId?: string;
   clientNom?: string;
+  clientTelephone?: string;
+  clientAdresse?: string;
   articleId?: string;
   reference?: string;
   designation: string;

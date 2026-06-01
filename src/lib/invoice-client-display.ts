@@ -78,6 +78,8 @@ export function buildClientInvoiceDisplay(
 
     const lines: string[] = [
       `Client : ${clientName}`,
+      order?.clientTelephone ? `Téléphone : ${order.clientTelephone}` : '',
+      order?.clientAdresse ? `Infos : ${order.clientAdresse}` : '',
       order?.reference ? `Réf. commande : ${order.reference}` : '',
       order?.destination ? `Destination : ${order.destination}` : '',
     ];
@@ -102,7 +104,10 @@ export function buildClientInvoiceDisplay(
     }
 
     return {
-      title: invoice.factureClientLibelle || order?.designation || 'Commande client',
+      title:
+        order && !order.clientId && order.clientNom?.trim()
+          ? `${order.clientNom.trim()} — ${order.designation}`
+          : invoice.factureClientLibelle || order?.designation || 'Commande client',
       lines: lines.filter(Boolean),
     };
   }
@@ -122,6 +127,12 @@ export function buildClientInvoiceDisplay(
 
   const lines: string[] = [
     `Client : ${clientName}`,
+    delivery?.clientTelephone || order?.clientTelephone
+      ? `Téléphone : ${delivery?.clientTelephone || order?.clientTelephone}`
+      : '',
+    delivery?.clientAdresse || order?.clientAdresse
+      ? `Infos : ${delivery?.clientAdresse || order?.clientAdresse}`
+      : '',
     `Lieu : ${delivery?.lieuLivraison ?? '—'}`,
     'Cette facture transport est remplacée par la facture commande (marchandise + transport).',
   ];

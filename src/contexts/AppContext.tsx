@@ -233,6 +233,8 @@ export interface ClientOrder {
   id: string;
   clientId?: string;
   clientNom?: string;
+  clientTelephone?: string;
+  clientAdresse?: string;
   articleId?: string;
   invoiceId?: string;
   reference?: string;
@@ -254,6 +256,8 @@ export interface ClientDelivery {
   clientOrderId: string;
   clientId?: string;
   clientNom?: string;
+  clientTelephone?: string;
+  clientAdresse?: string;
   invoiceId?: string;
   lieuLivraison: string;
   modeSortie?: 'retrait_hub' | 'livraison_agent' | 'livraison_directe';
@@ -672,6 +676,8 @@ function normalizeClientDelivery(r: Record<string, unknown>): ClientDelivery {
     clientOrderId: String(r.clientOrderId),
     clientId: r.clientId ? String(r.clientId) : undefined,
     clientNom: r.clientNom ? String(r.clientNom) : undefined,
+    clientTelephone: r.clientTelephone ? String(r.clientTelephone) : undefined,
+    clientAdresse: r.clientAdresse ? String(r.clientAdresse) : undefined,
     invoiceId: r.invoiceId ? String(r.invoiceId) : undefined,
     lieuLivraison: String(r.lieuLivraison ?? ''),
     modeSortie:
@@ -767,6 +773,8 @@ function normalizeClientOrder(r: Record<string, unknown>): ClientOrder {
     id: String(r.id),
     clientId: r.clientId ? String(r.clientId) : undefined,
     clientNom: r.clientNom ? String(r.clientNom) : undefined,
+    clientTelephone: r.clientTelephone ? String(r.clientTelephone) : undefined,
+    clientAdresse: r.clientAdresse ? String(r.clientAdresse) : undefined,
     articleId: r.articleId ? String(r.articleId) : undefined,
     invoiceId: r.invoiceId ? String(r.invoiceId) : undefined,
     reference: r.reference ? String(r.reference) : undefined,

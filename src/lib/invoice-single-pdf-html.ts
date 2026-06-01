@@ -87,6 +87,7 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
   driver?: { prenom: string; nom: string; telephone?: string } | null;
   fournisseurNom?: string | null;
   clientLabel?: string | null;
+  clientContactLines?: string[];
   getTruckLabel: (id: string) => string;
 }): string {
   const {
@@ -99,6 +100,7 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
     driver,
     fournisseurNom,
     clientLabel,
+    clientContactLines,
     getTruckLabel,
   } = opts;
 
@@ -281,6 +283,16 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
         <div style="padding:8px 10px;border:1px solid ${S.border};border-radius:6px;text-align:right;">
           <p style="margin:0 0 4px;font-size:7pt;text-transform:uppercase;letter-spacing:0.1em;color:${S.muted};font-weight:700;">${partyLabel}</p>
           <p style="margin:0;font-size:10pt;font-weight:700;color:${S.ink};">${partyName}</p>
+          ${
+            clientContactLines?.length
+              ? clientContactLines
+                  .map(
+                    (line) =>
+                      `<p style="margin:3px 0 0;font-size:7.5pt;color:${S.muted};line-height:1.35;">${escapePdfHtml(line)}</p>`,
+                  )
+                  .join('')
+              : ''
+          }
           ${invoice.datePaiement && dejaPaye > 0 ? `<p style="margin:4px 0 0;font-size:7.5pt;color:${S.muted};">Paiement : ${formatPdfDate(invoice.datePaiement)}</p>` : ''}
           ${invoice.modePaiement ? `<p style="margin:2px 0 0;font-size:7.5pt;color:${S.muted};">Mode : ${escapePdfHtml(invoice.modePaiement)}</p>` : ''}
         </div>
