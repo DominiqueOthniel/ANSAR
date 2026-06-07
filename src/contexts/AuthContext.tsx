@@ -91,6 +91,7 @@ interface AuthContextType {
   users: UserSummary[];
   refreshUsers: () => void;
   createUser: (login: string, password: string, role: UserRole) => Promise<void>;
+  updateUserRole: (targetLogin: string, role: UserRole) => Promise<void>;
   deleteUser: (targetLogin: string) => Promise<void>;
   changeOwnPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   /** Réinitialisation admin (mot de passe oublié) — pas pour son propre compte. */
@@ -163,6 +164,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const passwordHash = await hashPassword(password);
     stored.push({ login: cleanLogin, passwordHash, role });
+    setUsers(persistUsers(stored));
+  };
+
+  const updateUserRole = async (targetLogin: string, role: UserRole): Promise<void> => {
+    assertAdmin(user);
+    const key = targetLogin.trim().toLowerCase();
+    if (!key) throw new Error('Utilisateur invalide.');
+    if (user && user.login.toLowerCase() === key) {
+      throw new Error('Vous ne pouvez pas modifier votre propre rôle.');
+    }
+    if (!['admin', 'gestionnaire', 'comptable'].includes(role)) {
+      throw new Error('Rôle invalide.');
+    }
+
+    const stored = getStoredUsers();
+    const idx = stored.findIndex((u) => u.login.toLowerCase() === key);
+    if (idx < 0) throw new Error('Utilisateur introuvable.');
+
+    if (stored[idx].role === 'admin' && role !== 'admin') {
+      const adminCount = stored.filter((u) => u.role === 'admin').length;
+      if (adminCount <= 1) {
+        throw new Error('Impossible de retirer le rôle du dernier administrateur.');
+      }
+    }
+
+    stored[idx] = { ...stored[idx], role };
     setUsers(persistUsers(stored));
   };
 
@@ -243,6 +270,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         users,
         refreshUsers,
         createUser,
+        updateUserRole,
         deleteUser,
         changeOwnPassword,
         adminResetUserPassword,

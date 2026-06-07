@@ -36,7 +36,7 @@ import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { ROLE_META, ROLE_OPTIONS, formatRoleLabel } from '@/lib/auth-users';
 
 export default function Users() {
-  const { user, users, createUser, deleteUser, adminResetUserPassword } = useAuth();
+  const { user, users, createUser, updateUserRole, deleteUser, adminResetUserPassword } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -82,6 +82,15 @@ export default function Users() {
       toast.success('Utilisateur supprimé.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur');
+    }
+  };
+
+  const handleRoleChange = async (login: string, role: UserRole) => {
+    try {
+      await updateUserRole(login, role);
+      toast.success(`Rôle de ${login} mis à jour : ${formatRoleLabel(role)}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Modification du rôle impossible');
     }
   };
 
@@ -260,7 +269,25 @@ export default function Users() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{formatRoleLabel(u.role)}</Badge>
+                      {user?.login === u.login ? (
+                        <Badge variant="secondary">{formatRoleLabel(u.role)}</Badge>
+                      ) : (
+                        <Select
+                          value={u.role}
+                          onValueChange={(role) => void handleRoleChange(u.login, role as UserRole)}
+                        >
+                          <SelectTrigger className="h-8 w-[170px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((r) => (
+                              <SelectItem key={r.value} value={r.value}>
+                                {r.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
                       {user?.login !== u.login && (
