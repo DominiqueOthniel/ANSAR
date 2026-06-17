@@ -80,6 +80,31 @@ export class SupplierLoadingsService {
     return 'en_attente_affectation';
   }
 
+  private assertAssignmentsQty(
+    loading: Pick<SupplierLoading, 'quantite' | 'unite'>,
+    items: { quantiteAffectee?: number }[],
+  ): void {
+    const totalQty = this.parseQty(loading.quantite);
+    if (totalQty == null || totalQty <= 0 || items.length === 0) return;
+
+    let sum = 0;
+    for (const item of items) {
+      const q = item.quantiteAffectee;
+      if (q == null || q <= 0) {
+        throw new BadRequestException(
+          'Indiquez la quantité affectée pour chaque commande sélectionnée.',
+        );
+      }
+      sum += q;
+    }
+    if (sum > totalQty + 1e-6) {
+      const unit = loading.unite?.trim() ? ` ${loading.unite.trim()}` : '';
+      throw new BadRequestException(
+        `Quantité totale affectée (${sum}${unit}) dépasse la quantité du bon (${totalQty}${unit}).`,
+      );
+    }
+  }
+
   private computeStatut(
     loading: Pick<SupplierLoading, 'statut' | 'quantite' | 'modeEntree' | 'hubArrivee'>,
     assignments: SupplierLoadingAssignment[],
@@ -213,11 +238,19 @@ export class SupplierLoadingsService {
     let list = await qb.getMany();
 
     if (params?.unassignedOnly) {
-      list = list.filter(
-        (l) =>
-          l.statut !== 'annule' &&
-          !(l.assignments ?? []).some((a) => a.clientOrder?.statut !== 'annulee'),
-      );
+      list = list.filter((l) => {
+        if (l.statut === 'annule') return false;
+        const active = (l.assignments ?? []).filter(
+          (a) => a.clientOrder?.statut !== 'annulee',
+        );
+        const totalQty = this.parseQty(l.quantite);
+        if (totalQty == null || totalQty <= 0) return active.length === 0;
+        const assigned = active.reduce(
+          (sum, a) => sum + (this.parseQty(a.quantiteAffectee) ?? 0),
+          0,
+        );
+        return assigned < totalQty - 1e-6;
+      });
     }
 
     if (params?.auHubOnly) {
@@ -352,20 +385,6 @@ export class SupplierLoadingsService {
     if (loading.statut === 'annule') {
       throw new BadRequestException('Un bon annulé ne peut plus être affecté.');
     }
-    if (dto.assignments.length > 1) {
-      throw new BadRequestException('Un bon ne peut être affecté qu’à une seule commande client.');
-    }
-    const existingAssignments = (loading.assignments ?? []).filter(
-      (a) => a.clientOrder?.statut !== 'annulee',
-    );
-    const nextOrderId = dto.assignments[0]?.clientOrderId;
-    const alreadyLinkedToAnotherOrder = existingAssignments.some(
-      (a) => nextOrderId && a.clientOrderId !== nextOrderId,
-    );
-    if (alreadyLinkedToAnotherOrder) {
-      throw new BadRequestException('Ce bon est déjà affecté à une autre commande client.');
-    }
-
     const orderIds = dto.assignments.map((a) => a.clientOrderId);
     const uniqueIds = new Set(orderIds);
     if (uniqueIds.size !== orderIds.length) {
@@ -384,14 +403,7 @@ export class SupplierLoadingsService {
       if (cancelled.length > 0) {
         throw new BadRequestException('Impossible d’affecter à une commande annulée.');
       }
-      const clientKeys = new Set(
-        orders.map((o) => o.clientId ?? `comptoir:${o.clientNom ?? 'Client comptoir'}`),
-      );
-      if (clientKeys.size > 1) {
-        throw new BadRequestException(
-          'Un bon ne peut être affecté qu’à un seul client.',
-        );
-      }
+      this.assertAssignmentsQty(loading, dto.assignments);
     }
 
     await this.assignmentRepo.delete({ loadingId: id });

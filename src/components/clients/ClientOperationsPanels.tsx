@@ -52,11 +52,12 @@ import {
   type ClientDeliveryStatus,
 } from '@/lib/client-operations';
 import {
-  canAssignClientOrderToLoading,
   canLinkClientOrderToLoading,
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
+  getActiveLoadingAssignments,
   isSupplierLoadingAvailableForOrder,
+  validateLoadingAssignmentRows,
 } from '@/lib/supplier-loadings';
 import {
   DELIVERY_EXIT_MODE_OPTIONS,
@@ -228,12 +229,11 @@ export function ClientOperationsPanels({
         supplierLoadings.filter(
           (l) =>
             canLinkClientOrderToLoading(l.statut) &&
-            canAssignClientOrderToLoading(l, clientId) &&
             isSupplierLoadingAvailableForOrder(l, editingOrder?.id),
         ),
         (a, b) => b.dateChargement.localeCompare(a.dateChargement),
       ),
-    [supplierLoadings, clientId, editingOrder?.id],
+    [supplierLoadings, editingOrder?.id],
   );
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
@@ -387,26 +387,24 @@ export function ClientOperationsPanels({
   const linkOrderToLoading = async (orderId: string, loadingId: string, qty?: number) => {
     const loading = supplierLoadings.find((l) => l.id === loadingId);
     if (!loading) return;
-    if (!canAssignClientOrderToLoading(loading, clientId)) {
-      toast.error('Ce bon est déjà affecté à un autre client.');
+    if (!isSupplierLoadingAvailableForOrder(loading, orderId)) {
+      toast.error('Ce bon n’a plus de quantité disponible.');
       return;
     }
-    const existing = (loading.assignments ?? [])
-      .filter((a) => a.orderStatus !== 'annulee')
-      .map((a) => ({
-        clientOrderId: a.clientOrderId,
-        quantiteAffectee: a.quantiteAffectee,
-        notes: a.notes,
-      }));
+    const existing = getActiveLoadingAssignments(loading.assignments ?? []).map((a) => ({
+      clientOrderId: a.clientOrderId,
+      quantiteAffectee: a.quantiteAffectee,
+      notes: a.notes,
+    }));
     if (existing.some((a) => a.clientOrderId === orderId)) return;
-    if (existing.length > 0) {
-      toast.error('Ce bon est déjà affecté à une autre commande.');
+
+    const nextRows = [...existing, { clientOrderId: orderId, quantiteAffectee: qty }];
+    const err = validateLoadingAssignmentRows(loading.quantite, loading.unite, nextRows);
+    if (err) {
+      toast.error(err);
       return;
     }
-    await setSupplierLoadingAssignments(loading.id, [
-      ...existing,
-      { clientOrderId: orderId, quantiteAffectee: qty },
-    ]);
+    await setSupplierLoadingAssignments(loading.id, nextRows);
   };
 
   const invoiceForOrder = (order: ClientOrder) =>
@@ -630,7 +628,7 @@ export function ClientOperationsPanels({
             selectedLoading &&
             !isSupplierLoadingAvailableForOrder(selectedLoading, editingOrder?.id)
           ) {
-            toast.error('Ce bon est déjà affecté à une autre commande.');
+            toast.error('Ce bon n’a plus de quantité disponible.');
             return;
           }
         }

@@ -8,10 +8,11 @@ import {
   formatSupplierLoadingStatusFr,
   SUPPLIER_LOADING_STATUS_OPTIONS,
   type SupplierLoadingStatus,
-  getLoadingAssignedClientId,
   isLoadingUnassigned,
   isLoadingAtHub,
-  isSupplierLoadingAvailableForOrder,
+  sumLoadingAssignedQty,
+  getLoadingRemainderQty,
+  validateLoadingAssignmentRows,
 } from '@/lib/supplier-loadings';
 import {
   HUB_PRESETS,
@@ -224,7 +225,7 @@ export default function Chargements() {
     }
     if (unassignedOnly) {
       list = list.filter((l) =>
-        isLoadingUnassigned(l.statut, l.assignments?.length ?? 0),
+        isLoadingUnassigned(l.statut, l.quantite, l.assignments),
       );
     }
     if (auHubOnly) {
@@ -439,21 +440,33 @@ export default function Chargements() {
         })),
     );
     setAssignSearch('');
-    setAssignClientId(getLoadingAssignedClientId(l) ?? '');
+    setAssignClientId('');
     setAssignDialogOpen(true);
   };
 
-  const assignClientLocked = Boolean(
-    assignLoading && getLoadingAssignedClientId(assignLoading),
+  const assignQtyCap = (orderId: string) => {
+    if (assignLoading?.quantite == null || assignLoading.quantite <= 0) return undefined;
+    const others = assignRows
+      .filter((r) => r.clientOrderId !== orderId)
+      .reduce((sum, r) => sum + (r.quantiteAffectee ?? 0), 0);
+    return Math.max(0, assignLoading.quantite - others);
+  };
+
+  const assignSelectionTotal = assignRows.reduce(
+    (sum, r) => sum + (r.quantiteAffectee ?? 0),
+    0,
   );
+  const assignRemainder =
+    assignLoading?.quantite != null && assignLoading.quantite > 0
+      ? Math.max(0, assignLoading.quantite - assignSelectionTotal)
+      : null;
 
   const ordersForAssign = useMemo(() => {
-    if (!assignClientId) return [];
     const q = assignSearch.trim().toLowerCase();
     return stableSort(
       clientOrders.filter((o) => {
         if (o.statut === 'annulee') return false;
-        if (getClientAccountKey(o) !== assignClientId) return false;
+        if (assignClientId && getClientAccountKey(o) !== assignClientId) return false;
         return true;
       }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
@@ -471,54 +484,57 @@ export default function Chargements() {
   const toggleOrderInAssign = (orderId: string) => {
     const order = clientOrders.find((o) => o.id === orderId);
     if (!order) return;
-    if (assignClientId && getClientAccountKey(order) !== assignClientId) {
-      toast.error('Ce bon ne peut être affecté qu’à un seul client.');
-      return;
-    }
     setAssignRows((prev) => {
       const exists = prev.find((r) => r.clientOrderId === orderId);
       if (exists) return prev.filter((r) => r.clientOrderId !== orderId);
-      if (!assignClientId) setAssignClientId(getClientAccountKey(order));
-      if (prev.length > 0) {
-        toast.error('Un bon ne peut être affecté qu’à une seule commande.');
+
+      let cap: number | undefined;
+      if (assignLoading?.quantite != null && assignLoading.quantite > 0) {
+        const others = prev
+          .filter((r) => r.clientOrderId !== orderId)
+          .reduce((sum, r) => sum + (r.quantiteAffectee ?? 0), 0);
+        cap = Math.max(0, assignLoading.quantite - others);
       }
-      return [{ clientOrderId: orderId }];
+      if (cap != null && cap <= 0) {
+        toast.error('Quantité du bon entièrement répartie.');
+        return prev;
+      }
+      const defaultQty =
+        cap != null
+          ? order.quantite != null && order.quantite > 0
+            ? Math.min(order.quantite, cap)
+            : cap
+          : undefined;
+      return [...prev, { clientOrderId: orderId, quantiteAffectee: defaultQty }];
     });
   };
 
   const setAssignQty = (orderId: string, qty: number | undefined) => {
-    setAssignRows((prev) =>
-      prev.map((r) =>
-        r.clientOrderId === orderId ? { ...r, quantiteAffectee: qty } : r,
-      ),
-    );
+    setAssignRows((prev) => {
+      let cap: number | undefined;
+      if (assignLoading?.quantite != null && assignLoading.quantite > 0) {
+        const others = prev
+          .filter((r) => r.clientOrderId !== orderId)
+          .reduce((sum, r) => sum + (r.quantiteAffectee ?? 0), 0);
+        cap = Math.max(0, assignLoading.quantite - others);
+      }
+      const nextQty = cap != null && qty != null && qty > cap ? cap : qty;
+      return prev.map((r) =>
+        r.clientOrderId === orderId ? { ...r, quantiteAffectee: nextQty } : r,
+      );
+    });
   };
 
   const saveAssignments = () =>
     withGuard(async () => {
       if (!assignLoading) return;
-      if (assignRows.length > 1) {
-        toast.error('Un bon ne peut être affecté qu’à une seule commande.');
-        return;
-      }
-      const clientKeys = new Set(
-        assignRows
-          .map((r) => {
-            const order = clientOrders.find((o) => o.id === r.clientOrderId);
-            return order ? getClientAccountKey(order) : '';
-          })
-          .filter(Boolean),
+      const err = validateLoadingAssignmentRows(
+        assignLoading.quantite,
+        assignLoading.unite,
+        assignRows,
       );
-      if (clientKeys.size > 1) {
-        toast.error('Un bon ne peut être affecté qu’à un seul client.');
-        return;
-      }
-      const targetOrderId = assignRows[0]?.clientOrderId;
-      if (
-        targetOrderId &&
-        !isSupplierLoadingAvailableForOrder(assignLoading, targetOrderId)
-      ) {
-        toast.error('Ce bon est déjà affecté à une autre commande.');
+      if (err) {
+        toast.error(err);
         return;
       }
       await setSupplierLoadingAssignments(assignLoading.id, assignRows);
@@ -1140,9 +1156,24 @@ export default function Chargements() {
                         ) : null}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {l.quantite != null
-                          ? `${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
-                          : '—'}
+                        {l.quantite != null ? (
+                          <div className="text-sm">
+                            <span>
+                              {l.quantite}
+                              {l.unite ? ` ${l.unite}` : ''}
+                            </span>
+                            {sumLoadingAssignedQty(l.assignments) > 0 ? (
+                              <span className="block text-xs text-muted-foreground">
+                                Affecté : {sumLoadingAssignedQty(l.assignments)}
+                                {getLoadingRemainderQty(l.quantite, l.assignments) != null
+                                  ? ` · Reste : ${getLoadingRemainderQty(l.quantite, l.assignments)}`
+                                  : ''}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {l.montantBon != null ? formatFcfa(l.montantBon) : '—'}
@@ -1157,7 +1188,9 @@ export default function Chargements() {
                           <span className="text-muted-foreground text-sm">—</span>
                         ) : (
                           <ul className="text-sm space-y-0.5">
-                            {(l.assignments ?? []).map((a) => (
+                            {(l.assignments ?? [])
+                              .filter((a) => a.orderStatus !== 'annulee')
+                              .map((a) => (
                               <li key={a.id}>
                                 <span>{a.clientNom ?? 'Client'} — {a.orderDesignation}</span>
                                 <Badge variant="outline" className="ml-1 text-[10px]">
@@ -1228,22 +1261,46 @@ export default function Chargements() {
           </DialogHeader>
           {assignLoading && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Fournisseur : {assignLoading.fournisseurNom}
-                {assignLoading.quantite != null && (
+              <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+                <p>
+                  <span className="text-muted-foreground">Fournisseur :</span>{' '}
+                  {assignLoading.fournisseurNom}
+                </p>
+                {assignLoading.quantite != null && assignLoading.quantite > 0 ? (
                   <>
-                    {' '}
-                    · Quantité bon : {assignLoading.quantite} {assignLoading.unite ?? ''}
+                    <p>
+                      <span className="text-muted-foreground">Quantité bon :</span>{' '}
+                      {assignLoading.quantite} {assignLoading.unite ?? ''}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Sélection :</span>{' '}
+                      {assignSelectionTotal} affecté(s)
+                      {assignRemainder != null ? (
+                        <span className="text-amber-700 dark:text-amber-400">
+                          {' '}
+                          · Reste : {assignRemainder} {assignLoading.unite ?? ''}
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Un même bon peut être réparti entre plusieurs clients. La somme des
+                      quantités ne peut pas dépasser la quantité du bon.
+                    </p>
                   </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Bon sans quantité définie : vous pouvez lier plusieurs commandes sans
+                    plafond numérique.
+                  </p>
                 )}
-              </p>
+              </div>
               <div className="space-y-2">
-                <Label>Client</Label>
+                <Label>Filtrer par client (optionnel)</Label>
                 <ThirdPartyPicker
                   options={clients}
                   value={assignClientId}
                   onValueChange={setAssignClientId}
-                  placeholder="Choisir un client…"
+                  placeholder="Tous les clients…"
                   searchPlaceholder="Rechercher un client…"
                   topChoices={[
                     {
@@ -1255,32 +1312,28 @@ export default function Chargements() {
                   orphanLabel={
                     assignClientId.startsWith('comptoir:') ? 'Client comptoir' : undefined
                   }
-                  disabled={assignClientLocked}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {assignClientLocked
-                    ? `Bon réservé au client : ${getClientKeyLabel(assignClientId)}`
-                    : assignClientId
-                      ? `${ordersForAssign.length} commande(s) — ${getClientKeyLabel(assignClientId)}`
-                      : 'Choisissez un client pour afficher ses commandes.'}
+                  {assignClientId
+                    ? `${ordersForAssign.length} commande(s) — ${getClientKeyLabel(assignClientId)}`
+                    : `${ordersForAssign.length} commande(s) active(s) — tous clients`}
                 </p>
               </div>
               <Input
-                placeholder="Filtrer par réf., désignation…"
+                placeholder="Filtrer par réf., désignation, client…"
                 value={assignSearch}
                 onChange={(e) => setAssignSearch(e.target.value)}
               />
               <div className="border rounded-md max-h-[320px] overflow-y-auto divide-y">
                 {ordersForAssign.length === 0 ? (
                   <p className="p-4 text-sm text-center text-muted-foreground">
-                    {!assignClientId
-                      ? 'Sélectionnez un client pour voir ses commandes.'
-                      : 'Aucune commande active pour ce client.'}
+                    Aucune commande active correspondant aux filtres.
                   </p>
                 ) : null}
                 {ordersForAssign.map((o) => {
                   const selected = assignRows.some((r) => r.clientOrderId === o.id);
                   const row = assignRows.find((r) => r.clientOrderId === o.id);
+                  const maxQty = assignQtyCap(o.id);
                   return (
                     <div
                       key={o.id}
@@ -1297,16 +1350,21 @@ export default function Chargements() {
                           {formatClientAccountKindFr(getClientAccountKind(o))} ·{' '}
                           {formatClientOrderStatusFr(o.statut)} · {o.dateCommande}
                           {o.reference ? ` · ${o.reference}` : ''}
+                          {o.quantite != null ? ` · cmd ${o.quantite}${o.unite ? ` ${o.unite}` : ''}` : ''}
                         </p>
                       </div>
-                      {selected && assignLoading.quantite != null && (
-                        <div className="w-28 space-y-1">
-                          <Label className="text-xs">Qté affectée</Label>
+                      {selected && assignLoading.quantite != null && assignLoading.quantite > 0 && (
+                        <div className="w-32 space-y-1">
+                          <Label className="text-xs">
+                            Qté affectée
+                            {maxQty != null ? ` (max ${maxQty})` : ''}
+                          </Label>
                           <NumberInput
                             allowEmpty
                             value={row?.quantiteAffectee}
                             onChange={(v) => setAssignQty(o.id, v)}
                             min={0}
+                            max={maxQty}
                           />
                         </div>
                       )}

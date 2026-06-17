@@ -145,12 +145,22 @@ export const deliveryCourseApportAmount = (
   return orderAmount + transportAmount;
 };
 
+/** Facture client (encaissement) — exclut les factures fournisseur liées à une dépense. */
+export const isClientRevenueInvoice = (inv: Invoice): boolean => !inv.expenseId;
+
+/** Total encaissé sur toutes les factures clients (trajets, colis, commandes, livraisons). */
+export const getTotalEncaissementsClients = (invoices: Invoice[]): number => {
+  return invoices
+    .filter(isClientRevenueInvoice)
+    .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
+};
+
 /**
- * Somme des restes à payer sur toutes les factures (argent dû par les clients, pas encore en caisse/banque).
+ * Somme des restes à payer sur les factures clients (argent dû, pas encore en caisse/banque).
  * Utile pour distinguer liquidités vs « hors trésorerie ».
  */
 export const getTotalCreancesClients = (invoices: Invoice[]): number => {
-  return invoices.reduce((sum, inv) => {
+  return invoices.filter(isClientRevenueInvoice).reduce((sum, inv) => {
     const paye = inv.montantPaye ?? 0;
     const reste = inv.montantTTC - paye;
     return sum + (reste > 0 ? reste : 0);

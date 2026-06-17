@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus } from 'lucide-react';
+import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemainingRecetteToInvoice, sumMontantTTCForTripInvoices } from '@/lib/sync-utils';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
@@ -46,6 +46,7 @@ import {
   formatTripClientsSummary,
 } from '@/lib/trip-client-participants';
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
+import { formatTripCode } from '@/lib/trip-display';
 
 /** Affichage itinéraire quand la destination résumé est vide. */
 function itineraireResume(origine: string, destination: string | undefined): string {
@@ -721,6 +722,10 @@ export default function Trips() {
     navigate(`/factures?create=1&trajetId=${encodeURIComponent(tripId)}`);
   };
 
+  const openTripExpense = (tripId: string) => {
+    navigate(`/depenses?tripId=${encodeURIComponent(tripId)}`);
+  };
+
   const openStopsDialog = (trip: Trip) => {
     setStopsDialogTrip(trip);
     setStopsDraft(initialStopsDraftFromTrip(trip));
@@ -871,6 +876,7 @@ export default function Trips() {
           const matchesDescription = trip.description?.toLowerCase().includes(search);
           const matchesItineraire = itineraireResume(trip.origine, trip.destination).toLowerCase().includes(search);
           const matchesChauffeur = getDriverLabel(trip.chauffeurId).toLowerCase().includes(search);
+          const matchesTripCode = formatTripCode(trip).toLowerCase().includes(search);
           const matchesRefAtc = trip.referenceAtc?.toLowerCase().includes(search);
           const matchesDest = trip.destinataire?.toLowerCase().includes(search);
           const matchesRetourB = trip.retourBordereaux?.toLowerCase().includes(search);
@@ -890,6 +896,7 @@ export default function Trips() {
             !matchesDescription &&
             !matchesItineraire &&
             !matchesChauffeur &&
+            !matchesTripCode &&
             !matchesRefAtc &&
             !matchesDest &&
             !matchesRetourB &&
@@ -1099,6 +1106,7 @@ export default function Trips() {
       sheetName: 'Trajets',
       filtersDescription,
       columns: [
+        { header: 'ID trajet', value: (t) => formatTripCode(t) },
         { header: 'Itinéraire', value: (t) => itineraireResume(t.origine, t.destination) },
         { header: 'Chaîne d’arrêts', value: (t) => stopsSummaryLine(t) || '(résumé seul)' },
         { header: 'Distance (km)', value: (t) => getTripDistanceKm(t) ?? '' },
@@ -1149,6 +1157,7 @@ export default function Trips() {
         { label: 'Chiffre d’affaires', value: `+${totalRecettes.toLocaleString('fr-FR')} FCFA`, style: 'positive', icon: EMOJI.argent },
       ],
       columns: [
+        { header: 'ID trajet', value: (t) => formatTripCode(t) },
         { header: 'Itinéraire', value: (t) => `${EMOJI.adresse} ${itineraireResume(t.origine, t.destination)}` },
         {
           header: 'Chaîne d’arrêts',
@@ -2136,7 +2145,12 @@ export default function Trips() {
                 sortedTrips.map((trip) => (
                   <TableRow key={trip.id} className="hover:bg-muted/50 transition-colors duration-200">
                     <TableCell className="font-medium">
-                      <div>{itineraireResume(trip.origine, trip.destination)}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {formatTripCode(trip)}
+                        </Badge>
+                        <span>{itineraireResume(trip.origine, trip.destination)}</span>
+                      </div>
                       {stopsSummaryLine(trip) ? (
                         <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
                           <ListOrdered className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -2316,6 +2330,17 @@ export default function Trips() {
                             title="Chaîne d’arrêts : chargements fournisseurs, livraisons clients"
                           >
                             <ListOrdered className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManageAccounting && trip.statut !== 'annule' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openTripExpense(trip.id)}
+                            className="h-8 w-8 p-0"
+                            title={`Créer une dépense pour ${formatTripCode(trip)}`}
+                          >
+                            <Receipt className="h-4 w-4" />
                           </Button>
                         )}
                         {canManageAccounting &&

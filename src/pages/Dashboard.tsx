@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Truck, ClipboardList, DollarSign, TrendingUp, TrendingDown, FileText, Users, Package, AlertCircle, LayoutDashboard, Building2, Wallet, RefreshCw, HardDrive, Upload, Receipt, Layers, UserCircle2, UserCog } from 'lucide-react';
@@ -11,6 +11,8 @@ import {
   calculatePaidAmountForParcelExpedition,
   calculatePaidAmountForTrip,
   getTotalCreancesClients,
+  getTotalEncaissementsClients,
+  isClientRevenueInvoice,
 } from '@/lib/sync-utils';
 import { cn } from '@/lib/utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -20,7 +22,8 @@ import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportDocumentToExcel, exportDocumentToPDF } from '@/lib/export-utils';
 import { formatClientOrderStatusFr } from '@/lib/client-operations';
-import { getCaisseSoldeActuel, getTotalBanqueDisponible } from '@/lib/bank-local';
+import { getCaisseSoldeActuel, getTotalBanqueDisponible, refreshBankFromApi } from '@/lib/bank-local';
+import { isRemoteCaisse, refreshCaisseFromApi } from '@/lib/caisse-local';
 import {
   buildDashboardMonths,
   formatMonthLabelFr,
@@ -76,11 +79,54 @@ function MonthlyTrendTooltip({
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { trucks, trips, clientOrders, parcelExpeditions, expenses, invoices, drivers, refreshTrucks, refreshDrivers, refreshTrips, refreshParcelExpeditions, refreshExpenses, refreshInvoices, refreshThirdParties } = useApp();
+  const {
+    trucks,
+    trips,
+    clientOrders,
+    parcelExpeditions,
+    expenses,
+    invoices,
+    drivers,
+    refreshTrucks,
+    refreshDrivers,
+    refreshTrips,
+    refreshParcelExpeditions,
+    refreshExpenses,
+    refreshInvoices,
+    refreshThirdParties,
+    refreshClientOrders,
+  } = useApp();
   const { user } = useAuth();
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [treasuryTick, setTreasuryTick] = useState(0);
   const restoreFileRef = useRef<HTMLInputElement>(null);
+
+  const refreshDashboardData = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refreshInvoices(),
+        refreshExpenses(),
+        refreshTrips(),
+        refreshParcelExpeditions(),
+        refreshClientOrders(),
+        ...(isRemoteCaisse() ? [refreshCaisseFromApi(), refreshBankFromApi()] : []),
+      ]);
+      setTreasuryTick((t) => t + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Impossible d’actualiser le tableau de bord');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshDashboardData();
+    // Rechargement à l’ouverture du tableau de bord uniquement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleBackup = async () => {
     setIsBackingUp(true);
@@ -143,29 +189,42 @@ export default function Dashboard() {
     { name: 'Tiers', href: '/tiers', icon: Building2, color: 'from-violet-500 to-purple-500', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-200 dark:border-violet-800' },
   ];
 
-  // Chiffre d'affaires (montants payés sur factures trajets + expéditions)
-  const totalRecettes = invoices
-    .filter((inv) => inv.trajetId || inv.parcelExpeditionId)
-    .reduce((sum, inv) => sum + (inv.montantPaye || 0), 0);
+  const clientInvoices = useMemo(
+    () => invoices.filter(isClientRevenueInvoice),
+    [invoices],
+  );
+
+  // Encaissements réels : toutes les factures clients (trajets, colis, commandes, livraisons).
+  const totalRecettes = useMemo(
+    () => getTotalEncaissementsClients(invoices),
+    [invoices],
+  );
   const totalDepenses = expenses.reduce((sum, exp) => sum + exp.montant, 0);
   const totalProfit = totalRecettes - totalDepenses;
   const activeTrucks = trucks.filter(t => t.statut === 'actif').length;
 
-  /** Recalculé à chaque rendu (localStorage) — aligné Caisse / Banque. */
-  const soldeCaisseEspeces = getCaisseSoldeActuel();
-  const soldeBanqueDisponible = getTotalBanqueDisponible();
-  const tresorerieTotale = soldeCaisseEspeces + soldeBanqueDisponible;
-  /** Factures : reste à encaisser (pas encore passé en caisse ni en banque dans l'app). */
+  /** Caisse + banque (rechargées à l’ouverture / actualisation du dashboard). */
+  const { soldeCaisseEspeces, soldeBanqueDisponible, tresorerieTotale } = useMemo(() => {
+    void treasuryTick;
+    const caisse = getCaisseSoldeActuel();
+    const banque = getTotalBanqueDisponible();
+    return {
+      soldeCaisseEspeces: caisse,
+      soldeBanqueDisponible: banque,
+      tresorerieTotale: caisse + banque,
+    };
+  }, [treasuryTick, invoices, expenses]);
+  /** Factures clients : reste à encaisser. */
   const creancesClients = getTotalCreancesClients(invoices);
   const positionEntreprise = tresorerieTotale + creancesClients;
   
   // Statistiques avancées
-  const totalInvoices = invoices.length;
-  const paidInvoices = invoices.filter(inv => inv.statut === 'payee').length;
-  const pendingInvoices = invoices.filter(inv => inv.statut === 'en_attente').length;
-  const pendingAmount = invoices
+  const totalInvoices = clientInvoices.length;
+  const paidInvoices = clientInvoices.filter(inv => inv.statut === 'payee').length;
+  const pendingInvoices = clientInvoices.filter(inv => inv.statut === 'en_attente').length;
+  const pendingAmount = clientInvoices
     .filter(inv => inv.statut === 'en_attente')
-    .reduce((sum, inv) => sum + inv.montantTTC, 0);
+    .reduce((sum, inv) => sum + Math.max(0, inv.montantTTC - (inv.montantPaye ?? 0)), 0);
   
   const deliveredOrders = clientOrders.filter((o) => o.statut === 'livree').length;
   const activeOrders = clientOrders.filter((o) =>
@@ -223,38 +282,32 @@ export default function Dashboard() {
     const chartMonths = buildDashboardMonths(
       [
         ...expenses.map((e) => e.date),
-        ...trips.map((t) => t.dateDepart),
-        ...parcelExpeditions.map((ex) => ex.dateDepart),
-        ...invoices.map((inv) => inv.datePaiement ?? inv.dateCreation),
+        ...invoices
+          .filter((inv) => isClientRevenueInvoice(inv) && (inv.montantPaye ?? 0) > 0)
+          .map((inv) => inv.datePaiement ?? inv.dateCreation),
       ],
       { trailingMonths: 12, maxPoints: 18 },
     );
 
     return chartMonths.map((bucket) => {
-      const monthTrips = trips.filter((trip) =>
-        isSameCalendarMonth(trip.dateDepart, bucket),
-      );
-      const monthExpeditions = parcelExpeditions.filter((ex) =>
-        isSameCalendarMonth(ex.dateDepart, bucket),
-      );
       const monthExpenses = expenses.filter((exp) => isSameCalendarMonth(exp.date, bucket));
 
-      const monthRecettesTrips = monthTrips.reduce(
-        (sum, trip) => sum + calculatePaidAmountForTrip(trip.id, invoices),
-        0,
-      );
-      const monthRecettesExpeditions = monthExpeditions.reduce(
-        (sum, ex) => sum + calculatePaidAmountForParcelExpedition(ex.id, invoices),
-        0,
-      );
+      const monthRecettes = invoices
+        .filter(
+          (inv) =>
+            isClientRevenueInvoice(inv) &&
+            (inv.montantPaye ?? 0) > 0 &&
+            isSameCalendarMonth(inv.datePaiement ?? inv.dateCreation, bucket),
+        )
+        .reduce((sum, inv) => sum + (inv.montantPaye ?? 0), 0);
 
       return {
         month: formatMonthLabelFr(bucket),
-        recettes: monthRecettesTrips + monthRecettesExpeditions,
+        recettes: monthRecettes,
         depenses: monthExpenses.reduce((sum, exp) => sum + exp.montant, 0),
       };
     });
-  }, [expenses, trips, parcelExpeditions, invoices]);
+  }, [expenses, invoices]);
 
   const COLORS = [
     'hsl(var(--chart-1))', 
@@ -273,7 +326,7 @@ export default function Dashboard() {
         title: 'Indicateurs clés',
         columns: ['Indicateur', 'Valeur'],
         rows: [
-          ['Encaissement (trajets + colis)', `${Math.round(totalRecettes).toLocaleString('fr-FR')} FCFA`],
+          ['Encaissement (toutes factures clients)', `${Math.round(totalRecettes).toLocaleString('fr-FR')} FCFA`],
           ['Dépenses', `${Math.round(totalDepenses).toLocaleString('fr-FR')} FCFA`],
           ['Bénéfice', `${Math.round(totalProfit).toLocaleString('fr-FR')} FCFA`],
           ['Flotte active', `${activeTrucks} / ${trucks.length}`],
@@ -393,6 +446,20 @@ export default function Dashboard() {
         ]}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshDashboardData()}
+              disabled={isRefreshing}
+              className="gap-1.5 sm:gap-2 text-xs sm:text-sm"
+            >
+              {isRefreshing ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {isRefreshing ? 'Actualisation…' : 'Actualiser'}
+            </Button>
             <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
             <Badge variant="outline" className="text-xs sm:text-sm px-2 sm:px-4 py-1.5 sm:py-2 hidden sm:flex">
               {EMOJI.date} {new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -566,7 +633,7 @@ export default function Dashboard() {
                 Chiffre d&apos;affaires vs dépenses
               </CardTitle>
               <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                Encaissements réels (trajets &amp; expéditions) et dépenses selon leur date comptable — jusqu’à 12 mois + tout mois où il y a de l’activité.
+                Encaissements clients par date de paiement et dépenses par date comptable — jusqu’à 12 mois + tout mois où il y a de l’activité.
               </p>
             </div>
             <div

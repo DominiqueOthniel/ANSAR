@@ -102,7 +102,7 @@ export function buildSupplierSummaries(params: {
       (l) => l.fournisseurId === f.id && l.statut !== 'annule',
     );
     const chargementsEnAttente = loadings.filter((l) =>
-      isLoadingUnassigned(l.statut, l.assignments?.length ?? 0),
+      isLoadingUnassigned(l.statut, l.quantite, l.assignments),
     ).length;
     const chargementsPartiels = loadings.filter(
       (l) => l.statut === 'partiellement_affecte',
