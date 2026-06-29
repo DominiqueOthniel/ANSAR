@@ -88,4 +88,11 @@ async function bootstrap() {
   console.log(`🚚 SIA-ANSAR API: http://${host}:${port}/api`);
 }
 
-bootstrap();
+bootstrap().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('[SIA-ANSAR] Échec démarrage API:', message);
+  if (err instanceof Error && err.stack) {
+    console.error(err.stack);
+  }
+  process.exit(1);
+});

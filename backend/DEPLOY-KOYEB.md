@@ -140,13 +140,16 @@ Remplace `DATABASE_URL` et `FRONTEND_URL` par tes valeurs. Pour les secrets, uti
   (évite `npm ci` si le lockfile pose problème ; sinon assure-toi que `backend/package-lock.json` est commité et à jour).
 - En local : `cd backend && npm install && npm run build` doit réussir avant de redéployer.
 
-### L’app ne démarre pas / health check échoue
+### Service « Unhealthy » / 0 instance en cours
 
-- **Variables d’environnement** : `DATABASE_URL` doit être **définie** (Supabase). Sans connexion Postgres, Nest peut refuser de démarrer.
-- **Health check** (Koyeb) :
-  - **Path** : `/api/health` **ou** `/` (les deux répondent si l’API tourne).
-  - Le port est celui **injecté par Koyeb** (`PORT`) — ne force pas un port fixe dans le code (déjà géré).
-- Si le health check échoue encore : désactive temporairement le health check ou mets le path sur `/` pour tester.
+1. **Work directory** : doit être `backend` (monorepo). Si le build part de la racine, le dépôt contient maintenant un `Procfile` + `heroku-postbuild` pour builder l’API Nest.
+2. **Run command** : `npm run start:prod` ou `npm start` (démarre `node dist/main.js`, pas `nest start`).
+3. **Build command** : `NPM_CONFIG_PRODUCTION=false npm install && npm run build`
+4. **Variables** : `DATABASE_URL` obligatoire (Supabase pooler port **6543**). Sans elle l’API ne démarre pas.
+5. **Health check** : path `/api/health`, port = variable `PORT` (souvent **8000** sur Koyeb gratuit).
+6. **Alternative fiable** : builder **Dockerfile** à la racine du repo (déjà présent) au lieu du buildpack.
+7. **Logs** : onglet Runtime → chercher `DATABASE_URL`, `ECONNREFUSED`, `Échec démarrage API`.
+
 
 ### Build : `nest: not found`
 

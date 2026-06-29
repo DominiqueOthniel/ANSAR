@@ -39,6 +39,12 @@ function buildTypeOrmOptions(): TypeOrmModuleOptions {
     };
   }
 
+  if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL?.trim()) {
+    console.error(
+      '[SIA-ANSAR] DATABASE_URL est obligatoire en production (Supabase pooler, port 6543).',
+    );
+  }
+
   return {
     type: 'postgres',
     url: process.env.DATABASE_URL,
@@ -59,8 +65,10 @@ function buildTypeOrmOptions(): TypeOrmModuleOptions {
       ? { rejectUnauthorized: false }
       : false,
     extra: process.env.DATABASE_URL
-      ? { connectionTimeoutMillis: 15000 }
+      ? { connectionTimeoutMillis: 20000 }
       : undefined,
+    retryAttempts: process.env.DATABASE_URL ? 10 : 3,
+    retryDelay: 3000,
     autoLoadEntities: true,
     synchronize,
     logging,
