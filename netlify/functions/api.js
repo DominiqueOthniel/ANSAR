@@ -1,9 +1,6 @@
 'use strict';
 
-/**
- * Point d’entrée Netlify Functions → API légère (pg + Supabase).
- * Bundle léger (pas Nest) → compatible plan Free.
- */
+/** Point d’entrée Netlify → API complète (Supabase only, pas de Koyeb). */
 const { handle } = require('../../server/app.cjs');
 
 exports.handler = async (event, context) => {

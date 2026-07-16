@@ -1,54 +1,42 @@
-# Guide de Déploiement — SIA-ANSAR (Cameroun)
+# Déploiement SIA-ANSAR — Netlify + Supabase uniquement
 
-## Stack cible (sans Render, sans Koyeb à terme)
+## Stack
 
-| Couche | Hébergeur | Coût |
-|--------|-----------|------|
-| Front (Vite) | **Netlify** | Gratuit |
-| API | **Netlify Functions** (`/api/*`) | Gratuit |
-| Base | **Supabase** (inchangée) | Ton plan actuel |
+| Couche | Où |
+|--------|-----|
+| Front (Vite) | **Netlify** |
+| API | **Netlify Functions** (`/api/*` → `server/`) |
+| Données | **Supabase** (Postgres) |
 
-> **Render** n’est pas utilisé (accès Cameroun).  
-> **Koyeb** reste en **secours** (`API_FALLBACK_URL`) tant que tous les modules ne sont pas portés.
-
-Les données restent dans **Supabase**. On ne recrée pas la base.
+**Pas de Koyeb, pas de Render, pas d’autre serveur backend.**
 
 ---
 
-## Comment ça marche
-
-1. Le front Netlify appelle `/api/...` (même site).
-2. La Function légère (`server/` + `pg`) parle à Supabase.
-3. Routes **déjà portées** : health, trucks (CRUD), drivers (lecture), third-parties (lecture).
-4. Routes **pas encore portées** : si `API_FALLBACK_URL` = ton Koyeb, la Function **proxy** vers Nest. Sinon → 501.
-
-Quand tout est porté → tu retires `API_FALLBACK_URL` → tu éteins Koyeb.
-
----
-
-## Variables Netlify (Site settings → Environment)
+## Variables Netlify (Site → Environment variables)
 
 | Variable | Valeur |
 |----------|--------|
-| `DATABASE_URL` | Même URL Supabase que Koyeb (pooler **6543**) |
+| `DATABASE_URL` | URL Supabase **pooler port 6543** (même qu’avant) |
 | `FRONTEND_URL` | `https://ton-site.netlify.app` |
-| `API_FALLBACK_URL` | `https://ton-service.koyeb.app` (temporaire) |
-| `VITE_API_URL` | `same` ou laisser **vide** (même origin `/api`) |
+| `VITE_API_URL` | `same` (ou vide) → le front appelle `/api` sur le même domaine |
 
-Puis **Clear cache and deploy site**.
+Optionnel : `ADDITIONAL_CORS_ORIGINS` si besoin.
+
+Puis **Clear cache and deploy**.
 
 ---
 
-## Bascule sans perte de données
+## Vérifications
 
-1. Déployer ce `main` sur Netlify avec `DATABASE_URL` + `API_FALLBACK_URL`.
-2. Tester `/api/health` sur le domaine Netlify.
-3. Mettre `VITE_API_URL=same` (ou vide) → redeploy front.
-4. Tester l’app (camions / chauffeurs / reste via proxy Koyeb).
-5. On porte le reste des modules progressivement.
-6. Retirer `API_FALLBACK_URL` → couper Koyeb.
+1. `https://ton-site.netlify.app/api/health` → `"runtime":"netlify-functions"` + liste `capabilities`
+2. Connexion app, camions, caisse, commandes…
+3. Quand tout est OK : **désactiver / supprimer** l’ancien service Koyeb (plus utilisé)
 
-Rollback : remettre `VITE_API_URL` sur l’URL Koyeb.
+---
+
+## Données
+
+Rien n’est migré hors de Supabase : même `DATABASE_URL` = **aucune perte de données**.
 
 ---
 
@@ -58,15 +46,16 @@ Rollback : remettre `VITE_API_URL` sur l’URL Koyeb.
 # Front
 VITE_API_URL=http://localhost:3000/api npm run dev
 
-# API Nest (secours / dev complet)
+# Option A — Nest local (backend/)
 cd backend && npm run start:dev
-```
 
-Pour tester la Function en local : `npx netlify dev` (CLI Netlify) avec `DATABASE_URL` dans `.env`.
+# Option B — simuler Netlify Functions
+npx netlify dev
+```
 
 ---
 
-## Pourquoi pas Nest entier sur Netlify ?
+## Limites Free Netlify
 
-Nest + TypeORM ≈ 150 Mo → trop lourd / trop lent pour le Free Functions.  
-D’où l’API **légère** (`server/`) qui réutilise la **même** base Supabase.
+- Timeout Function ~10 s (exports très lourds à surveiller)
+- Cold start possible sur la 1ʳᵉ requête après inactivité
