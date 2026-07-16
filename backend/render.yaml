@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: truck-track-api
+    name: ansar-api
     runtime: node
     region: frankfurt
     plan: free
     rootDir: .
-    buildCommand: npm install && npm run build
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm install && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: NODE_ENV
@@ -13,9 +13,9 @@ services:
       - key: PORT
         value: 3000
       - key: DATABASE_URL
-        sync: false   # à renseigner manuellement dans le dashboard Render
+        sync: false
       - key: DB_SYNCHRONIZE
-        value: "true"   # mettre "false" après le 1er déploiement
+        value: "false"
       - key: FRONTEND_URL
-        sync: false   # ex: https://truck-track.netlify.app
+        sync: false
     healthCheckPath: /api/health

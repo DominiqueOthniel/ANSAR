@@ -11,12 +11,19 @@ import {
 } from '@/lib/hub-transit';
 
 /**
- * URL de base incluant `/api`. Si VITE_API_URL est `https://host` sans `/api`,
- * on l’ajoute — sinon les appels partent vers `/caisse/...` et le serveur répond
- * « Cannot GET /caisse/... » (404).
+ * URL de base incluant `/api`.
+ * - Vide / `same` / `relative` → `/api` (même origin Netlify : front + function)
+ * - Sinon si l’URL n’a pas `/api`, on l’ajoute
+ * - Défaut local : `http://localhost:3000/api`
  */
 function getApiBaseUrl(): string {
-  const raw = (import.meta.env.VITE_API_URL || 'http://localhost:3000').trim();
+  const raw = String(import.meta.env.VITE_API_URL ?? '').trim();
+  if (!raw || raw === 'same' || raw === 'relative' || raw === '/') {
+    if (import.meta.env.DEV) {
+      return 'http://localhost:3000/api';
+    }
+    return '/api';
+  }
   const base = raw.replace(/\/+$/, '');
   return base.endsWith('/api') ? base : `${base}/api`;
 }

@@ -1,115 +1,104 @@
 # Guide de Déploiement — SIA-ANSAR
 
-## Stack de production
+## Stack recommandée (0 € hors Supabase)
+
 - **Frontend** : Netlify (gratuit)
-- **Backend** : Render Frankfurt (gratuit avec veille)
-- **Base de données** : Supabase EU (gratuit, 500MB)
-- **Keep-alive** : UptimeRobot (gratuit, évite la veille Render)
+- **Backend NestJS** : [Render](https://render.com) free (Frankfurt) — **remplace Koyeb**
+- **Base de données** : Supabase (tes projets existants, inchangés)
+- **Keep-alive** : UptimeRobot (gratuit) pour éviter la veille Render
+
+> Les données restent dans **Supabase**. Changer d’hôte API (Koyeb → Render) ne touche pas aux tables.
 
 ---
 
-## Étape 1 — Supabase (Base de données)
+## Quitter Koyeb sans perte de données (bascule)
 
-1. Aller sur [supabase.com](https://supabase.com) → **New Project**
-2. Choisir la région : **Frankfurt (EU Central)**
-3. Donner un mot de passe fort à la base
-4. Attendre la création (~2 minutes)
-5. Aller dans **Project Settings → Database → Connection string**
-6. Choisir **URI** (mode Transaction Pooler - port 6543)
-7. Copier l'URL — elle ressemble à :
-   ```
-   postgresql://postgres.xxxx:[PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
-   ```
-8. Garder cette URL pour l'étape suivante
+1. Créer le service Render (étape 2) avec la **même** `DATABASE_URL` Supabase que Koyeb.
+2. Vérifier `GET https://TON-SERVICE.onrender.com/api/health` → `{"status":"ok",...}`.
+3. Sur Netlify, changer `VITE_API_URL` vers l’URL Render (`…/api`), puis **Clear cache and deploy**.
+4. Tester login, factures, caisse sur le site Netlify.
+5. Seulement ensuite : **suspendre / supprimer** le service Koyeb.
+6. En cas de souci : remettre `VITE_API_URL` sur l’ancienne URL Koyeb (rollback immédiat).
+
+---
+
+## Étape 1 — Supabase (déjà en place)
+
+Réutilise le projet existant. Connection string **Transaction pooler** (port **6543**).
+
+```
+postgresql://postgres.xxxx:[PASSWORD]@….pooler.supabase.com:6543/postgres
+```
+
+Encoder `#` du mot de passe en `%23` si besoin.
 
 ---
 
 ## Étape 2 — Render (Backend NestJS)
 
-1. Aller sur [render.com](https://render.com) → **New Web Service**
-2. Connecter ton repo GitHub : `DominiqueOthniel/truck-track`
-3. Configurer :
+1. [render.com](https://render.com) → **New Web Service** → repo `DominiqueOthniel/ANSAR`
+2. Configurer :
    - **Root Directory** : `backend`
-   - **Region** : **Frankfurt (EU)**
-   - **Build Command** : `npm install && npm run build`
+   - **Region** : Frankfurt (EU)
+   - **Build Command** : `NPM_CONFIG_PRODUCTION=false npm install && npm run build`
    - **Start Command** : `npm run start:prod`
    - **Plan** : Free
-4. Ajouter les **Environment Variables** :
+3. Variables :
    | Variable | Valeur |
    |---|---|
    | `NODE_ENV` | `production` |
-   | `DATABASE_URL` | *(l'URL Supabase copiée à l'étape 1)* |
-   | `DB_SYNCHRONIZE` | `true` *(mettre `false` après le 1er déploiement)* |
-   | `FRONTEND_URL` | *(l'URL Netlify — à remplir après l'étape 3)* |
+   | `DATABASE_URL` | *(même URL que sur Koyeb)* |
+   | `DB_SYNCHRONIZE` | `false` (déjà en prod) |
+   | `FRONTEND_URL` | URL Netlify du client |
    | `PORT` | `3000` |
-5. Cliquer **Deploy** → attendre ~3-5 minutes
-6. Copier l'URL du service : `https://truck-track-api.onrender.com`
-
-> ⚠️ Après le premier déploiement réussi, repasser `DB_SYNCHRONIZE` à `false` dans les variables Render.
+4. Deploy → copier `https://….onrender.com`
+5. Tester `/api/health`
 
 ---
 
-## Étape 3 — Netlify (Frontend React)
+## Étape 3 — Netlify (Frontend)
 
-1. Aller sur [netlify.com](https://netlify.com) → **Add new site → Import from Git**
-2. Connecter le repo GitHub : `DominiqueOthniel/truck-track`
-3. Configurer :
-   - **Base directory** : *(laisser vide — racine du repo)*
-   - **Build command** : `npm run build`
-   - **Publish directory** : `dist`
-4. Ajouter la **variable d'environnement** :
+1. Site existant ou **Import from Git** → `DominiqueOthniel/ANSAR`
+2. Build : `npm run build` · Publish : `dist`
+3. Variable :
    | Variable | Valeur |
    |---|---|
-   | `VITE_API_URL` | `https://truck-track-api.onrender.com/api` |
-5. Cliquer **Deploy site**
-6. Copier l'URL Netlify : `https://truck-track-xxx.netlify.app`
+   | `VITE_API_URL` | `https://TON-SERVICE.onrender.com/api` |
+
+En prod, si `VITE_API_URL` est vide, le front utilise `/api` (même origin) — utile seulement si l’API est sur le même domaine.
 
 ---
 
-## Étape 4 — Finaliser le CORS sur Render
+## Étape 4 — CORS
 
-1. Retourner sur Render → ton service backend
-2. Dans **Environment Variables**, mettre à jour :
-   | Variable | Valeur |
-   |---|---|
-   | `FRONTEND_URL` | `https://truck-track-xxx.netlify.app` |
-3. Render redéploie automatiquement
+Sur Render, `FRONTEND_URL` = URL exacte Netlify du client (sans slash final).
 
 ---
 
-## Étape 5 — UptimeRobot (Éviter la veille Render)
+## Étape 5 — UptimeRobot
 
-1. Aller sur [uptimerobot.com](https://uptimerobot.com) → créer un compte gratuit
-2. **New Monitor** :
-   - Type : **HTTP(s)**
-   - Name : `SIA-ANSAR API`
-   - URL : `https://truck-track-api.onrender.com/api/health`
-   - Interval : **5 minutes**
-3. Sauvegarder → ton backend ne dormira plus jamais ✅
+Monitor HTTP toutes les **5 min** sur :
+
+`https://TON-SERVICE.onrender.com/api/health`
+
+Évite le cold start Render free après inactivité.
 
 ---
 
-## Récapitulatif des URLs finales
+## Pourquoi pas Nest entier dans Netlify Functions ?
 
-```
-Frontend  : https://truck-track-xxx.netlify.app
-Backend   : https://truck-track-api.onrender.com/api
-Health    : https://truck-track-api.onrender.com/api/health
-```
+Le backend Nest + dépendances fait ~150 Mo : trop lourd pour le plan Free Netlify Functions (timeout ~10 s + taille).  
+**Render free + Netlify front** = stack gratuit fiable, même code Nest, même Supabase.
+
+Une refonte Next.js full (API Routes) reste possible plus tard ; ce n’est pas requis pour couper Koyeb.
 
 ---
 
 ## Développement local
 
 ```bash
-# Frontend
-npm install
-npm run dev          # http://localhost:3001
-
-# Backend
-cd backend
-npm install
-npm run start:dev    # http://localhost:3000/api
+npm install && npm run dev          # front http://localhost:5173 ou 3001
+cd backend && npm install && npm run start:dev   # http://localhost:3000/api
 ```
 
-Copier les fichiers `.env.example` en `.env` et remplir les valeurs.
+`VITE_API_URL=http://localhost:3000/api`

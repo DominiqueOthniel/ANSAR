@@ -5,7 +5,8 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Redirection SPA : toutes les routes → index.html
+# SPA Vite : toutes les routes → index.html
+# L’API Nest tourne ailleurs (Render free recommandé) — même Supabase.
 [[redirects]]
   from = "/*"
   to = "/index.html"
