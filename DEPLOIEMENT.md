@@ -1,104 +1,72 @@
-# Guide de Déploiement — SIA-ANSAR
+# Guide de Déploiement — SIA-ANSAR (Cameroun)
 
-## Stack recommandée (0 € hors Supabase)
+## Stack cible (sans Render, sans Koyeb à terme)
 
-- **Frontend** : Netlify (gratuit)
-- **Backend NestJS** : [Render](https://render.com) free (Frankfurt) — **remplace Koyeb**
-- **Base de données** : Supabase (tes projets existants, inchangés)
-- **Keep-alive** : UptimeRobot (gratuit) pour éviter la veille Render
+| Couche | Hébergeur | Coût |
+|--------|-----------|------|
+| Front (Vite) | **Netlify** | Gratuit |
+| API | **Netlify Functions** (`/api/*`) | Gratuit |
+| Base | **Supabase** (inchangée) | Ton plan actuel |
 
-> Les données restent dans **Supabase**. Changer d’hôte API (Koyeb → Render) ne touche pas aux tables.
+> **Render** n’est pas utilisé (accès Cameroun).  
+> **Koyeb** reste en **secours** (`API_FALLBACK_URL`) tant que tous les modules ne sont pas portés.
 
----
-
-## Quitter Koyeb sans perte de données (bascule)
-
-1. Créer le service Render (étape 2) avec la **même** `DATABASE_URL` Supabase que Koyeb.
-2. Vérifier `GET https://TON-SERVICE.onrender.com/api/health` → `{"status":"ok",...}`.
-3. Sur Netlify, changer `VITE_API_URL` vers l’URL Render (`…/api`), puis **Clear cache and deploy**.
-4. Tester login, factures, caisse sur le site Netlify.
-5. Seulement ensuite : **suspendre / supprimer** le service Koyeb.
-6. En cas de souci : remettre `VITE_API_URL` sur l’ancienne URL Koyeb (rollback immédiat).
+Les données restent dans **Supabase**. On ne recrée pas la base.
 
 ---
 
-## Étape 1 — Supabase (déjà en place)
+## Comment ça marche
 
-Réutilise le projet existant. Connection string **Transaction pooler** (port **6543**).
+1. Le front Netlify appelle `/api/...` (même site).
+2. La Function légère (`server/` + `pg`) parle à Supabase.
+3. Routes **déjà portées** : health, trucks (CRUD), drivers (lecture), third-parties (lecture).
+4. Routes **pas encore portées** : si `API_FALLBACK_URL` = ton Koyeb, la Function **proxy** vers Nest. Sinon → 501.
 
-```
-postgresql://postgres.xxxx:[PASSWORD]@….pooler.supabase.com:6543/postgres
-```
-
-Encoder `#` du mot de passe en `%23` si besoin.
-
----
-
-## Étape 2 — Render (Backend NestJS)
-
-1. [render.com](https://render.com) → **New Web Service** → repo `DominiqueOthniel/ANSAR`
-2. Configurer :
-   - **Root Directory** : `backend`
-   - **Region** : Frankfurt (EU)
-   - **Build Command** : `NPM_CONFIG_PRODUCTION=false npm install && npm run build`
-   - **Start Command** : `npm run start:prod`
-   - **Plan** : Free
-3. Variables :
-   | Variable | Valeur |
-   |---|---|
-   | `NODE_ENV` | `production` |
-   | `DATABASE_URL` | *(même URL que sur Koyeb)* |
-   | `DB_SYNCHRONIZE` | `false` (déjà en prod) |
-   | `FRONTEND_URL` | URL Netlify du client |
-   | `PORT` | `3000` |
-4. Deploy → copier `https://….onrender.com`
-5. Tester `/api/health`
+Quand tout est porté → tu retires `API_FALLBACK_URL` → tu éteins Koyeb.
 
 ---
 
-## Étape 3 — Netlify (Frontend)
+## Variables Netlify (Site settings → Environment)
 
-1. Site existant ou **Import from Git** → `DominiqueOthniel/ANSAR`
-2. Build : `npm run build` · Publish : `dist`
-3. Variable :
-   | Variable | Valeur |
-   |---|---|
-   | `VITE_API_URL` | `https://TON-SERVICE.onrender.com/api` |
+| Variable | Valeur |
+|----------|--------|
+| `DATABASE_URL` | Même URL Supabase que Koyeb (pooler **6543**) |
+| `FRONTEND_URL` | `https://ton-site.netlify.app` |
+| `API_FALLBACK_URL` | `https://ton-service.koyeb.app` (temporaire) |
+| `VITE_API_URL` | `same` ou laisser **vide** (même origin `/api`) |
 
-En prod, si `VITE_API_URL` est vide, le front utilise `/api` (même origin) — utile seulement si l’API est sur le même domaine.
-
----
-
-## Étape 4 — CORS
-
-Sur Render, `FRONTEND_URL` = URL exacte Netlify du client (sans slash final).
+Puis **Clear cache and deploy site**.
 
 ---
 
-## Étape 5 — UptimeRobot
+## Bascule sans perte de données
 
-Monitor HTTP toutes les **5 min** sur :
+1. Déployer ce `main` sur Netlify avec `DATABASE_URL` + `API_FALLBACK_URL`.
+2. Tester `/api/health` sur le domaine Netlify.
+3. Mettre `VITE_API_URL=same` (ou vide) → redeploy front.
+4. Tester l’app (camions / chauffeurs / reste via proxy Koyeb).
+5. On porte le reste des modules progressivement.
+6. Retirer `API_FALLBACK_URL` → couper Koyeb.
 
-`https://TON-SERVICE.onrender.com/api/health`
-
-Évite le cold start Render free après inactivité.
-
----
-
-## Pourquoi pas Nest entier dans Netlify Functions ?
-
-Le backend Nest + dépendances fait ~150 Mo : trop lourd pour le plan Free Netlify Functions (timeout ~10 s + taille).  
-**Render free + Netlify front** = stack gratuit fiable, même code Nest, même Supabase.
-
-Une refonte Next.js full (API Routes) reste possible plus tard ; ce n’est pas requis pour couper Koyeb.
+Rollback : remettre `VITE_API_URL` sur l’URL Koyeb.
 
 ---
 
-## Développement local
+## Dev local
 
 ```bash
-npm install && npm run dev          # front http://localhost:5173 ou 3001
-cd backend && npm install && npm run start:dev   # http://localhost:3000/api
+# Front
+VITE_API_URL=http://localhost:3000/api npm run dev
+
+# API Nest (secours / dev complet)
+cd backend && npm run start:dev
 ```
 
-`VITE_API_URL=http://localhost:3000/api`
+Pour tester la Function en local : `npx netlify dev` (CLI Netlify) avec `DATABASE_URL` dans `.env`.
+
+---
+
+## Pourquoi pas Nest entier sur Netlify ?
+
+Nest + TypeORM ≈ 150 Mo → trop lourd / trop lent pour le Free Functions.  
+D’où l’API **légère** (`server/`) qui réutilise la **même** base Supabase.

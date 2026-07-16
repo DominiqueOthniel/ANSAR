@@ -1,12 +1,30 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA Vite : toutes les routes → index.html
-# L’API Nest tourne ailleurs (Render free recommandé) — même Supabase.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "nft"
+  included_files = ["server/**"]
+
+# API Netlify (pg → Supabase) — avant le catch-all SPA
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
+
+# SPA Vite
 [[redirects]]
   from = "/*"
   to = "/index.html"
