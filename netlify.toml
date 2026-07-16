@@ -11,7 +11,8 @@
   node_bundler = "nft"
   included_files = ["server/**"]
 
-# API Netlify (pg → Supabase) — avant le catch-all SPA
+# Aussi dans public/_redirects (copié dans dist) — les règles _redirects
+# sont évaluées AVANT netlify.toml ; /api doit y figurer en premier.
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api"
@@ -24,7 +25,6 @@
   status = 200
   force = true
 
-# SPA Vite
 [[redirects]]
   from = "/*"
   to = "/index.html"

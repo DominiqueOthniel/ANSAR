@@ -1,1 +1,6 @@
-/* /index.html 200
+# API avant le SPA (ordre critique sur Netlify)
+/api/*  /.netlify/functions/api  200
+/api    /.netlify/functions/api  200
+
+# Front SPA
+/*    /index.html   200
