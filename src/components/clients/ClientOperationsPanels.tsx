@@ -148,7 +148,9 @@ export function ClientOperationsPanels({
         if (isWalkIn) return !d.clientId;
         return d.clientId === clientId;
       })
-      .sort((a, b) => (b.datePrevue ?? '').localeCompare(a.datePrevue ?? ''));
+      .sort((a, b) =>
+        (b.dateLivraison ?? '').localeCompare(a.dateLivraison ?? ''),
+      );
   }, [clientDeliveries, orders, clientId, isWalkIn]);
 
   const fournisseurs = useMemo(
@@ -438,7 +440,6 @@ export function ClientOperationsPanels({
     modeSortie: 'livraison_directe' as ClientDeliveryExitMode,
     lieuLivraison: defaultDestination ?? '',
     statut: 'planifiee' as ClientDeliveryStatus,
-    datePrevue: '',
     dateLivraison: '',
     chauffeurId: '',
     tracteurId: '',
@@ -735,7 +736,6 @@ export function ClientOperationsPanels({
         order?.destination ?? defaultDestination ?? '',
       ),
       statut: 'planifiee',
-      datePrevue: order?.dateLivraisonSouhaitee ?? '',
       dateLivraison: '',
       chauffeurId: '',
       tracteurId: '',
@@ -763,7 +763,6 @@ export function ClientOperationsPanels({
       modeSortie: d.modeSortie ?? 'livraison_directe',
       lieuLivraison: d.lieuLivraison,
       statut: d.statut,
-      datePrevue: d.datePrevue ?? '',
       dateLivraison: d.dateLivraison ?? '',
       chauffeurId: d.chauffeurId ?? '',
       tracteurId: d.tracteurId ?? '',
@@ -800,7 +799,6 @@ export function ClientOperationsPanels({
           modeSortie: deliveryForm.modeSortie,
           lieuLivraison: deliveryForm.lieuLivraison.trim(),
           statut: deliveryForm.statut,
-          datePrevue: deliveryForm.datePrevue || undefined,
           dateLivraison: deliveryForm.dateLivraison || undefined,
           chauffeurId: isRetraitHub ? undefined : deliveryForm.chauffeurId || undefined,
           tracteurId: isRetraitHub ? undefined : deliveryForm.tracteurId || undefined,
@@ -1050,7 +1048,7 @@ export function ClientOperationsPanels({
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {order?.designation ?? d.orderDesignation ?? 'Commande'}
-                    {d.datePrevue ? ` · prévu ${d.datePrevue}` : ''}
+                    {d.dateLivraison ? ` · livrée ${d.dateLivraison}` : ''}
                     {d.transportFactureParFournisseur ? (
                       <span>
                         {' '}
@@ -1765,7 +1763,6 @@ export function ClientOperationsPanels({
                   setDeliveryForm((p) => ({
                     ...p,
                     clientOrderId: v,
-                    datePrevue: order?.dateLivraisonSouhaitee ?? p.datePrevue,
                     lieuLivraison: deliveryLieuForExitMode(
                       p.modeSortie,
                       hub,
@@ -1846,23 +1843,13 @@ export function ClientOperationsPanels({
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>Date prévue</Label>
-                <Input
-                  type="date"
-                  value={deliveryForm.datePrevue}
-                  onChange={(e) => setDeliveryForm((p) => ({ ...p, datePrevue: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Date livrée</Label>
-                <Input
-                  type="date"
-                  value={deliveryForm.dateLivraison}
-                  onChange={(e) => setDeliveryForm((p) => ({ ...p, dateLivraison: e.target.value }))}
-                />
-              </div>
+            <div>
+              <Label>Date livrée</Label>
+              <Input
+                type="date"
+                value={deliveryForm.dateLivraison}
+                onChange={(e) => setDeliveryForm((p) => ({ ...p, dateLivraison: e.target.value }))}
+              />
             </div>
             <div>
               <Label>Statut</Label>
