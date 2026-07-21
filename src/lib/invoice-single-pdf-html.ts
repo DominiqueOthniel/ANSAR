@@ -3,7 +3,7 @@ import {
   COMPANY_CONTACT,
   COMPANY_NAME,
   COMPANY_TAGLINE,
-  TRUCK_LOGO_SVG_MARK,
+  getCompanyLogoImgHtml,
 } from '@/lib/invoice-branding';
 import { escapePdfHtml, formatPdfDate } from '@/lib/pdf-print';
 import { formatTripStatusFr } from '@/lib/sync-utils';
@@ -257,8 +257,8 @@ export function buildSingleInvoicePdfInnerHtml(opts: {
     <div class="pdf-no-break" style="width:100%;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;padding:10px 12px;background:linear-gradient(135deg,#f8fafc,#eff6ff);border:1px solid ${S.border};border-radius:10px;">
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-          <div style="width:44px;height:44px;border-radius:9px;background:linear-gradient(135deg,#4f46e5,#2563eb);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            ${TRUCK_LOGO_SVG_MARK}
+          <div style="flex-shrink:0;padding:6px 8px;background:#fff;border:1px solid ${S.border};border-radius:8px;">
+            ${getCompanyLogoImgHtml()}
           </div>
           <div style="min-width:0;">
             <div style="font-size:12pt;font-weight:800;color:${S.ink};letter-spacing:-0.02em;">${COMPANY_NAME}</div>

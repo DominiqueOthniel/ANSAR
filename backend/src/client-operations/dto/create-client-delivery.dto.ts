@@ -8,6 +8,7 @@ import {
   IsNumber,
   Min,
   IsBoolean,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateClientDeliveryDto {
@@ -45,10 +46,11 @@ export class CreateClientDeliveryDto {
   tracteurId?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  montantTransport?: number;
+  montantTransport?: number | null;
 
   @IsOptional()
   @Type(() => Boolean)

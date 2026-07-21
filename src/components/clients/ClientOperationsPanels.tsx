@@ -130,13 +130,26 @@ export function ClientOperationsPanels({
     [clientOrders, clientId, isWalkIn],
   );
 
-  const deliveries = useMemo(
-    () =>
-      clientDeliveries
-        .filter((d) => (isWalkIn ? !d.clientId : d.clientId === clientId))
-        .sort((a, b) => (b.datePrevue ?? '').localeCompare(a.datePrevue ?? '')),
-    [clientDeliveries, clientId, isWalkIn],
+  const activeOrders = useMemo(
+    () => orders.filter((o) => o.statut !== 'livree' && o.statut !== 'annulee'),
+    [orders],
   );
+
+  const closedOrders = useMemo(
+    () => orders.filter((o) => o.statut === 'livree' || o.statut === 'annulee'),
+    [orders],
+  );
+
+  const deliveries = useMemo(() => {
+    const orderIds = new Set(orders.map((o) => o.id));
+    return clientDeliveries
+      .filter((d) => {
+        if (orderIds.has(d.clientOrderId)) return true;
+        if (isWalkIn) return !d.clientId;
+        return d.clientId === clientId;
+      })
+      .sort((a, b) => (b.datePrevue ?? '').localeCompare(a.datePrevue ?? ''));
+  }, [clientDeliveries, orders, clientId, isWalkIn]);
 
   const fournisseurs = useMemo(
     () =>
@@ -649,7 +662,11 @@ export function ClientOperationsPanels({
           if (nextId && (!prevLoading || prevLoading.id !== nextId)) {
             await linkOrderToLoading(editingOrder.id, nextId, orderForm.quantite);
           }
-          toast.success('Commande mise à jour');
+          toast.success(
+            payload.statut === 'livree'
+              ? 'Commande marquée livrée — retirée des commandes actives'
+              : 'Commande mise à jour',
+          );
         } else {
           const client = isWalkIn
             ? undefined
@@ -731,11 +748,11 @@ export function ClientOperationsPanels({
   };
 
   const openNewDelivery = (orderId?: string) => {
-    if (orders.length === 0) {
-      toast.error('Créez d’abord une commande pour ce client.');
+    if (activeOrders.length === 0) {
+      toast.error('Aucune commande active : créez une commande ou réouvrez une livraison existante.');
       return;
     }
-    resetDeliveryForm(orderId ?? orders[0].id);
+    resetDeliveryForm(orderId ?? activeOrders[0].id);
     setDeliveryDialogOpen(true);
   };
 
@@ -772,25 +789,8 @@ export function ClientOperationsPanels({
     }
     const isRetraitHub = deliveryForm.modeSortie === 'retrait_hub';
     const billedBySupplier = !isRetraitHub && deliveryForm.transportFactureParFournisseur;
-    const hasMission =
-      !isRetraitHub && !!(deliveryForm.chauffeurId || deliveryForm.tracteurId);
-    if (
-      !billedBySupplier &&
-      hasMission &&
-      (!deliveryForm.montantTransport || deliveryForm.montantTransport <= 0)
-    ) {
-      toast.error('Indiquez le montant du transport si un chauffeur ou un camion est attribué.');
-      return;
-    }
     if (billedBySupplier && !deliveryForm.transportFournisseurId) {
       toast.error('Indiquez le fournisseur qui vous facture le transport.');
-      return;
-    }
-    if (
-      billedBySupplier &&
-      (!deliveryForm.montantTransport || deliveryForm.montantTransport <= 0)
-    ) {
-      toast.error('Indiquez le montant transport refacturé au client (inclus sur la facture commande).');
       return;
     }
     await withGuard(async () => {
@@ -808,16 +808,27 @@ export function ClientOperationsPanels({
           transportFournisseurId: billedBySupplier
             ? deliveryForm.transportFournisseurId
             : undefined,
-          montantTransport:
-            billedBySupplier || hasMission ? deliveryForm.montantTransport : undefined,
+          montantTransport: isRetraitHub
+            ? undefined
+            : deliveryForm.montantTransport != null && deliveryForm.montantTransport > 0
+              ? deliveryForm.montantTransport
+              : null,
           notes: deliveryForm.notes.trim() || undefined,
         };
         if (editingDelivery) {
           await updateClientDelivery(editingDelivery.id, payload);
-          toast.success('Livraison mise à jour');
+          toast.success(
+            payload.statut === 'livree'
+              ? 'Livraison effectuée — commande passée en livrée et retirée des actives si toutes les livraisons sont faites'
+              : 'Livraison mise à jour',
+          );
         } else {
           await createClientDelivery(payload);
-          toast.success('Livraison planifiée');
+          toast.success(
+            payload.statut === 'livree'
+              ? 'Livraison effectuée — commande mise à jour'
+              : 'Livraison planifiée',
+          );
         }
         setDeliveryDialogOpen(false);
         resetDeliveryForm();
@@ -833,20 +844,20 @@ export function ClientOperationsPanels({
         <div className="flex items-center justify-between gap-2 mb-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <ClipboardList className="h-4 w-4 text-violet-600" />
-            Commandes ({orders.length})
+            Commandes actives ({activeOrders.length})
           </h3>
           <Button type="button" size="sm" variant="secondary" onClick={openNewOrder}>
             <Plus className="h-3 w-3 mr-1" />
             Nouvelle commande
           </Button>
         </div>
-        {orders.length === 0 ? (
+        {activeOrders.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Aucune commande — enregistrez la demande du donneur d’ordre (produit, quantité, destination).
+            Aucune commande active — enregistrez la demande du donneur d’ordre (produit, quantité, destination).
           </p>
         ) : (
           <ul className="space-y-2 max-h-52 overflow-y-auto pr-1">
-            {orders.map((o) => {
+            {activeOrders.map((o) => {
               const dCount = deliveries.filter((d) => d.clientOrderId === o.id).length;
               const linkedLoading = findSupplierLoadingForOrder(supplierLoadings, o.id);
               return (
@@ -950,8 +961,58 @@ export function ClientOperationsPanels({
             })}
           </ul>
         )}
+        {closedOrders.length > 0 && (
+          <details className="mt-3 rounded-lg border border-dashed bg-muted/20">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground">
+              Historique — livrées / annulées ({closedOrders.length})
+            </summary>
+            <ul className="space-y-2 max-h-40 overflow-y-auto px-2 pb-2">
+              {closedOrders.map((o) => (
+                <li
+                  key={o.id}
+                  className="rounded-md border bg-card/80 p-2 text-sm opacity-90"
+                >
+                  <div className="flex justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{o.designation}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {o.dateCommande}
+                        {o.reference ? ` · ${o.reference}` : ''}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 text-xs">
+                      {formatClientOrderStatusFr(o.statut)}
+                    </Badge>
+                  </div>
+                  <div className="flex gap-1 mt-1.5 flex-wrap items-center">
+                    {invoiceForOrder(o) && (
+                      <Link
+                        to={`/factures?highlight=${invoiceForOrder(o)!.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <FileText className="h-3 w-3" />
+                        {invoiceForOrder(o)!.numero}
+                      </Link>
+                    )}
+                    {canDeleteClientOrder(o.statut) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive h-7 px-2"
+                        title="Supprimer la commande"
+                        onClick={() => void handleDeleteOrder(o)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </section>
-
       <section>
         <div className="flex items-center justify-between gap-2 mb-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -1011,9 +1072,21 @@ export function ClientOperationsPanels({
                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
                     >
                       <FileText className="h-3 w-3" />
-                      Transport inclus — facture {invoiceForDelivery(d)!.numero}
+                      {d.statut === 'livree' &&
+                      d.montantTransport != null &&
+                      d.montantTransport > 0
+                        ? `Transport inclus — facture ${invoiceForDelivery(d)!.numero}`
+                        : `Facture commande ${invoiceForDelivery(d)!.numero}`}
                     </Link>
                   )}
+                  {d.statut !== 'livree' &&
+                    d.montantTransport != null &&
+                    d.montantTransport > 0 &&
+                    d.modeSortie !== 'retrait_hub' && (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                        Transport facturé automatiquement au passage en « Livrée »
+                      </p>
+                    )}
                   <div className="mt-1 flex flex-wrap items-center gap-1">
                     <Button
                       type="button"
@@ -1705,7 +1778,17 @@ export function ClientOperationsPanels({
                   <SelectValue placeholder="Choisir…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {orders.map((o) => (
+                  {(editingDelivery
+                    ? [
+                        ...activeOrders,
+                        ...orders.filter(
+                          (o) =>
+                            o.id === editingDelivery.clientOrderId &&
+                            !activeOrders.some((a) => a.id === o.id),
+                        ),
+                      ]
+                    : activeOrders
+                  ).map((o) => (
                     <SelectItem key={o.id} value={o.id}>
                       {o.designation} ({o.dateCommande})
                     </SelectItem>
@@ -1889,27 +1972,28 @@ export function ClientOperationsPanels({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Montant refacturé au client (FCFA) *</Label>
+                    <Label>Montant refacturé au client (FCFA)</Label>
                     <NumberInput
                       allowEmpty
                       min={0}
                       value={deliveryForm.montantTransport}
                       onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                     />
-                  </div>
+                    <p className="text-[11px] text-muted-foreground">Facultatif — inclus sur la FAC-CMD si renseigné et livraison effectuée.</p>                  </div>
                 </>
               )}
             </div>
             {!deliveryForm.transportFactureParFournisseur &&
               (deliveryForm.chauffeurId || deliveryForm.tracteurId) && (
                 <div className="space-y-2">
-                  <Label>Frais transport (FCFA) *</Label>
+                  <Label>Frais transport (FCFA)</Label>
                   <NumberInput
                     allowEmpty
                     min={0}
                     value={deliveryForm.montantTransport}
                     onChange={(v) => setDeliveryForm((p) => ({ ...p, montantTransport: v }))}
                   />
+                  <p className="text-[11px] text-muted-foreground">Facultatif — inclus sur la FAC-CMD si renseigné et livraison effectuée.</p>
                 </div>
               )}
             </>

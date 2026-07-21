@@ -202,6 +202,9 @@ export class TripsService {
     }
     await this.tripRepository.update(id, patch as Partial<Trip>);
     const after = await this.findOne(id);
+    if (dto.statut === 'termine' && existing.statut !== 'termine') {
+      await this.ensureTripInvoiceOnCompletion(after, actor);
+    }
     await this.auditLogsService.log({
       module: 'trips',
       action: 'UPDATE',
@@ -212,6 +215,58 @@ export class TripsService {
       actor,
     });
     return after;
+  }
+
+  /** Crée une facture pour le reste de recette non encore facturé quand le trajet est terminé. */
+  private async ensureTripInvoiceOnCompletion(
+    trip: Trip,
+    actor?: AuditActor,
+  ): Promise<void> {
+    const recette = Number(trip.recette ?? 0);
+    if (recette <= 0) return;
+    const existingInvoices = await this.invoiceRepository.find({
+      where: { trajetId: trip.id },
+    });
+    const sumTtc = existingInvoices.reduce((s, i) => s + Number(i.montantTTC), 0);
+    const reste = Math.max(0, recette - sumTtc);
+    if (reste <= 0.01) return;
+
+    const year = new Date().getFullYear();
+    const count = (await this.invoiceRepository.count()) + 1;
+    const numero = `FAC-${year}-${String(count).padStart(3, '0')}`;
+
+    const parts = trip.clientParticipants ?? [];
+    const payeurId = trip.payeurParticipantId;
+    const payeur = payeurId
+      ? parts.find((p) => p.id === payeurId)
+      : parts[0];
+    const clientTierId = payeur?.tierId?.trim() || undefined;
+    const factureClientLibelle =
+      (payeur?.libelle || trip.client || '').trim() || undefined;
+
+    const inv = this.invoiceRepository.create({
+      id: uuidv4(),
+      numero,
+      trajetId: trip.id,
+      statut: 'en_attente',
+      montantHT: reste,
+      montantHTApresRemise: reste,
+      montantTTC: reste,
+      montantPaye: 0,
+      dateCreation: new Date().toISOString().slice(0, 10),
+      clientTierId,
+      factureClientLibelle,
+      notes: `Facture automatique — trajet ${trip.origine} → ${trip.destination}`,
+    });
+    const saved = await this.invoiceRepository.save(inv);
+    await this.auditLogsService.log({
+      module: 'invoices',
+      action: 'CREATE',
+      entityId: saved.id,
+      summary: `Facture auto ${saved.numero} (trajet terminé ${trip.origine} → ${trip.destination})`,
+      afterData: saved as unknown as Record<string, unknown>,
+      actor,
+    });
   }
 
   async remove(id: string, actor?: AuditActor): Promise<void> {

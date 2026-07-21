@@ -277,7 +277,7 @@ export interface ClientDeliveryPayload {
   dateLivraison?: string;
   chauffeurId?: string;
   tracteurId?: string;
-  montantTransport?: number;
+  montantTransport?: number | null;
   /** Transport sous-traité : montant refacturé au client sur la facture commande (FAC-CMD). */
   transportFactureParFournisseur?: boolean;
   transportFournisseurId?: string;

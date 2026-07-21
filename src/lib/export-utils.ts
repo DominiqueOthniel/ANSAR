@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx-js-style';
-import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
+import { getCompanyLogoImgHtml } from '@/lib/invoice-branding';
 import {
   buildPdfBrandHtml,
   escapePdfHtml,
@@ -796,7 +796,7 @@ export function exportToPrintablePDF<T>(options: ExportOptions<T> | PDFExportOpt
         </div>
         ${branding ? `
         <div class="pdf-brand">
-          <div class="pdf-brand-logo">${TRUCK_LOGO_SVG_MARK}</div>
+          <div class="pdf-brand-logo" style="background:#fff;border:1px solid #e2e8f0;width:auto;min-width:120px;padding:6px 10px;">${getCompanyLogoImgHtml()}</div>
           <div>
             <div class="pdf-brand-name">${branding.companyName}</div>
             ${branding.tagline ? `<div class="pdf-brand-tagline">${branding.tagline}</div>` : ''}

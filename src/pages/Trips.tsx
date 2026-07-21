@@ -684,7 +684,13 @@ export default function Trips() {
 
     try {
       await updateTrip(tripId, payload);
-      toast.success(newStatus === 'annule' ? 'Trajet annulé' : newStatus === 'termine' ? 'Trajet terminé' : 'Statut mis à jour');
+      if (newStatus === 'termine') {
+        toast.success('Trajet terminé — facture créée automatiquement si recette restante');
+      } else {
+        toast.success(
+          newStatus === 'annule' ? 'Trajet annulé' : 'Statut mis à jour',
+        );
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
     }

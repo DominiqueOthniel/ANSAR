@@ -85,16 +85,15 @@ export default function Login() {
 
           {/* Header */}
           <div className="flex flex-col items-center mb-8 text-center">
-            {/* Logo marque (squircle aligné sur le halo) */}
             <div className="relative mb-5 flex justify-center items-center">
               <div
-                className="absolute w-[7.5rem] h-[7.5rem] sm:w-36 sm:h-36 rounded-[22%] bg-gradient-to-br from-violet-500/50 to-indigo-500/35 blur-2xl scale-[1.12] animate-pulse-glow"
+                className="absolute w-[14rem] h-16 sm:w-64 sm:h-20 rounded-full bg-gradient-to-br from-red-500/35 to-violet-500/30 blur-2xl scale-[1.15] animate-pulse-glow"
                 aria-hidden
               />
               <AppLogo variant="login" className="relative z-[1]" />
             </div>
 
-            <h1 className="text-3xl font-bold text-white mb-1">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
               <span className="bg-gradient-to-r from-violet-300 via-white to-indigo-300 bg-clip-text text-transparent">SIA-ANSAR</span>
             </h1>
             <p className="text-white/50 text-sm">Gestion de flotte · Cameroun</p>

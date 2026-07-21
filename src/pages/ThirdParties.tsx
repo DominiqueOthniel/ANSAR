@@ -22,7 +22,6 @@ import {
   WALK_IN_EXPORT_CLIENT_ID,
 } from '@/lib/client-export';
 import { type ClientAccountKind } from '@/lib/client-operations';
-import { loadCreditsForPlafond } from '@/lib/client-initial-balance';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';

@@ -199,12 +199,12 @@ export class ClientOperationsService {
     return { montantPaye: 0, statut: 'en_attente' };
   }
 
-  /** Transport facturable sur la facture commande (une seule FAC-CMD, transport détaillé en notes). */
+  /** Transport facturable sur la facture commande (uniquement après livraison effectuée). */
   private deliveryBillsTransport(delivery: ClientDelivery): boolean {
+    if (delivery.statut !== 'livree') return false;
     if (delivery.modeSortie === 'retrait_hub') return false;
     const montant = this.deliveryTransportMontant(delivery);
     if (montant <= 0) return false;
-    if (delivery.statut === 'annulee') return false;
     if (this.isTransportBilledBySupplier(delivery)) return true;
     return this.hasTransportMission(delivery);
   }
@@ -425,17 +425,6 @@ export class ClientOperationsService {
       if (!delivery.transportFournisseurId) {
         throw new BadRequestException('Indiquez le fournisseur qui vous facture le transport.');
       }
-      if (this.deliveryTransportMontant(delivery) <= 0) {
-        throw new BadRequestException(
-          'Indiquez le montant transport refacturé au client lorsque le fournisseur vous facture le transport.',
-        );
-      }
-      return;
-    }
-    if (this.hasTransportMission(delivery) && this.deliveryTransportMontant(delivery) <= 0) {
-      throw new BadRequestException(
-        'Indiquez le montant du transport lorsqu’un chauffeur ou un camion est attribué à la livraison.',
-      );
     }
   }
 
@@ -467,6 +456,7 @@ export class ClientOperationsService {
       return;
     }
     const deliveries = await this.deliveryRepo.find({ where: { clientOrderId: orderId } });
+    if (deliveries.length === 0) return;
     const next = this.deriveOrderStatus(deliveries);
     if (next !== order.statut) {
       await this.orderRepo.update(orderId, { statut: next });
@@ -646,6 +636,17 @@ export class ClientOperationsService {
     await this.orderRepo.update(id, patch);
     if (patch.statut === 'annulee') {
       await this.releaseSupplierLoadingsForOrder(id);
+    }
+    if (patch.statut === 'livree' && existing.statut !== 'livree') {
+      const today = new Date().toISOString().slice(0, 10);
+      const deliveries = await this.deliveryRepo.find({ where: { clientOrderId: id } });
+      for (const d of deliveries) {
+        if (d.statut === 'annulee' || d.statut === 'livree') continue;
+        await this.deliveryRepo.update(d.id, {
+          statut: 'livree',
+          dateLivraison: d.dateLivraison || d.datePrevue || today,
+        });
+      }
     }
     if (
       (dto.clientId !== undefined && dto.clientId !== existing.clientId) ||
@@ -846,7 +847,9 @@ export class ClientOperationsService {
     }
     if (dto.montantTransport !== undefined) {
       patch.montantTransport =
-        dto.montantTransport != null ? Number(dto.montantTransport) : undefined;
+        dto.montantTransport != null && Number(dto.montantTransport) > 0
+          ? Number(dto.montantTransport)
+          : (null as unknown as undefined);
     }
     if (dto.notes !== undefined) patch.notes = dto.notes.trim() || undefined;
     if (dto.transportFactureParFournisseur === true) {

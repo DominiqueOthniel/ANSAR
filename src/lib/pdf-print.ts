@@ -3,7 +3,7 @@
  * Tous les PDF partagent la même base A4 et les règles d’impression.
  */
 
-import { TRUCK_LOGO_SVG_MARK } from '@/lib/invoice-branding';
+import { getCompanyLogoImgHtml } from '@/lib/invoice-branding';
 
 export type PdfPrintVariant = 'invoice' | 'report' | 'report-landscape';
 
@@ -295,7 +295,7 @@ export function buildPdfBrandHtml(opts: {
 }): string {
   return `
     <div class="pdf-brand">
-      <div class="pdf-brand-logo">${TRUCK_LOGO_SVG_MARK}</div>
+      <div class="pdf-brand-logo" style="background:#fff;border:1px solid #e2e8f0;width:auto;min-width:120px;padding:6px 10px;">${getCompanyLogoImgHtml()}</div>
       <div>
         <div class="pdf-brand-name">${escapePdfHtml(opts.companyName)}</div>
         ${opts.tagline ? `<div class="pdf-brand-meta">${escapePdfHtml(opts.tagline)}</div>` : ''}

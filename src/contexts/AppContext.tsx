@@ -675,7 +675,11 @@ function normalizeClientDelivery(r: Record<string, unknown>): ClientDelivery {
   return {
     id: String(r.id),
     clientOrderId: String(r.clientOrderId),
-    clientId: r.clientId ? String(r.clientId) : undefined,
+    clientId: r.clientId
+      ? String(r.clientId)
+      : order?.clientId
+        ? String(order.clientId)
+        : undefined,
     clientNom: r.clientNom ? String(r.clientNom) : undefined,
     clientTelephone: r.clientTelephone ? String(r.clientTelephone) : undefined,
     clientAdresse: r.clientAdresse ? String(r.clientAdresse) : undefined,
@@ -1289,6 +1293,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateTrip = async (id: string, data: Parameters<typeof tripsApi.update>[1]) => {
     const r = await tripsApi.update(id, data);
     void refreshTrips();
+    if (data.statut === 'termine') {
+      await refreshInvoices();
+    }
     return normalizeTrip(r as Record<string, unknown>);
   };
 

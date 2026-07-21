@@ -106,8 +106,66 @@ const trips = createTableApi({
   ],
   dateKeys: ['dateDepart', 'dateArrivee'],
   jsonKeys: ['stops', 'clientParticipants'],
+  afterWrite: async (action, after, actor, before) => {
+    if (action !== 'update') return;
+    if (!after || after.statut !== 'termine') return;
+    if (before && before.statut === 'termine') return;
+    await ensureTripInvoiceOnCompletion(after, actor);
+  },
 });
 
+async function nextTripInvoiceNumero() {
+  const year = new Date().getFullYear();
+  const { rows } = await query(`SELECT count(*)::int AS c FROM invoices`);
+  return `FAC-${year}-${String((rows[0]?.c || 0) + 1).padStart(3, '0')}`;
+}
+
+async function ensureTripInvoiceOnCompletion(trip, actor) {
+  const recette = num(trip.recette);
+  if (recette <= 0) return;
+  const { rows } = await query(
+    `SELECT COALESCE(SUM("montantTTC"), 0)::float AS s FROM invoices WHERE "trajetId" = $1`,
+    [trip.id],
+  );
+  const sumTtc = num(rows[0]?.s);
+  const reste = Math.max(0, recette - sumTtc);
+  if (reste <= 0.01) return;
+
+  const parts = Array.isArray(trip.clientParticipants) ? trip.clientParticipants : [];
+  const payeurId = trip.payeurParticipantId;
+  const payeur = payeurId ? parts.find((p) => p.id === payeurId) : parts[0];
+  const clientTierId = payeur?.tierId || null;
+  const factureClientLibelle =
+    (payeur?.libelle || trip.client || '').trim() || null;
+
+  const id = randomUUID();
+  const numero = await nextTripInvoiceNumero();
+  await query(
+    `INSERT INTO invoices (
+      id, numero, "trajetId", statut, "montantHT", "montantHTApresRemise", "montantTTC",
+      "montantPaye", "dateCreation", "clientTierId", "factureClientLibelle", notes
+    ) VALUES ($1,$2,$3,'en_attente',$4,$4,$4,0,$5,$6,$7,$8)`,
+    [
+      id,
+      numero,
+      trip.id,
+      reste,
+      new Date().toISOString().slice(0, 10),
+      clientTierId,
+      factureClientLibelle,
+      `Facture automatique — trajet ${trip.origine} → ${trip.destination}`,
+    ],
+  );
+  await audit(
+    'invoices',
+    'CREATE',
+    id,
+    `Facture auto ${numero} (trajet terminé)`,
+    null,
+    { id, numero, trajetId: trip.id, montantTTC: reste },
+    actor,
+  );
+}
 const expenses = createTableApi({
   table: 'expenses',
   moduleName: 'expenses',

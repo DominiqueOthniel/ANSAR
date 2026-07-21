@@ -65,9 +65,9 @@ function deliveryTransportMontant(d) {
 }
 
 function deliveryBillsTransport(d) {
+  if (d.statut !== 'livree') return false;
   if (d.modeSortie === 'retrait_hub') return false;
   if (deliveryTransportMontant(d) <= 0) return false;
-  if (d.statut === 'annulee') return false;
   if (d.transportFactureParFournisseur) return true;
   return Boolean(d.chauffeurId || d.tracteurId);
 }
@@ -179,6 +179,31 @@ async function ensureOrderInvoice(orderId, payment, actor) {
       ],
     );
     await query(`UPDATE client_orders SET "invoiceId" = $2 WHERE id = $1`, [orderId, id]);
+  }
+}
+
+function deriveOrderStatus(deliveries) {
+  const active = deliveries.filter((d) => d.statut !== 'annulee');
+  if (active.length === 0) return 'confirmee';
+  if (active.every((d) => d.statut === 'livree')) return 'livree';
+  const someLivree = active.some((d) => d.statut === 'livree');
+  const someEnCours = active.some((d) => d.statut === 'en_cours' || d.statut === 'livree');
+  if (someLivree) return 'partiellement_livree';
+  if (someEnCours) return 'en_preparation';
+  return 'confirmee';
+}
+
+async function syncOrderStatusFromDeliveries(orderId) {
+  const order = await getOrder(orderId);
+  if (!order || order.statut === 'annulee' || order.statut === 'brouillon') return;
+  const { rows } = await query(`SELECT * FROM client_deliveries WHERE "clientOrderId" = $1`, [
+    orderId,
+  ]);
+  const deliveries = rows.map(mapDelivery);
+  if (deliveries.length === 0) return;
+  const next = deriveOrderStatus(deliveries);
+  if (next !== order.statut) {
+    await query(`UPDATE client_orders SET statut = $2 WHERE id = $1`, [orderId, next]);
   }
 }
 
@@ -313,6 +338,16 @@ async function updateOrder(id, body, actor) {
     ],
   );
   if (body.statut === 'annulee') await releaseLoadingsForOrder(id);
+  if (body.statut === 'livree' && before.statut !== 'livree') {
+    const today = new Date().toISOString().slice(0, 10);
+    await query(
+      `UPDATE client_deliveries SET
+        statut = 'livree',
+        "dateLivraison" = COALESCE("dateLivraison", "datePrevue", $2)
+       WHERE "clientOrderId" = $1 AND statut NOT IN ('livree', 'annulee')`,
+      [id, today],
+    );
+  }
   await ensureOrderInvoice(
     id,
     body.montantPaye != null
@@ -335,21 +370,33 @@ async function deleteOrder(id, actor) {
 }
 
 async function createDelivery(body, actor) {
+  const order = await getOrder(body.clientOrderId);
+  if (!order) throw HttpError(404, 'Commande introuvable');
   const id = randomUUID();
+  const statut = body.statut || 'planifiee';
+  let dateLivraison = dateOnly(body.dateLivraison);
+  if (statut === 'livree' && !dateLivraison) {
+    dateLivraison = dateOnly(body.datePrevue) || new Date().toISOString().slice(0, 10);
+  }
   await query(
     `INSERT INTO client_deliveries (
-      id, "clientOrderId", "modeSortie", "lieuLivraison", statut,
+      id, "clientOrderId", "clientId", "clientNom", "clientTelephone", "clientAdresse",
+      "modeSortie", "lieuLivraison", statut,
       "datePrevue", "dateLivraison", "chauffeurId", "tracteurId",
       "montantTransport", "transportFactureParFournisseur", "transportFournisseurId", notes
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [
       id,
       body.clientOrderId,
+      order.clientId || null,
+      order.clientNom || null,
+      order.clientTelephone || null,
+      order.clientAdresse || null,
       body.modeSortie || 'livraison_directe',
       body.lieuLivraison || '',
-      body.statut || 'planifiee',
+      statut,
       dateOnly(body.datePrevue),
-      dateOnly(body.dateLivraison),
+      dateLivraison,
       body.chauffeurId || null,
       body.tracteurId || null,
       body.montantTransport != null ? num(body.montantTransport) : null,
@@ -358,6 +405,7 @@ async function createDelivery(body, actor) {
       body.notes || null,
     ],
   );
+  await syncOrderStatusFromDeliveries(body.clientOrderId);
   await ensureOrderInvoice(body.clientOrderId, undefined, actor);
   const row = await getDelivery(id);
   await audit('client-deliveries', 'CREATE', id, 'Création livraison', null, row, actor);
@@ -367,6 +415,16 @@ async function createDelivery(body, actor) {
 async function updateDelivery(id, body, actor) {
   const before = await getDelivery(id);
   if (!before) throw HttpError(404, 'Livraison introuvable');
+  const nextStatut = body.statut ?? before.statut;
+  let dateLivraison =
+    body.dateLivraison !== undefined ? dateOnly(body.dateLivraison) : undefined;
+  if (
+    nextStatut === 'livree' &&
+    dateLivraison === undefined &&
+    !before.dateLivraison
+  ) {
+    dateLivraison = new Date().toISOString().slice(0, 10);
+  }
   await query(
     `UPDATE client_deliveries SET
       "modeSortie" = COALESCE($2, "modeSortie"),
@@ -376,7 +434,7 @@ async function updateDelivery(id, body, actor) {
       "dateLivraison" = COALESCE($6, "dateLivraison"),
       "chauffeurId" = COALESCE($7, "chauffeurId"),
       "tracteurId" = COALESCE($8, "tracteurId"),
-      "montantTransport" = COALESCE($9, "montantTransport"),
+      "montantTransport" = CASE WHEN $13::boolean THEN $9::numeric ELSE "montantTransport" END,
       "transportFactureParFournisseur" = COALESCE($10, "transportFactureParFournisseur"),
       "transportFournisseurId" = COALESCE($11, "transportFournisseurId"),
       notes = COALESCE($12, notes)
@@ -387,17 +445,21 @@ async function updateDelivery(id, body, actor) {
       body.lieuLivraison ?? null,
       body.statut ?? null,
       body.datePrevue !== undefined ? dateOnly(body.datePrevue) : null,
-      body.dateLivraison !== undefined ? dateOnly(body.dateLivraison) : null,
+      dateLivraison !== undefined ? dateLivraison : null,
       body.chauffeurId !== undefined ? body.chauffeurId : null,
       body.tracteurId !== undefined ? body.tracteurId : null,
-      body.montantTransport !== undefined ? num(body.montantTransport) : null,
+      body.montantTransport != null && body.montantTransport !== ''
+        ? num(body.montantTransport)
+        : null,
       body.transportFactureParFournisseur !== undefined
         ? Boolean(body.transportFactureParFournisseur)
         : null,
       body.transportFournisseurId !== undefined ? body.transportFournisseurId : null,
       body.notes !== undefined ? body.notes : null,
+      body.montantTransport !== undefined,
     ],
   );
+  await syncOrderStatusFromDeliveries(before.clientOrderId);
   await ensureOrderInvoice(before.clientOrderId, undefined, actor);
   const after = await getDelivery(id);
   await audit('client-deliveries', 'UPDATE', id, 'Modification livraison', before, after, actor);
@@ -409,6 +471,7 @@ async function deleteDelivery(id, actor) {
   if (!before) throw HttpError(404, 'Livraison introuvable');
   const orderId = before.clientOrderId;
   await query(`DELETE FROM client_deliveries WHERE id = $1`, [id]);
+  await syncOrderStatusFromDeliveries(orderId);
   await ensureOrderInvoice(orderId, undefined, actor);
   await audit('client-deliveries', 'DELETE', id, 'Suppression livraison', before, null, actor);
 }
