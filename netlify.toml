@@ -11,6 +11,10 @@
   node_bundler = "nft"
   included_files = ["server/**"]
 
+# Restore/backup peuvent dépasser le défaut 10s (plan Pro : max 26s).
+[functions.api]
+  timeout = 26
+
 # Aussi dans public/_redirects (copié dans dist) — les règles _redirects
 # sont évaluées AVANT netlify.toml ; /api doit y figurer en premier.
 [[redirects]]

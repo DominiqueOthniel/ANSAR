@@ -64,10 +64,10 @@ export async function createNestExpressApp(): Promise<NestExpressInstance> {
     logger: process.env.NETLIFY === 'true' ? ['error', 'warn'] : undefined,
   });
 
-  app.use(json({ limit: '2mb' }));
+  app.use(json({ limit: '15mb' }));
   app.use(
     urlencoded({
-      limit: '2mb',
+      limit: '15mb',
       extended: true,
     }),
   );
