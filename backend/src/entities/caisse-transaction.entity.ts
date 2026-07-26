@@ -41,6 +41,10 @@ export class CaisseTransactionEntity {
   @Column({ name: 'clientTierId', type: 'uuid', nullable: true })
   clientTierId?: string;
 
+  /** Mode de paiement métier (Espèces, MTN, Virement direct…). */
+  @Column({ name: 'modePaiement', type: 'varchar', length: 80, nullable: true })
+  modePaiement?: string;
+
   @Column({ name: 'createdAt', type: 'timestamp', nullable: true })
   createdAt?: Date;
 }

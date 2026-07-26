@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS caisse_transactions (
   "bankTransactionId" VARCHAR(128),
   "exclutRevenu" BOOLEAN NOT NULL DEFAULT FALSE,
   "clientTierId" UUID,
+  "modePaiement" VARCHAR(80),
   "createdAt" TIMESTAMPTZ DEFAULT NOW()
 );
 

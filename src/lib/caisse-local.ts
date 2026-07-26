@@ -3,6 +3,9 @@
  */
 
 import { caisseApi, type CaisseTransactionPayload } from '@/lib/api';
+import { isPaiementVersBanque } from '@/lib/payment-modes';
+
+export { isPaiementVersBanque };
 
 export const CAISSE_STORAGE_KEY = 'caisse_transactions';
 
@@ -20,6 +23,8 @@ export interface CaisseTransaction {
   exclutRevenu?: boolean;
   /** Tiers client métier (versement / encaissement). */
   clientTierId?: string;
+  /** Mode de paiement (Espèces, MTN, Virement direct…). */
+  modePaiement?: string;
 }
 
 function parseNum(val: unknown): number {
@@ -59,6 +64,7 @@ export function normalizeCaisseTx(r: Record<string, unknown>): CaisseTransaction
     bankTransactionId: r.bankTransactionId ? String(r.bankTransactionId) : undefined,
     exclutRevenu: Boolean(r.exclutRevenu),
     clientTierId: r.clientTierId ? String(r.clientTierId) : undefined,
+    modePaiement: r.modePaiement ? String(r.modePaiement) : undefined,
   };
 }
 
@@ -90,14 +96,28 @@ export function getCaisseSoldeInitialSync(): number {
   return parseFloat(localStorage.getItem('caisse_solde_initial') || '0') || 0;
 }
 
-/** Solde caisse = solde initial + entrées − sorties. */
+/**
+ * Sortie en virement direct : débit banque Ansar uniquement (hors solde espèces).
+ * Entrée en virement : alimentation caisse (prélèvement banque → espèces), compte dans le solde.
+ */
+export function caisseAffectsCashSolde(
+  t: Pick<CaisseTransaction, 'type' | 'modePaiement'>,
+): boolean {
+  if (t.type === 'sortie' && isPaiementVersBanque(t.modePaiement)) return false;
+  return true;
+}
+
+/** Solde caisse = solde initial + entrées − sorties (hors sorties virement banque). */
 export function computeCaisseSoldeActuel(
   soldeInitial: number,
   transactions: CaisseTransaction[],
 ): number {
   return (
     soldeInitial +
-    transactions.reduce((sum, t) => (t.type === 'entree' ? sum + t.montant : sum - t.montant), 0)
+    transactions.reduce((sum, t) => {
+      if (!caisseAffectsCashSolde(t)) return sum;
+      return t.type === 'entree' ? sum + t.montant : sum - t.montant;
+    }, 0)
   );
 }
 
@@ -164,10 +184,11 @@ function payloadFromTx(t: CaisseTransaction): CaisseTransactionPayload {
     utilisateur: t.utilisateur?.trim() || 'Système',
     categorie: t.categorie,
     reference: t.reference,
-    compteBanqueId: t.compteBanqueId,
-    bankTransactionId: t.bankTransactionId,
+    compteBanqueId: t.compteBanqueId || null,
+    bankTransactionId: t.bankTransactionId || null,
     exclutRevenu: Boolean(t.exclutRevenu),
     clientTierId: t.clientTierId || null,
+    modePaiement: t.modePaiement || null,
   };
 }
 
@@ -240,10 +261,6 @@ export async function appendSortieFromExpenseInvoicePayment(params: {
   }
 }
 
-import { isPaiementVersBanque } from '@/lib/payment-modes';
-
-export { isPaiementVersBanque };
-
 /** @deprecated utiliser !isPaiementVersBanque */
 export function isModeEncaissementCaisse(mode: string | undefined): boolean {
   if (!mode) return true;
@@ -299,7 +316,7 @@ export async function removeCaisseLienDepense(expenseId: string): Promise<void> 
 export async function saveCaisseTransactionRemote(tx: CaisseTransaction, isNew: boolean): Promise<void> {
   const txs = getCaisseTransactions();
   const soldeInitial = getCaisseSoldeInitialSync();
-  if (tx.type === 'sortie') {
+  if (tx.type === 'sortie' && caisseAffectsCashSolde(tx)) {
     assertCaisseSortieAllowed(soldeInitial, txs, tx.montant, isNew ? undefined : tx.id);
   }
 

@@ -99,6 +99,26 @@ export function listAnsarBankAccountsForDirectTransfer(accounts: BankAccount[]):
   return { accounts, filteredToAnsar: false };
 }
 
+/** Libellé affichage : banque puis nom du compte. */
+export function formatBankAccountLabel(account: Pick<BankAccount, 'banque' | 'nom' | 'numeroCompte'>): string {
+  const banque = account.banque?.trim() || 'Banque';
+  const nom = account.nom?.trim();
+  const num = account.numeroCompte?.trim();
+  const parts = [banque];
+  if (nom && nom.toLowerCase() !== banque.toLowerCase()) parts.push(nom);
+  if (num) parts.push(num);
+  return parts.join(' · ');
+}
+
+export function resolveBankAccountLabel(
+  compteId: string | undefined | null,
+  accounts: BankAccount[],
+): string {
+  if (!compteId) return '—';
+  const acc = accounts.find((a) => a.id === compteId);
+  return acc ? formatBankAccountLabel(acc) : '—';
+}
+
 export function defaultModeForFamily(family: PaymentModeFamily): PaymentModeValue {
   switch (family) {
     case 'especes':

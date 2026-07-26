@@ -47,4 +47,8 @@ export class CreateCaisseTransactionDto {
   @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
   @IsUUID()
   clientTierId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  modePaiement?: string;
 }

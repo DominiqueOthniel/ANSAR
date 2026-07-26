@@ -284,6 +284,116 @@ export async function addRetraitPourCaisse(params: {
 }
 
 /**
+ * Débit bancaire lié à une sortie caisse en virement direct (sans impact solde espèces).
+ */
+export async function appendBankDebitForCaisse(params: {
+  compteId: string;
+  montant: number;
+  date: string;
+  description: string;
+  caisseTransactionId: string;
+}): Promise<{ ok: true; bankTransactionId: string } | { ok: false; message: string }> {
+  if (params.montant <= 0 || !params.compteId) {
+    return { ok: false, message: 'Compte et montant requis.' };
+  }
+  const dateStr = normalizeDate(params.date);
+  const accounts = getBankAccounts();
+  const transactions = getBankTransactions();
+  const disponible = calculateAccountBalance(params.compteId, accounts, transactions);
+  if (disponible < params.montant) {
+    return {
+      ok: false,
+      message: `Solde bancaire insuffisant. Disponible : ${disponible.toLocaleString('fr-FR')} FCFA`,
+    };
+  }
+
+  if (isRemoteCaisse()) {
+    try {
+      const saved = await bankApi.createTransaction({
+        compteId: params.compteId,
+        type: 'prelevement',
+        montant: params.montant,
+        date: dateStr,
+        description: params.description,
+        reference: `caisse:${params.caisseTransactionId}`,
+        categorie: 'Caisse',
+      });
+      await refreshBankFromApi();
+      return { ok: true, bankTransactionId: String((saved as { id: string }).id) };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : 'Erreur débit bancaire',
+      };
+    }
+  }
+
+  const bankTransactionId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const newTx: BankTransaction = {
+    id: bankTransactionId,
+    compteId: params.compteId,
+    type: 'prelevement',
+    montant: params.montant,
+    date: dateStr,
+    description: params.description,
+    reference: `caisse:${params.caisseTransactionId}`,
+    categorie: 'Caisse',
+  };
+  const newTransactions = [...transactions, newTx];
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(newTransactions));
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(recalculateAllBalances(accounts, newTransactions)));
+  return { ok: true, bankTransactionId };
+}
+
+/**
+ * Crédite un compte (virement / dépôt) pour un mouvement caisse lié à une banque.
+ */
+export async function appendBankCreditForCaisse(params: {
+  compteId: string;
+  montant: number;
+  date: string;
+  description: string;
+  caisseTransactionId: string;
+}): Promise<{ ok: true; bankTransactionId: string } | { ok: false; message: string }> {
+  if (params.montant <= 0 || !params.compteId) {
+    return { ok: false, message: 'Compte et montant requis.' };
+  }
+  const dateStr = normalizeDate(params.date);
+  if (isRemoteCaisse()) {
+    try {
+      const saved = await bankApi.createTransaction({
+        compteId: params.compteId,
+        type: 'virement',
+        montant: params.montant,
+        date: dateStr,
+        description: params.description,
+        reference: `caisse:${params.caisseTransactionId}`,
+        categorie: 'Caisse',
+      });
+      await refreshBankFromApi();
+      return { ok: true, bankTransactionId: String((saved as { id: string }).id) };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : 'Erreur crédit bancaire',
+      };
+    }
+  }
+  const bankTransactionId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  appendBankTransactionLocal({
+    id: bankTransactionId,
+    compteId: params.compteId,
+    type: 'virement',
+    montant: params.montant,
+    date: dateStr,
+    description: params.description,
+    reference: `caisse:${params.caisseTransactionId}`,
+    categorie: 'Caisse',
+  });
+  return { ok: true, bankTransactionId };
+}
+
+/**
  * Crédite un compte (type `virement`) lorsqu'un client règle une facture par virement.
  */
 export async function appendVirementFromInvoicePayment(params: {

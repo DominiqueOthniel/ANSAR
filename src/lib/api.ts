@@ -590,10 +590,11 @@ export interface CaisseTransactionPayload {
   utilisateur?: string;
   categorie?: string;
   reference?: string;
-  compteBanqueId?: string;
-  bankTransactionId?: string;
+  compteBanqueId?: string | null;
+  bankTransactionId?: string | null;
   exclutRevenu?: boolean;
   clientTierId?: string | null;
+  modePaiement?: string | null;
 }
 
 export const caisseApi = {

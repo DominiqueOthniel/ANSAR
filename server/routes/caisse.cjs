@@ -21,12 +21,23 @@ async function ensureConfig() {
   return rows[0];
 }
 
+function affectsCashSolde(t) {
+  const mode = String(t.modePaiement || '')
+    .trim()
+    .toLowerCase();
+  if (t.type === 'sortie' && (mode === 'virement direct' || mode.includes('virement direct'))) {
+    return false;
+  }
+  return true;
+}
+
 async function balanceExcluding(excludeId) {
   const cfg = await ensureConfig();
   let solde = num(cfg.soldeInitial);
-  const { rows } = await query(`SELECT id, type, montant FROM caisse_transactions`);
+  const { rows } = await query(`SELECT id, type, montant, "modePaiement" FROM caisse_transactions`);
   for (const t of rows) {
     if (excludeId && t.id === excludeId) continue;
+    if (!affectsCashSolde(t)) continue;
     const m = num(t.montant);
     solde += t.type === 'entree' ? m : -m;
   }
@@ -87,13 +98,15 @@ async function listTx() {
 }
 
 async function createTx(body, actor) {
-  if (body.type === 'sortie') await assertSortie(num(body.montant));
+  if (body.type === 'sortie' && affectsCashSolde({ type: body.type, modePaiement: body.modePaiement })) {
+    await assertSortie(num(body.montant));
+  }
   const id = body.id?.trim() || randomUUID();
   await query(
     `INSERT INTO caisse_transactions (
       id, type, montant, date, description, utilisateur, categorie, reference,
-      "compteBanqueId", "bankTransactionId", "exclutRevenu", "clientTierId", "createdAt"
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+      "compteBanqueId", "bankTransactionId", "exclutRevenu", "clientTierId", "modePaiement", "createdAt"
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
     [
       id,
       body.type,
@@ -107,6 +120,7 @@ async function createTx(body, actor) {
       body.bankTransactionId || null,
       Boolean(body.exclutRevenu),
       body.clientTierId || null,
+      body.modePaiement || null,
     ],
   );
   const row = mapTx((await query(`SELECT * FROM caisse_transactions WHERE id = $1`, [id])).rows[0]);
@@ -120,7 +134,10 @@ async function updateTx(id, body, actor) {
   const before = mapTx(rows[0]);
   const newType = body.type ?? before.type;
   const newMontant = body.montant !== undefined ? num(body.montant) : before.montant;
-  if (newType === 'sortie') await assertSortie(newMontant, id);
+  const newMode = body.modePaiement !== undefined ? body.modePaiement : before.modePaiement;
+  if (newType === 'sortie' && affectsCashSolde({ type: newType, modePaiement: newMode })) {
+    await assertSortie(newMontant, id);
+  }
   await query(
     `UPDATE caisse_transactions SET
       type = COALESCE($2, type),
@@ -130,10 +147,11 @@ async function updateTx(id, body, actor) {
       utilisateur = COALESCE($6, utilisateur),
       categorie = COALESCE($7, categorie),
       reference = COALESCE($8, reference),
-      "compteBanqueId" = COALESCE($9, "compteBanqueId"),
-      "bankTransactionId" = COALESCE($10, "bankTransactionId"),
+      "compteBanqueId" = CASE WHEN $14::boolean THEN $9 ELSE "compteBanqueId" END,
+      "bankTransactionId" = CASE WHEN $15::boolean THEN $10 ELSE "bankTransactionId" END,
       "exclutRevenu" = COALESCE($11, "exclutRevenu"),
-      "clientTierId" = CASE WHEN $13::boolean THEN $12 ELSE "clientTierId" END
+      "clientTierId" = CASE WHEN $13::boolean THEN $12 ELSE "clientTierId" END,
+      "modePaiement" = CASE WHEN $16::boolean THEN $17 ELSE "modePaiement" END
      WHERE id = $1`,
     [
       id,
@@ -146,11 +164,15 @@ async function updateTx(id, body, actor) {
         : null,
       body.categorie !== undefined ? body.categorie : null,
       body.reference !== undefined ? body.reference : null,
-      body.compteBanqueId !== undefined ? body.compteBanqueId : null,
-      body.bankTransactionId !== undefined ? body.bankTransactionId : null,
+      body.compteBanqueId !== undefined ? body.compteBanqueId || null : null,
+      body.bankTransactionId !== undefined ? body.bankTransactionId || null : null,
       body.exclutRevenu !== undefined ? Boolean(body.exclutRevenu) : null,
       body.clientTierId !== undefined ? body.clientTierId || null : null,
       body.clientTierId !== undefined,
+      body.compteBanqueId !== undefined,
+      body.bankTransactionId !== undefined,
+      body.modePaiement !== undefined,
+      body.modePaiement !== undefined ? body.modePaiement || null : null,
     ],
   );
   const after = mapTx((await query(`SELECT * FROM caisse_transactions WHERE id = $1`, [id])).rows[0]);

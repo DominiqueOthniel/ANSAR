@@ -40,6 +40,8 @@ import {
   appendSortieFromExpenseInvoicePayment,
   isPaiementVersBanque,
 } from '@/lib/caisse-local';
+import { PaymentModePicker } from '@/components/PaymentModePicker';
+import { AnsarBankAccountSelect } from '@/components/AnsarBankAccountSelect';
 import {
   isVirementIndirect,
   listAnsarBankAccountsForDirectTransfer,
@@ -47,7 +49,6 @@ import {
   paymentModeHint,
   paymentTreasuryDestination,
 } from '@/lib/payment-modes';
-import { PaymentModePicker } from '@/components/PaymentModePicker';
 import {
   COMPANY_BP,
   COMPANY_EMAIL,
@@ -3206,78 +3207,45 @@ export default function Invoices() {
                 }}
               />
 
-              {paymentAmount > 0 && isPaiementVersBanque(selectedInvoice.modePaiement) && (() => {
-                const { accounts: ansarAccs, filteredToAnsar } =
-                  listAnsarBankAccountsForDirectTransfer(getBankAccounts());
-                return (
+              {isPaiementVersBanque(selectedInvoice.modePaiement) && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/20 p-4 space-y-3">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Landmark className="h-4 w-4 shrink-0 text-amber-600" />
                     {selectedInvoice.expenseId
-                      ? 'Compte Ansar débité (virement direct)'
-                      : 'Compte Ansar crédité (virement direct)'}
+                      ? 'Banque Ansar débitée (virement direct)'
+                      : 'Banque Ansar créditée (virement direct)'}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {filteredToAnsar
-                      ? 'Comptes Ansar : Afriland, CBC, UBA, CCA.'
-                      : 'Aucun compte Afriland / CBC / UBA / CCA reconnu : tous les comptes sont listés. Vérifiez le champ « banque » des comptes.'}
-                  </p>
-                  {ansarAccs.length === 0 ? (
-                    <p className="text-sm text-destructive">
-                      Aucun compte bancaire enregistré. Ajoutez-en un pour les virements directs.
-                    </p>
-                  ) : (
-                    <>
-                      <div>
-                        <Label htmlFor="paymentBankAccount">Compte bancaire *</Label>
-                        <Select
-                          value={paymentCompteBanqueId || undefined}
-                          onValueChange={setPaymentCompteBanqueId}
-                        >
-                          <SelectTrigger id="paymentBankAccount" className="mt-1">
-                            <SelectValue
-                              placeholder={
-                                selectedInvoice.expenseId
-                                  ? 'Choisir le compte à débiter'
-                                  : 'Choisir le compte crédité'
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ansarAccs.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.nom} — {a.banque}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {paymentCompteBanqueId && soldeComptePourVirement !== null && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-muted-foreground">
-                            Solde disponible sur ce compte avant ce paiement :{' '}
-                            <span className="font-medium tabular-nums text-foreground">
-                              {soldeComptePourVirement.toLocaleString('fr-FR')} FCFA
-                            </span>
-                          </p>
-                          {paiementBanqueDepenseInsuffisant && (
-                            <p className="text-sm text-destructive flex items-start gap-2">
-                              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                              <span>
-                                Solde insuffisant pour régler ce montant par la banque. Réduisez le paiement,
-                                choisissez un autre compte ou utilisez un autre mode (caisse).
-                              </span>
-                            </p>
-                          )}
-                        </div>
+                  <AnsarBankAccountSelect
+                    id="paymentBankAccount"
+                    label="Banque *"
+                    value={paymentCompteBanqueId}
+                    onChange={setPaymentCompteBanqueId}
+                    accounts={getBankAccounts()}
+                    intent={selectedInvoice.expenseId ? 'debit' : 'credit'}
+                  />
+                  {paymentCompteBanqueId && soldeComptePourVirement !== null && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Solde disponible sur ce compte avant ce paiement :{' '}
+                        <span className="font-medium tabular-nums text-foreground">
+                          {soldeComptePourVirement.toLocaleString('fr-FR')} FCFA
+                        </span>
+                      </p>
+                      {paiementBanqueDepenseInsuffisant && (
+                        <p className="text-sm text-destructive flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                          <span>
+                            Solde insuffisant pour régler ce montant par la banque. Réduisez le paiement,
+                            choisissez un autre compte ou utilisez un autre mode (caisse).
+                          </span>
+                        </p>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
-                );
-              })()}
+              )}
 
-              {paymentAmount > 0 && isVirementIndirect(selectedInvoice.modePaiement) && (
+              {isVirementIndirect(selectedInvoice.modePaiement) && (
                 <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 dark:bg-sky-950/20 p-3 text-sm text-sky-900 dark:text-sky-200">
                   {paymentModeHint(selectedInvoice.modePaiement)}
                 </div>
