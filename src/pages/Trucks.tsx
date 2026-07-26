@@ -1187,11 +1187,15 @@ export default function Trucks() {
                   <TableCell>{new Date(truck.dateMiseEnCirculation).toLocaleDateString('fr-FR')}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {truck.photo && (
-                        <Button size="sm" variant="outline" onClick={() => setViewingTruck(truck)} className="hover:shadow-md transition-all duration-200">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setViewingTruck(truck)}
+                        title="Voir la fiche et les opérations"
+                        className="hover:shadow-md transition-all duration-200"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                       {canManageFleet && (
                       <>
                       <Button size="sm" variant="outline" onClick={() => handleEdit(truck)} className="hover:shadow-md transition-all duration-200">
