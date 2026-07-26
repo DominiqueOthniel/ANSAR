@@ -343,9 +343,9 @@ export function TruckOperationsPanels({ truckId, defaultChauffeurId }: Props) {
 
       {/* Bons */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-medium">Bons de chargement ({loadings.length})</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => setLinkLoadingOpen(true)}>
               <Link2 className="h-3.5 w-3.5 mr-1" />
               Lier
@@ -409,9 +409,9 @@ export function TruckOperationsPanels({ truckId, defaultChauffeurId }: Props) {
 
       {/* Livraisons */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-medium">Livraisons ({deliveries.length})</h3>
-          <Button type="button" size="sm" onClick={openAssignDelivery}>
+          <Button type="button" size="sm" className="self-start sm:self-auto" onClick={openAssignDelivery}>
             <Plus className="h-3.5 w-3.5 mr-1" />
             Assigner
           </Button>

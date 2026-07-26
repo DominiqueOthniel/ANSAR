@@ -1852,7 +1852,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                             size="sm" 
                             variant="outline" 
                             onClick={() => handleEdit(thirdParty)}
-                            className="opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity duration-300"
+                            className="opacity-100 transition-opacity duration-300"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -1860,7 +1860,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                             size="sm" 
                             variant="destructive" 
                             onClick={() => handleDelete(thirdParty.id)}
-                            className="opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity duration-300"
+                            className="opacity-100 transition-opacity duration-300"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

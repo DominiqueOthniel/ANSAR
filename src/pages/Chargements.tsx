@@ -779,7 +779,7 @@ export default function Chargements() {
                 Nouveau bon
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editing ? 'Modifier le bon' : 'Nouveau bon de chargement'}
@@ -1141,8 +1141,8 @@ export default function Chargements() {
 
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col sm:flex-wrap sm:flex-row gap-3 items-stretch sm:items-end">
+            <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-9"
@@ -1210,7 +1210,7 @@ export default function Chargements() {
           </div>
 
           <div className="rounded-md border overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1100px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Émission</TableHead>
@@ -1360,7 +1360,8 @@ export default function Chargements() {
                           </ul>
                         )}
                       </TableCell>
-                      <TableCell className="text-right space-x-1">
+                      <TableCell className="text-right">
+                        <div className="inline-flex flex-wrap justify-end gap-1">
                         {l.statut !== 'annule' && (
                           <>
                             {l.statut === 'en_transit' && (
@@ -1369,6 +1370,7 @@ export default function Chargements() {
                                 variant="secondary"
                                 onClick={() => void handleMarkArrivedHub(l)}
                                 title="Marquer arrivé au hub"
+                                className="shrink-0"
                               >
                                 <MapPin className="h-4 w-4" />
                               </Button>
@@ -1378,6 +1380,7 @@ export default function Chargements() {
                               variant="outline"
                               onClick={() => openAssign(l)}
                               title="Affecter aux commandes"
+                              className="shrink-0"
                             >
                               <Link2 className="h-4 w-4" />
                             </Button>
@@ -1387,11 +1390,12 @@ export default function Chargements() {
                                 variant="outline"
                                 onClick={() => openReassign(l)}
                                 title="Réaffecter à un autre client"
+                                className="shrink-0"
                               >
                                 <RefreshCw className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" onClick={() => openEdit(l)}>
+                            <Button size="sm" variant="outline" onClick={() => openEdit(l)} className="shrink-0">
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
@@ -1399,6 +1403,7 @@ export default function Chargements() {
                               variant="outline"
                               onClick={() => void handleAnnuler(l)}
                               title="Annuler"
+                              className="shrink-0"
                             >
                               <Ban className="h-4 w-4" />
                             </Button>
@@ -1409,9 +1414,11 @@ export default function Chargements() {
                           variant="ghost"
                           onClick={() => void handleDelete(l)}
                           title="Supprimer"
+                          className="shrink-0"
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1423,7 +1430,7 @@ export default function Chargements() {
       </Card>
 
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Affecter le bon — {assignLoading?.designation}</DialogTitle>
           </DialogHeader>
@@ -1555,7 +1562,7 @@ export default function Chargements() {
       </Dialog>
 
       <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Réaffecter le bon — {reassignLoading?.designation}</DialogTitle>
           </DialogHeader>

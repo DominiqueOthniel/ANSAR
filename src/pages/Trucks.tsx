@@ -1186,19 +1186,19 @@ export default function Trucks() {
                   </TableCell>
                   <TableCell>{new Date(truck.dateMiseEnCirculation).toLocaleDateString('fr-FR')}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end flex-wrap gap-1.5 sm:gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setViewingTruck(truck)}
                         title="Voir la fiche et les opérations"
-                        className="hover:shadow-md transition-all duration-200"
+                        className="shrink-0 hover:shadow-md transition-all duration-200"
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
                       {canManageFleet && (
                       <>
-                      <Button size="sm" variant="outline" onClick={() => handleEdit(truck)} className="hover:shadow-md transition-all duration-200">
+                      <Button size="sm" variant="outline" onClick={() => handleEdit(truck)} className="shrink-0 hover:shadow-md transition-all duration-200">
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button size="sm" variant="destructive" onClick={() => handleDelete(truck.id)} className="hover:shadow-md transition-all duration-200">
@@ -1218,23 +1218,23 @@ export default function Trucks() {
 
       {/* Dialog de visualisation de la photo */}
       <Dialog open={!!viewingTruck} onOpenChange={(open) => !open && setViewingTruck(null)}>
-        <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base sm:text-lg pr-6 break-words">
               Fiche camion · {viewingTruck?.nom || viewingTruck?.immatriculation}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {viewingTruck?.photo && (
               <div className="relative w-full">
                 <img 
                   src={viewingTruck.photo} 
                   alt={`Camion ${viewingTruck.immatriculation}`}
-                  className="w-full h-auto rounded-lg object-contain max-h-[70vh] border-2 border-border"
+                  className="w-full h-auto rounded-lg object-contain max-h-[40vh] sm:max-h-[70vh] border-2 border-border"
                 />
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 bg-muted/30 rounded-lg min-w-0">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Nom du camion</p>
                 <p className="text-lg font-semibold">{viewingTruck?.nom || <span className="text-muted-foreground">—</span>}</p>
@@ -1304,63 +1304,61 @@ export default function Trucks() {
               {viewingTruck && (() => {
                 const stats = calculateTruckStats(viewingTruck.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries);
                 return (
-                  <div className="col-span-2 space-y-3">
+                  <div className="col-span-1 sm:col-span-2 space-y-3 min-w-0">
                     {/* Statistiques principales */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg p-4 border border-primary/20">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-primary/20 rounded-lg">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg p-3 sm:p-4 border border-primary/20 min-w-0">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="p-2 bg-primary/20 rounded-lg shrink-0">
                             <Route className="h-5 w-5 text-primary" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-muted-foreground">Trajets terminés</p>
-                            <p className="text-2xl font-bold text-primary">
+                            <p className="text-xs sm:text-sm font-medium text-muted-foreground">Trajets terminés</p>
+                            <p className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
                               {stats.tripsCount}
                             </p>
                           </div>
                         </div>
                       </div>
-                      <div className={`rounded-lg p-4 border ${stats.tripsCancelledCount > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-muted/30 border-border'}`}>
-                        <p className="text-sm font-medium text-muted-foreground">Trajets annulés</p>
-                        <p className={`text-2xl font-bold ${stats.tripsCancelledCount > 0 ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>
+                      <div className={`rounded-lg p-3 sm:p-4 border min-w-0 ${stats.tripsCancelledCount > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-muted/30 border-border'}`}>
+                        <p className="text-xs sm:text-sm font-medium text-muted-foreground">Trajets annulés</p>
+                        <p className={`text-xl sm:text-2xl font-bold tabular-nums ${stats.tripsCancelledCount > 0 ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>
                           {stats.tripsCancelledCount}
                         </p>
                       </div>
                     </div>
 
                     {/* Chiffre d’affaires — section dédiée */}
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border-2 border-green-200 dark:border-green-800">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-green-200 dark:bg-green-900 rounded-lg">
-                            <DollarSign className="h-5 w-5 text-green-700 dark:text-green-400" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-green-700 dark:text-green-400">Chiffre d’affaires</p>
-                            <p className="text-3xl font-bold text-green-700 dark:text-green-400">
-                              {stats.revenue.toLocaleString('fr-FR')} FCFA
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Encaissement généré par ce camion
-                            </p>
-                          </div>
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-3 sm:p-4 border-2 border-green-200 dark:border-green-800 min-w-0">
+                      <div className="flex items-start gap-2 sm:gap-3">
+                        <div className="p-2 bg-green-200 dark:bg-green-900 rounded-lg shrink-0">
+                          <DollarSign className="h-5 w-5 text-green-700 dark:text-green-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium text-green-700 dark:text-green-400">Chiffre d’affaires</p>
+                          <p className="text-xl sm:text-3xl font-bold text-green-700 dark:text-green-400 break-words tabular-nums">
+                            {stats.revenue.toLocaleString('fr-FR')} FCFA
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Encaissement généré par ce camion
+                          </p>
                         </div>
                       </div>
                     </div>
 
                     {/* Dépenses et bénéfice */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-red-50 dark:bg-red-950/20 rounded-lg p-3 border border-red-200 dark:border-red-800">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-red-50 dark:bg-red-950/20 rounded-lg p-3 border border-red-200 dark:border-red-800 min-w-0">
                         <p className="text-xs font-medium text-red-700 dark:text-red-400 mb-1">Dépenses</p>
-                        <p className="text-lg font-bold text-red-700 dark:text-red-400">
+                        <p className="text-base sm:text-lg font-bold text-red-700 dark:text-red-400 break-words tabular-nums">
                           {stats.expenses.toLocaleString('fr-FR')} FCFA
                         </p>
                       </div>
-                      <div className={`rounded-lg p-3 border ${stats.profit >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'}`}>
+                      <div className={`rounded-lg p-3 border min-w-0 ${stats.profit >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'}`}>
                         <p className={`text-xs font-medium mb-1 ${stats.profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400'}`}>
                           Bénéfice net
                         </p>
-                        <p className={`text-lg font-bold ${stats.profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400'}`}>
+                        <p className={`text-base sm:text-lg font-bold break-words tabular-nums ${stats.profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400'}`}>
                           {stats.profit.toLocaleString('fr-FR')} FCFA
                         </p>
                       </div>

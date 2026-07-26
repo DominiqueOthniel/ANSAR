@@ -3072,8 +3072,7 @@ export default function Invoices() {
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">          <DialogHeader>
             <DialogTitle>Enregistrer le paiement</DialogTitle>
           </DialogHeader>
           {selectedInvoice && (

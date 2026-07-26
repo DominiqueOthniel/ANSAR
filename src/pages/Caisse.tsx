@@ -991,10 +991,10 @@ export default function Caisse() {
       {/* Liste des transactions */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Mouvements de caisse</CardTitle>
-            <div className="flex flex-wrap gap-2">
-              <div className="relative flex-1 min-w-[160px]">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 min-w-0 sm:min-w-[160px]">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Rechercher..."
@@ -1004,7 +1004,7 @@ export default function Caisse() {
                 />
               </div>
               <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-full sm:w-[160px]">
                   <SelectValue placeholder="Tous les types" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1019,7 +1019,7 @@ export default function Caisse() {
                 value={listSort}
                 onChange={setListSort}
                 options={[...CAISSE_SORT_OPTIONS]}
-                className="min-w-[200px]"
+                className="w-full sm:min-w-[200px] sm:w-auto"
               />
             </div>
           </div>
