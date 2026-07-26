@@ -106,6 +106,7 @@ export class CaisseService {
       compteBanqueId: dto.compteBanqueId,
       bankTransactionId: dto.bankTransactionId,
       exclutRevenu: dto.exclutRevenu ?? false,
+      clientTierId: dto.clientTierId?.trim() || undefined,
       createdAt: new Date(),
     });
     const created = await this.txRepo.save(row);
@@ -142,6 +143,9 @@ export class CaisseService {
     if (dto.compteBanqueId !== undefined) patch.compteBanqueId = dto.compteBanqueId;
     if (dto.bankTransactionId !== undefined) patch.bankTransactionId = dto.bankTransactionId;
     if (dto.exclutRevenu !== undefined) patch.exclutRevenu = dto.exclutRevenu;
+    if (dto.clientTierId !== undefined) {
+      patch.clientTierId = dto.clientTierId?.trim() || undefined;
+    }
     await this.txRepo.update(id, patch);
     const u = await this.txRepo.findOne({ where: { id } });
     if (!u) throw new NotFoundException(`Mouvement caisse ${id} introuvable`);
@@ -190,6 +194,7 @@ export class CaisseService {
         compteBanqueId: dto.compteBanqueId,
         bankTransactionId: dto.bankTransactionId,
         exclutRevenu: dto.exclutRevenu,
+        clientTierId: dto.clientTierId,
       }, actor);
       const u = await this.txRepo.findOne({ where: { id: existing.id } });
       return u!;

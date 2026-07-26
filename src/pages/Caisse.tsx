@@ -27,6 +27,7 @@ import {
   removeBankTransactionAsync,
 } from '@/lib/bank-local';
 import { useApp } from '@/contexts/AppContext';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { getTotalCreancesClients } from '@/lib/sync-utils';
 import {
   type CaisseTransaction,
@@ -67,8 +68,16 @@ function formatCaisseUtilisateur(t: Pick<CaisseTransaction, 'utilisateur'>): str
   return t.utilisateur?.trim() || 'Système';
 }
 
+function resolveCaisseClientNom(
+  t: Pick<CaisseTransaction, 'clientTierId'>,
+  thirdParties: { id: string; nom: string }[],
+): string {
+  if (!t.clientTierId) return '—';
+  return thirdParties.find((tp) => tp.id === t.clientTierId)?.nom?.trim() || '—';
+}
+
 export default function Caisse() {
-  const { invoices } = useApp();
+  const { invoices, thirdParties } = useApp();
   const { canManageTreasury, user } = useAuth();
   const restoreFileRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<CaisseTransaction[]>([]);
@@ -93,7 +102,13 @@ export default function Caisse() {
     reference: '',
     /** Financement (entrée uniquement) : hors encaissement d’activité sur le tableau de bord. */
     exclutRevenu: false,
+    clientTierId: '',
   });
+
+  const clients = useMemo(
+    () => thirdParties.filter((tp) => tp.type === 'client'),
+    [thirdParties],
+  );
 
   /** Entrée : prélever le montant sur le compte bancaire (solde disponible) */
   const [deduireSurBanque, setDeduireSurBanque] = useState(true);
@@ -204,6 +219,7 @@ export default function Caisse() {
       categorie: '',
       reference: '',
       exclutRevenu: false,
+      clientTierId: '',
     });
     setEditingTransaction(null);
     const accs = getBankAccounts();
@@ -256,6 +272,7 @@ export default function Caisse() {
         compteBanqueId: undefined,
         bankTransactionId: undefined,
         exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
+        clientTierId: formData.clientTierId || undefined,
       };
 
       if (formData.type === 'entree' && shouldDeduireBanque) {
@@ -302,6 +319,7 @@ export default function Caisse() {
       montant,
       utilisateur: user?.login || 'system',
       exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
+      clientTierId: formData.clientTierId || undefined,
     };
 
     if (shouldDeduireBanque) {
@@ -365,6 +383,7 @@ export default function Caisse() {
       categorie: t.categorie || '',
       reference: t.reference || '',
       exclutRevenu: t.type === 'entree' && Boolean(t.exclutRevenu),
+      clientTierId: t.clientTierId || '',
     });
     const accs = getBankAccounts();
     setDeduireSurBanque(Boolean(t.bankTransactionId) || accs.length > 0);
@@ -440,12 +459,18 @@ export default function Caisse() {
     if (filterType === 'financement') {
       if (!isFinancementEntree(t)) return false;
     } else if (filterType !== 'all' && t.type !== filterType) return false;
-    if (
-      searchTerm &&
-      !t.description.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      !t.reference?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-      return false;
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      const clientNom = resolveCaisseClientNom(t, thirdParties).toLowerCase();
+      if (
+        !t.description.toLowerCase().includes(q) &&
+        !t.reference?.toLowerCase().includes(q) &&
+        !clientNom.includes(q) &&
+        !(clientNom === '—' && q === '—')
+      ) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -514,6 +539,7 @@ export default function Caisse() {
         { header: 'Sortie (FCFA)', value: (t) => t.sortie ?? '' },
         { header: 'Solde (FCFA)', value: (t) => t.solde },
         { header: 'Description', value: (t) => t.description },
+        { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Catégorie', value: (t) => t.categorie || '-' },
         {
@@ -582,6 +608,7 @@ export default function Caisse() {
         },
         { header: 'Solde (FCFA)', value: (t) => `${t.solde.toLocaleString('fr-FR')}` },
         { header: 'Description', value: (t) => t.description },
+        { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
       ],
       rows: sortedTransactionRows,
@@ -745,6 +772,23 @@ export default function Caisse() {
                           onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <Label>Client (optionnel)</Label>
+                      <ThirdPartyPicker
+                        className="mt-1"
+                        options={clients}
+                        value={formData.clientTierId}
+                        onValueChange={(clientTierId) =>
+                          setFormData((f) => ({ ...f, clientTierId }))
+                        }
+                        placeholder="Rattacher un client…"
+                        topChoices={[{ id: '', label: 'Aucun client' }]}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Recommandé pour les versements clients. Distinct de l’utilisateur qui saisit.
+                      </p>
                     </div>
 
                     {formData.type === 'entree' && (
@@ -981,7 +1025,7 @@ export default function Caisse() {
           </div>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-            <Table className="min-w-[760px]">
+            <Table className="min-w-[860px]">
               <TableHeader>
                 <TableRow>
                   <TableHead rowSpan={2}>Date</TableHead>
@@ -991,6 +1035,7 @@ export default function Caisse() {
                   </TableHead>
                   <TableHead rowSpan={2}>Solde</TableHead>
                   <TableHead rowSpan={2}>Description</TableHead>
+                  <TableHead rowSpan={2}>Client</TableHead>
                   <TableHead rowSpan={2}>Utilisateur</TableHead>
                   <TableHead rowSpan={2} className="whitespace-nowrap">Banque</TableHead>
                   <TableHead rowSpan={2}>Référence</TableHead>
@@ -1010,7 +1055,7 @@ export default function Caisse() {
               <TableBody>
                 {sortedTransactionRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManageTreasury ? 10 : 9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={canManageTreasury ? 11 : 10} className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-12 w-12 mx-auto mb-2 opacity-50" />
                       <p>Aucune transaction enregistrée</p>
                     </TableCell>
@@ -1042,6 +1087,9 @@ export default function Caisse() {
                         {t.solde.toLocaleString('fr-FR')} FCFA
                       </TableCell>
                       <TableCell>{t.description}</TableCell>
+                      <TableCell>
+                        <span className="text-sm">{resolveCaisseClientNom(t, thirdParties)}</span>
+                      </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground">{formatCaisseUtilisateur(t)}</span>
                       </TableCell>

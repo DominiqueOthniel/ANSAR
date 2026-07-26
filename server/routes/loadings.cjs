@@ -189,7 +189,7 @@ async function updateLoading(id, body, actor) {
       statut = COALESCE($11, statut),
       lieu = COALESCE($12, lieu),
       "modeEntree" = COALESCE($13, "modeEntree"),
-      "camionId" = COALESCE($14, "camionId"),
+      "camionId" = CASE WHEN $18::boolean THEN $14 ELSE "camionId" END,
       "hubArrivee" = COALESCE($15, "hubArrivee"),
       "dateArriveeHub" = COALESCE($16, "dateArriveeHub"),
       notes = COALESCE($17, notes)
@@ -208,10 +208,11 @@ async function updateLoading(id, body, actor) {
       body.statut ?? null,
       body.lieu !== undefined ? body.lieu : null,
       body.modeEntree ?? null,
-      body.camionId !== undefined ? body.camionId : null,
+      body.camionId !== undefined ? body.camionId || null : null,
       body.hubArrivee !== undefined ? body.hubArrivee : null,
       body.dateArriveeHub !== undefined ? dateOnly(body.dateArriveeHub) : null,
       body.notes !== undefined ? body.notes : null,
+      body.camionId !== undefined,
     ],
   );
   const mid = await getLoading(id);

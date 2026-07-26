@@ -25,6 +25,7 @@ import {
 } from '@/lib/export-utils';
 import { findSupplierLoadingForOrder } from '@/lib/supplier-loadings';
 import { frCollator, stableSort } from '@/lib/list-sort';
+import type { CaisseTransaction } from '@/lib/caisse-local';
 
 function formatFcfaPlain(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -62,9 +63,26 @@ export type ClientsExportContext = {
   trucks: Truck[];
   credits: CreditLike[];
   soldeInitialByClientId: Map<string, number>;
+  /** Mouvements de caisse rattachés à un client (versements / sorties). */
+  caisseTransactions?: CaisseTransaction[];
   filtersDescription?: string;
   fileNamePrefix?: string;
 };
+
+/** Un mouvement caisse déjà généré par un paiement de facture (évite le double comptage). */
+function isCaisseTxLieeFacture(t: CaisseTransaction): boolean {
+  const ref = t.reference ?? '';
+  return ref.startsWith('facture:') || ref.startsWith('facture-depense:');
+}
+
+function caisseTxForExportClient(
+  client: ThirdParty,
+  ctx: ClientsExportContext,
+): CaisseTransaction[] {
+  if (isWalkInExportClient(client)) return [];
+  const txs = ctx.caisseTransactions ?? [];
+  return txs.filter((t) => t.clientTierId === client.id);
+}
 
 export const WALK_IN_EXPORT_CLIENT_ID = '__client_comptoir__';
 
@@ -199,6 +217,28 @@ function buildClientLedgerRows(
       sortKey: inv.datePaiement || inv.dateCreation,
     });
   });
+
+  // Versements de caisse rattachés au client mais non liés à une facture (déjà comptée ci-dessus).
+  caisseTxForExportClient(client, ctx)
+    .filter((t) => !isCaisseTxLieeFacture(t))
+    .forEach((t) => {
+      const montant = Math.round(t.montant);
+      if (montant <= 0) return;
+      const isEntree = t.type === 'entree';
+      entries.push({
+        date: t.date,
+        qtes: '',
+        qltes: isEntree
+          ? `Versement caisse${t.categorie ? ` (${t.categorie})` : ''}`
+          : `Sortie caisse${t.categorie ? ` (${t.categorie})` : ''}`,
+        atc: cell(t.reference),
+        camion: '',
+        prixUnitaire: '',
+        debit: isEntree ? 0 : montant,
+        credit: isEntree ? montant : 0,
+        sortKey: t.date,
+      });
+    });
 
   let solde = 0;
   const sorted = stableSort(
@@ -355,6 +395,22 @@ function buildClientDetailBlocks(
       })
     : [['—', 'Aucune facture', '', '', '', '', '', '', '', '']];
 
+  const caisseTx = stableSort(
+    caisseTxForExportClient(client, ctx),
+    (a, b) => frCollator.compare(b.date, a.date),
+  );
+  const versementRows: (string | number)[][] = caisseTx.length
+    ? caisseTx.map((t) => [
+        t.date,
+        t.type === 'entree' ? 'Versement' : 'Sortie',
+        Math.round(t.montant),
+        cell(t.description),
+        cell(t.categorie),
+        cell(t.reference),
+        cell(t.utilisateur),
+      ])
+    : [['—', 'Aucun versement', '', '', '', '', '']];
+
   return [
     {
       title: 'Fiche & encours',
@@ -414,6 +470,19 @@ function buildClientDetailBlocks(
         'Notes',
       ],
       rows: invoiceRows,
+    },
+    {
+      title: `Versements caisse (${caisseTx.length})`,
+      columns: [
+        'Date',
+        'Sens',
+        'Montant (FCFA)',
+        'Description',
+        'Catégorie',
+        'Référence',
+        'Saisi par',
+      ],
+      rows: versementRows,
     },
   ];
 }
@@ -513,12 +582,42 @@ function summaryColumns(ctx: ClientsExportContext) {
 
 export function exportClientsDetailedExcel(ctx: ClientsExportContext): void {
   const prefix = ctx.fileNamePrefix ?? 'clients';
+  const soloClient = ctx.clients.length === 1 ? ctx.clients[0] : null;
+  // Un seul client : détail complet. Plusieurs : relevé de compte par client (synthèse lisible).
+  const blocks: ExportDetailBlock[] = soloClient
+    ? buildClientDetailBlocks(soloClient, ctx).map((b) => ({
+        ...b,
+        title: `${soloClient.nom} — ${b.title}`,
+      }))
+    : ctx.clients.flatMap((c) => [
+        buildClientLedgerBlock(c, ctx),
+        {
+          title: `${c.nom} — Versements caisse`,
+          columns: ['Date', 'Sens', 'Montant (FCFA)', 'Description', 'Catégorie', 'Référence'],
+          rows: (() => {
+            const txs = stableSort(
+              caisseTxForExportClient(c, ctx),
+              (a, b) => frCollator.compare(b.date, a.date),
+            );
+            return txs.length
+              ? txs.map((t) => [
+                  t.date,
+                  t.type === 'entree' ? 'Versement' : 'Sortie',
+                  Math.round(t.montant),
+                  cell(t.description),
+                  cell(t.categorie),
+                  cell(t.reference),
+                ])
+              : [['—', 'Aucun versement', '', '', '', '']];
+          })(),
+        },
+      ]);
   exportBlocksToExcel({
-    title: 'Comptes clients',
+    title: soloClient ? `Compte client — ${soloClient.nom}` : 'Comptes clients',
     fileName: `${prefix}_comptes_${new Date().toISOString().split('T')[0]}.xlsx`,
     sheetName: 'Comptes clients',
     filtersDescription: ctx.filtersDescription,
-    blocks: ctx.clients.map((c) => buildClientLedgerBlock(c, ctx)),
+    blocks,
   });
 }
 

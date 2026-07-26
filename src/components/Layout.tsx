@@ -108,6 +108,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const { isLoading, apiError } = useApp();
   const { user, logout } = useAuth();
+  const mustChangePassword = Boolean(user?.mustChangePassword);
 
   const navItems = useMemo(
     () =>
@@ -254,11 +255,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               onClick={() => setPasswordDialogOpen(true)}
               title="Mon mot de passe"
               aria-label="Mon mot de passe"
-              className="flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100"
+              disabled={mustChangePassword}
+              className="flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-[colors,transform] duration-200 ease-ios active:scale-95 motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
             >
               <KeyRound className="h-4 w-4" />
             </button>
             <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
+            <ChangePasswordDialog
+              open={mustChangePassword}
+              onOpenChange={() => {}}
+              forced
+            />
             <button
               onClick={logout}
               title="Déconnexion"

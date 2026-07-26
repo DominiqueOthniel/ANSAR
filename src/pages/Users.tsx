@@ -204,6 +204,10 @@ export default function Users() {
                     minLength={6}
                     autoComplete="new-password"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Mot de passe temporaire : à la première connexion, l’utilisateur devra en choisir
+                    un nouveau avant d’utiliser l’application.
+                  </p>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
@@ -332,7 +336,8 @@ export default function Users() {
           <form onSubmit={handleReset} className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Compte <span className="font-medium text-foreground">{resetLogin}</span> — l’utilisateur
-              pourra se connecter avec ce mot de passe temporaire, puis le changer lui-même.
+              devra changer ce mot de passe temporaire à sa prochaine connexion, avant d’utiliser
+              l’application.
             </p>
             <div>
               <Label>Nouveau mot de passe</Label>

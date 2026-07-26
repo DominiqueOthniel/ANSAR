@@ -29,6 +29,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Separator } from '@/components/ui/separator';
 import { ClientOperationsPanels } from '@/components/clients/ClientOperationsPanels';
 import { loadCreditsList } from '@/lib/load-credits-list';
+import {
+  getCaisseTransactions,
+  isRemoteCaisse,
+  refreshCaisseFromApi,
+} from '@/lib/caisse-local';
 import type { CreditLike } from '@/lib/client-credit-plafond';
 import { sumEncoursClientPourPlafond } from '@/lib/client-credit-plafond';
 import {
@@ -655,6 +660,14 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         ? creditsForPlafondSheet
         : await loadCreditsForPlafond();
     const soldeInitialByClientId = await buildSoldeInitialMap(clients);
+    if (isRemoteCaisse()) {
+      try {
+        await refreshCaisseFromApi();
+      } catch {
+        /* la caisse peut être indisponible : on exporte sans les versements */
+      }
+    }
+    const caisseTransactions = getCaisseTransactions();
     return {
       clients,
       clientOrders,
@@ -664,8 +677,69 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       trucks,
       credits,
       soldeInitialByClientId,
+      caisseTransactions,
       filtersDescription: getFiltersDescription(),
     };
+  };
+
+  const buildSingleClientExportContext = async (client: ThirdParty) => {
+    const credits =
+      creditsForPlafondSheet.length > 0
+        ? creditsForPlafondSheet
+        : await loadCreditsForPlafond();
+    const soldeInitialByClientId = await buildSoldeInitialMap([client]);
+    if (isRemoteCaisse()) {
+      try {
+        await refreshCaisseFromApi();
+      } catch {
+        /* caisse indisponible : export sans versements */
+      }
+    }
+    const caisseTransactions = getCaisseTransactions();
+    const slug =
+      client.nom
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase() || 'client';
+    return {
+      clients: [client],
+      clientOrders,
+      clientDeliveries,
+      invoices,
+      supplierLoadings,
+      trucks,
+      credits,
+      soldeInitialByClientId,
+      caisseTransactions,
+      filtersDescription: `Client : ${client.nom}`,
+      fileNamePrefix: `client_${slug}`,
+    };
+  };
+
+  const handleExportClientExcel = (client: ThirdParty) => {
+    void withGuard(async () => {
+      const ctx = await buildSingleClientExportContext(client);
+      exportClientsDetailedExcel(ctx);
+      toast.success(`Export Excel de ${client.nom} généré`);
+    });
+  };
+
+  const handleExportClientPDF = (client: ThirdParty) => {
+    void withGuard(async () => {
+      const ctx = await buildSingleClientExportContext(client);
+      exportClientsDetailedPDF(ctx, [
+        { label: 'Client', value: client.nom, style: 'neutral', icon: '👥' },
+        {
+          label: 'Commandes',
+          value: ctx.clientOrders.filter((o) => o.clientId === client.id).length,
+          style: 'neutral',
+          icon: EMOJI.liste,
+        },
+      ]);
+      toast.success(`Export PDF de ${client.nom} généré — utilisez « Enregistrer en PDF »`);
+    });
   };
 
   const handleExportExcel = () => {
@@ -1847,6 +1921,26 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                 <SheetDescription>
                   Commandes du donneur d&apos;ordre, livraisons et créances pour ce client.
                 </SheetDescription>
+                <div className="flex flex-wrap gap-2 pt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => handleExportClientExcel(detailClient)}
+                  >
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Export Excel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => handleExportClientPDF(detailClient)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Export PDF
+                  </Button>
+                </div>
               </SheetHeader>
 
               <div className="mt-6 space-y-6">

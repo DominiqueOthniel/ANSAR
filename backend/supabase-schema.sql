@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS caisse_transactions (
   -- Référence souple (ids banque locaux ou UUID API)
   "bankTransactionId" VARCHAR(128),
   "exclutRevenu" BOOLEAN NOT NULL DEFAULT FALSE,
+  "clientTierId" UUID,
   "createdAt" TIMESTAMPTZ DEFAULT NOW()
 );
 

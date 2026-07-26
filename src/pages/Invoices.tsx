@@ -41,6 +41,14 @@ import {
   isPaiementVersBanque,
 } from '@/lib/caisse-local';
 import {
+  isVirementIndirect,
+  listAnsarBankAccountsForDirectTransfer,
+  normalizePaymentMode,
+  paymentModeHint,
+  paymentTreasuryDestination,
+} from '@/lib/payment-modes';
+import { PaymentModePicker } from '@/components/PaymentModePicker';
+import {
   COMPANY_BP,
   COMPANY_EMAIL,
   COMPANY_NAME,
@@ -299,7 +307,7 @@ export default function Invoices() {
           montantTTC,
           montantPaye: 0,
           dateCreation: new Date().toISOString().split('T')[0],
-          modePaiement: modePaiement || undefined,
+          modePaiement: normalizePaymentMode(modePaiement) || undefined,
           notes: notes || undefined,
           clientTierId: invoiceMissionKind === 'trip' ? invoiceTripClientTierId || undefined : undefined,
           factureClientLibelle: resolvedLibelle,
@@ -366,15 +374,15 @@ export default function Invoices() {
       return;
     }
 
-    const mode = selectedInvoice.modePaiement;
+    const mode = normalizePaymentMode(selectedInvoice.modePaiement);
     if (paymentAmount > 0 && isPaiementVersBanque(mode)) {
-      const accs = getBankAccounts();
-      if (accs.length === 0) {
-        toast.error('Créez au moins un compte bancaire pour enregistrer un virement.');
+      const { accounts: ansarAccs } = listAnsarBankAccountsForDirectTransfer(getBankAccounts());
+      if (ansarAccs.length === 0) {
+        toast.error('Créez au moins un compte bancaire Ansar (Afriland, CBC, UBA, CCA) pour un virement direct.');
         return;
       }
       if (!paymentCompteBanqueId) {
-        toast.error('Sélectionnez le compte bancaire qui reçoit le virement.');
+        toast.error('Sélectionnez le compte bancaire Ansar qui reçoit le virement.');
         return;
       }
     }
@@ -388,6 +396,7 @@ export default function Invoices() {
     }
 
     let payeurDescription = '';
+    let payeurClientTierId: string | undefined;
     let paiementsEncaissementsPayload:
       | { montant: number; clientTierId?: string; payeurLibelle?: string }[]
       | undefined = undefined;
@@ -400,6 +409,7 @@ export default function Invoices() {
         thirdParties: thirdParties.map((tp) => ({ id: tp.id, nom: tp.nom })),
       });
       payeurDescription = merged.payerDescription;
+      payeurClientTierId = merged.payerClientTierId || selectedInvoice.clientTierId;
       paiementsEncaissementsPayload =
         merged.paiementsEncaissements.length > 0 ? merged.paiementsEncaissements : undefined;
     }
@@ -432,13 +442,15 @@ export default function Invoices() {
           montantPaye: nouveauTotalPaye,
           statut: nouveauTotalPaye >= selectedInvoice.montantTTC ? 'payee' : 'en_attente',
           datePaiement: nouveauTotalPaye > 0 ? (selectedInvoice.datePaiement || datePaiementJour) : undefined,
-          modePaiement: selectedInvoice.modePaiement || undefined,
+          modePaiement: mode || selectedInvoice.modePaiement || undefined,
           ...(paiementsEncaissementsPayload
             ? { paiementsEncaissements: paiementsEncaissementsPayload }
             : {}),
         });
 
-        if (paymentAmount > 0 && isPaiementVersBanque(mode) && paymentCompteBanqueId) {
+        const treasuryDest = paymentTreasuryDestination(mode);
+
+        if (paymentAmount > 0 && treasuryDest === 'banque' && paymentCompteBanqueId) {
           try {
             const nomCompte = getBankAccounts().find((a) => a.id === paymentCompteBanqueId)?.nom ?? 'Compte';
             const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
@@ -479,7 +491,7 @@ export default function Invoices() {
               'Facture mise à jour, mais l’écriture banque a échoué. Vérifiez la caisse ou réessayez.',
             );
           }
-        } else if (paymentAmount > 0 && !isPaiementVersBanque(mode)) {
+        } else if (paymentAmount > 0 && treasuryDest === 'caisse') {
           try {
             const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
             if (isExpenseInvoice) {
@@ -501,6 +513,7 @@ export default function Invoices() {
                 factureId: selectedInvoice.id,
                 modeLibelle: mode,
                 payeurNote: payeurDescription || undefined,
+                clientTierId: payeurClientTierId,
               });
               toast.success(
                 factureSoldée
@@ -515,6 +528,13 @@ export default function Invoices() {
                 : 'Facture mise à jour, mais l’écriture caisse a échoué. Vérifie la page Caisse ou réessaie.',
             );
           }
+        } else if (paymentAmount > 0 && treasuryDest === 'aucun') {
+          const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
+          toast.success(
+            factureSoldée
+              ? 'Facture soldée (virement indirect : aucun mouvement sur les comptes Ansar)'
+              : `Paiement enregistré en virement indirect — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA`,
+          );
         } else if (nouveauTotalPaye >= selectedInvoice.montantTTC) {
           toast.success('Facture marquée comme payée complètement');
         } else if (paymentAmount > 0) {
@@ -1686,21 +1706,12 @@ export default function Invoices() {
                   );
                 })()}
 
-                <div>
-                  <Label htmlFor="modePaiement">Mode de paiement (optionnel)</Label>
-                  <Select value={modePaiement || 'none'} onValueChange={(value) => setModePaiement(value === 'none' ? '' : value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Aucun</SelectItem>
-                      <SelectItem value="Espèces">Espèces</SelectItem>
-                      <SelectItem value="Virement bancaire">Virement bancaire</SelectItem>
-                      <SelectItem value="Chèque">Chèque</SelectItem>
-                      <SelectItem value="Mobile Money">Mobile Money</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PaymentModePicker
+                  id="modePaiement"
+                  label="Mode de paiement (optionnel)"
+                  value={modePaiement}
+                  onChange={setModePaiement}
+                />
 
                 {/* Section Remise, TVA et TPS */}
                 {(invoiceMissionKind === 'trip' ? selectedTripId : selectedParcelExpeditionId) && (() => {
@@ -3177,54 +3188,44 @@ export default function Invoices() {
                 </div>
               )}
 
-              <div>
-                <Label htmlFor="paymentMode">Mode de paiement (optionnel)</Label>
-                <Select 
-                  value={
-                    !selectedInvoice.modePaiement
-                      ? 'none'
-                      : selectedInvoice.modePaiement === 'Virement'
-                        ? 'Virement bancaire'
-                        : selectedInvoice.modePaiement
+              <PaymentModePicker
+                id="paymentMode"
+                label="Mode de paiement (optionnel)"
+                value={normalizePaymentMode(selectedInvoice.modePaiement) || ''}
+                onChange={(mode) => {
+                  if (!selectedInvoice) return;
+                  setSelectedInvoice({
+                    ...selectedInvoice,
+                    modePaiement: mode || undefined,
+                  });
+                  if (mode && isPaiementVersBanque(mode)) {
+                    const { accounts: ansarAccs } = listAnsarBankAccountsForDirectTransfer(
+                      getBankAccounts(),
+                    );
+                    setPaymentCompteBanqueId((prev) => prev || ansarAccs[0]?.id || '');
                   }
-                  onValueChange={(value) => {
-                    if (selectedInvoice) {
-                      const mode = value === 'none' ? undefined : value;
-                      setSelectedInvoice({
-                        ...selectedInvoice,
-                        modePaiement: mode,
-                      });
-                      if (mode && isPaiementVersBanque(mode)) {
-                        const accs = getBankAccounts();
-                        setPaymentCompteBanqueId((prev) => prev || accs[0]?.id || '');
-                      }
-                    }
-                  }}
-                >
-                  <SelectTrigger id="paymentMode">
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Aucun</SelectItem>
-                    <SelectItem value="Espèces">Espèces</SelectItem>
-                    <SelectItem value="Virement bancaire">Virement bancaire</SelectItem>
-                    <SelectItem value="Chèque">Chèque</SelectItem>
-                    <SelectItem value="Mobile Money">Mobile Money</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                }}
+              />
 
-              {paymentAmount > 0 && isPaiementVersBanque(selectedInvoice.modePaiement) && (
+              {paymentAmount > 0 && isPaiementVersBanque(selectedInvoice.modePaiement) && (() => {
+                const { accounts: ansarAccs, filteredToAnsar } =
+                  listAnsarBankAccountsForDirectTransfer(getBankAccounts());
+                return (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/20 p-4 space-y-3">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Landmark className="h-4 w-4 shrink-0 text-amber-600" />
                     {selectedInvoice.expenseId
-                      ? 'Compte débité (paiement fournisseur)'
-                      : 'Compte qui reçoit le virement'}
+                      ? 'Compte Ansar débité (virement direct)'
+                      : 'Compte Ansar crédité (virement direct)'}
                   </div>
-                  {getBankAccounts().length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {filteredToAnsar
+                      ? 'Comptes Ansar : Afriland, CBC, UBA, CCA.'
+                      : 'Aucun compte Afriland / CBC / UBA / CCA reconnu : tous les comptes sont listés. Vérifiez le champ « banque » des comptes.'}
+                  </p>
+                  {ansarAccs.length === 0 ? (
                     <p className="text-sm text-destructive">
-                      Aucun compte bancaire enregistré. Ajoutez-en un (données / API) pour les virements.
+                      Aucun compte bancaire enregistré. Ajoutez-en un pour les virements directs.
                     </p>
                   ) : (
                     <>
@@ -3244,7 +3245,7 @@ export default function Invoices() {
                             />
                           </SelectTrigger>
                           <SelectContent>
-                            {getBankAccounts().map((a) => (
+                            {ansarAccs.map((a) => (
                               <SelectItem key={a.id} value={a.id}>
                                 {a.nom} — {a.banque}
                               </SelectItem>
@@ -3274,9 +3275,17 @@ export default function Invoices() {
                     </>
                   )}
                 </div>
+                );
+              })()}
+
+              {paymentAmount > 0 && isVirementIndirect(selectedInvoice.modePaiement) && (
+                <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 dark:bg-sky-950/20 p-3 text-sm text-sky-900 dark:text-sky-200">
+                  {paymentModeHint(selectedInvoice.modePaiement)}
+                </div>
               )}
 
-              {paymentAmount > 0 && !isPaiementVersBanque(selectedInvoice.modePaiement) && (
+              {paymentAmount > 0 &&
+                paymentTreasuryDestination(selectedInvoice.modePaiement) === 'caisse' && (
                 <div
                   className={
                     selectedInvoice.expenseId
@@ -3289,10 +3298,7 @@ export default function Invoices() {
                       Ce règlement sera enregistré en <strong>sortie de caisse</strong>. Une dépense ne crée pas d’encaissement.
                     </>
                   ) : (
-                    <>
-                      Ce montant sera enregistré en <strong>caisse</strong> (espèces, chèque, mobile money, etc.). Seul le{' '}
-                      <strong>virement bancaire</strong> est crédité sur la banque.
-                    </>
+                    <>{paymentModeHint(selectedInvoice.modePaiement)}</>
                   )}
                 </div>
               )}
@@ -3311,7 +3317,8 @@ export default function Invoices() {
                       Math.max(0, selectedInvoice.montantTTC - (selectedInvoice.montantPaye ?? 0)) + 0.01 ||
                     (paymentAmount > 0 &&
                       isPaiementVersBanque(selectedInvoice.modePaiement) &&
-                      (getBankAccounts().length === 0 || !paymentCompteBanqueId))
+                      (listAnsarBankAccountsForDirectTransfer(getBankAccounts()).accounts.length === 0 ||
+                        !paymentCompteBanqueId))
                   }
                 >
                   {isConfirmingPayment ? (

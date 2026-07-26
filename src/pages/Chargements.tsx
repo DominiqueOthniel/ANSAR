@@ -60,7 +60,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
@@ -163,6 +163,13 @@ export default function Chargements() {
   const [assignRows, setAssignRows] = useState<SupplierLoadingAssignmentPayload[]>([]);
   const [assignSearch, setAssignSearch] = useState('');
   const [assignClientId, setAssignClientId] = useState('');
+
+  const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
+  const [reassignLoading, setReassignLoading] = useState<SupplierLoading | null>(null);
+  const [reassignClientId, setReassignClientId] = useState('');
+  const [reassignOrderId, setReassignOrderId] = useState('');
+  const [reassignQty, setReassignQty] = useState<number | undefined>(undefined);
+  const [reassignSearch, setReassignSearch] = useState('');
 
   const fournisseurs = useMemo(
     () =>
@@ -540,6 +547,112 @@ export default function Chargements() {
       await setSupplierLoadingAssignments(assignLoading.id, assignRows);
       toast.success('Affectation enregistrée.');
       setAssignDialogOpen(false);
+    });
+
+  const activeAssignmentsOf = (l: SupplierLoading) =>
+    (l.assignments ?? []).filter((a) => a.orderStatus !== 'annulee');
+
+  const openReassign = (l: SupplierLoading) => {
+    const active = activeAssignmentsOf(l);
+    if (active.length === 0) {
+      toast.error('Ce bon n’est pas encore affecté. Utilisez « Affecter ».');
+      return;
+    }
+    setReassignLoading(l);
+    setReassignClientId('');
+    setReassignOrderId('');
+    setReassignQty(
+      l.quantite != null && l.quantite > 0
+        ? l.quantite
+        : active.reduce((s, a) => s + (a.quantiteAffectee ?? 0), 0) || undefined,
+    );
+    setReassignSearch('');
+    setReassignDialogOpen(true);
+  };
+
+  const currentReassignClientsLabel = useMemo(() => {
+    if (!reassignLoading) return '—';
+    const names = [
+      ...new Set(
+        activeAssignmentsOf(reassignLoading).map(
+          (a) =>
+            a.clientNom ||
+            (a.clientId ? clientsById.get(a.clientId) : undefined) ||
+            'Client comptoir',
+        ),
+      ),
+    ];
+    return names.length ? names.join(', ') : '—';
+  }, [reassignLoading, clientsById]);
+
+  const ordersForReassign = useMemo(() => {
+    if (!reassignClientId) return [];
+    const q = reassignSearch.trim().toLowerCase();
+    return stableSort(
+      clientOrders.filter((o) => {
+        if (o.statut === 'annulee') return false;
+        if (getClientAccountKey(o) !== reassignClientId) return false;
+        return true;
+      }),
+      (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
+    ).filter((o) => {
+      if (!q) return true;
+      return (
+        o.designation.toLowerCase().includes(q) ||
+        (o.reference ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [clientOrders, reassignClientId, reassignSearch]);
+
+  const saveReassign = () =>
+    withGuard(async () => {
+      if (!reassignLoading) return;
+      if (!reassignClientId) {
+        toast.error('Choisissez le nouveau client.');
+        return;
+      }
+      if (!reassignOrderId) {
+        toast.error('Choisissez la commande du nouveau client.');
+        return;
+      }
+      const order = clientOrders.find((o) => o.id === reassignOrderId);
+      if (!order) {
+        toast.error('Commande introuvable.');
+        return;
+      }
+      const qty = reassignQty;
+      if (reassignLoading.quantite != null && reassignLoading.quantite > 0) {
+        if (qty == null || qty <= 0) {
+          toast.error('Indiquez la quantité à affecter.');
+          return;
+        }
+        if (qty > reassignLoading.quantite + 1e-6) {
+          toast.error(
+            `La quantité (${qty}) dépasse celle du bon (${reassignLoading.quantite}).`,
+          );
+          return;
+        }
+      }
+      const payload: SupplierLoadingAssignmentPayload[] = [
+        {
+          clientOrderId: reassignOrderId,
+          quantiteAffectee: qty,
+        },
+      ];
+      const err = validateLoadingAssignmentRows(
+        reassignLoading.quantite,
+        reassignLoading.unite,
+        payload,
+      );
+      if (err) {
+        toast.error(err);
+        return;
+      }
+      await setSupplierLoadingAssignments(reassignLoading.id, payload);
+      toast.success(
+        `Bon réaffecté à ${getOrderClientName(order)}.`,
+      );
+      setReassignDialogOpen(false);
     });
 
   const getFiltersDescription = () => {
@@ -1109,6 +1222,7 @@ export default function Chargements() {
                   <TableHead>Qté</TableHead>
                   <TableHead>Valeur bon</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead>Client(s)</TableHead>
                   <TableHead>Commandes liées</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -1116,7 +1230,7 @@ export default function Chargements() {
               <TableBody>
                 {sortedLoadings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                       Aucun bon de chargement.
                     </TableCell>
                   </TableRow>
@@ -1183,8 +1297,50 @@ export default function Chargements() {
                           {formatSupplierLoadingStatusFr(l.statut)}
                         </Badge>
                       </TableCell>
+                      <TableCell className="min-w-[170px]">
+                        {(() => {
+                          const activeAssignments = (l.assignments ?? []).filter(
+                            (a) => a.orderStatus !== 'annulee',
+                          );
+                          const clients = [
+                            ...new Map(
+                              activeAssignments.map((a) => {
+                                const name =
+                                  a.clientNom ||
+                                  (a.clientId ? clientsById.get(a.clientId) : undefined) ||
+                                  'Client comptoir';
+                                const key = a.clientId || `comptoir:${name}`;
+                                return [key, { key, name, assignment: a }] as const;
+                              }),
+                            ).values(),
+                          ];
+                          if (clients.length === 0) {
+                            return (
+                              <span className="text-muted-foreground text-sm">
+                                Non attribué
+                              </span>
+                            );
+                          }
+                          return (
+                            <ul className="space-y-1">
+                              {clients.map(({ key, name, assignment }) => (
+                                <li key={key} className="flex flex-wrap items-center gap-1">
+                                  <span className="font-medium text-sm">{name}</span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {formatClientAccountKindFr(
+                                      getClientAccountKind(assignment),
+                                    )}
+                                  </Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="max-w-xs">
-                        {(l.assignments ?? []).length === 0 ? (
+                        {(l.assignments ?? []).filter(
+                          (a) => a.orderStatus !== 'annulee',
+                        ).length === 0 ? (
                           <span className="text-muted-foreground text-sm">—</span>
                         ) : (
                           <ul className="text-sm space-y-0.5">
@@ -1192,10 +1348,12 @@ export default function Chargements() {
                               .filter((a) => a.orderStatus !== 'annulee')
                               .map((a) => (
                               <li key={a.id}>
-                                <span>{a.clientNom ?? 'Client'} — {a.orderDesignation}</span>
-                                <Badge variant="outline" className="ml-1 text-[10px]">
-                                  {formatClientAccountKindFr(getClientAccountKind(a))}
-                                </Badge>
+                                <span>
+                                  {a.orderReference
+                                    ? `${a.orderReference} · `
+                                    : ''}
+                                  {a.orderDesignation || 'Commande'}
+                                </span>
                                 {a.quantiteAffectee != null ? ` (${a.quantiteAffectee})` : ''}
                               </li>
                             ))}
@@ -1223,6 +1381,16 @@ export default function Chargements() {
                             >
                               <Link2 className="h-4 w-4" />
                             </Button>
+                            {activeAssignmentsOf(l).length > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openReassign(l)}
+                                title="Réaffecter à un autre client"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button size="sm" variant="outline" onClick={() => openEdit(l)}>
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -1379,6 +1547,152 @@ export default function Chargements() {
                 <Button disabled={isSubmitting} onClick={() => void saveAssignments()}>
                   {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Enregistrer l’affectation
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reassignDialogOpen} onOpenChange={setReassignDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Réaffecter le bon — {reassignLoading?.designation}</DialogTitle>
+          </DialogHeader>
+          {reassignLoading && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+                <p>
+                  <span className="text-muted-foreground">Client actuel :</span>{' '}
+                  <span className="font-medium">{currentReassignClientsLabel}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Fournisseur :</span>{' '}
+                  {reassignLoading.fournisseurNom ?? '—'}
+                </p>
+                {reassignLoading.quantite != null && reassignLoading.quantite > 0 ? (
+                  <p>
+                    <span className="text-muted-foreground">Quantité bon :</span>{' '}
+                    {reassignLoading.quantite} {reassignLoading.unite ?? ''}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground pt-1">
+                  La réaffectation remplace les affectations actuelles par la commande du
+                  nouveau client.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Nouveau client *</Label>
+                <ThirdPartyPicker
+                  options={clients}
+                  value={reassignClientId}
+                  onValueChange={(id) => {
+                    setReassignClientId(id);
+                    setReassignOrderId('');
+                  }}
+                  placeholder="Choisir le nouveau client…"
+                  searchPlaceholder="Rechercher un client…"
+                  topChoices={[
+                    {
+                      id: WALK_IN_CLIENT_KEY,
+                      label: 'Client comptoir',
+                      keywords: 'passager sans fiche comptoir',
+                    },
+                  ]}
+                  orphanLabel={
+                    reassignClientId.startsWith('comptoir:') ? 'Client comptoir' : undefined
+                  }
+                />
+              </div>
+
+              {reassignClientId ? (
+                <>
+                  <Input
+                    placeholder="Filtrer les commandes…"
+                    value={reassignSearch}
+                    onChange={(e) => setReassignSearch(e.target.value)}
+                  />
+                  <div className="space-y-2">
+                    <Label>Commande du nouveau client *</Label>
+                    {ordersForReassign.length === 0 ? (
+                      <p className="text-sm text-muted-foreground rounded-md border p-3">
+                        Aucune commande active pour{' '}
+                        {getClientKeyLabel(reassignClientId)}. Créez d’abord une commande
+                        côté Clients.
+                      </p>
+                    ) : (
+                      <div className="border rounded-md max-h-[240px] overflow-y-auto divide-y">
+                        {ordersForReassign.map((o) => {
+                          const selected = reassignOrderId === o.id;
+                          return (
+                            <button
+                              key={o.id}
+                              type="button"
+                              className={`w-full text-left p-3 hover:bg-muted/40 ${
+                                selected ? 'bg-primary/10' : ''
+                              }`}
+                              onClick={() => {
+                                setReassignOrderId(o.id);
+                                if (
+                                  reassignLoading.quantite != null &&
+                                  reassignLoading.quantite > 0
+                                ) {
+                                  const next =
+                                    o.quantite != null && o.quantite > 0
+                                      ? Math.min(o.quantite, reassignLoading.quantite)
+                                      : reassignLoading.quantite;
+                                  setReassignQty(next);
+                                }
+                              }}
+                            >
+                              <p className="font-medium text-sm">{o.designation}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatClientOrderStatusFr(o.statut)} · {o.dateCommande}
+                                {o.reference ? ` · ${o.reference}` : ''}
+                                {o.quantite != null
+                                  ? ` · ${o.quantite}${o.unite ? ` ${o.unite}` : ''}`
+                                  : ''}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {reassignOrderId &&
+                    reassignLoading.quantite != null &&
+                    reassignLoading.quantite > 0 && (
+                      <div className="space-y-1">
+                        <Label>
+                          Quantité affectée (max {reassignLoading.quantite}
+                          {reassignLoading.unite ? ` ${reassignLoading.unite}` : ''})
+                        </Label>
+                        <NumberInput
+                          allowEmpty
+                          value={reassignQty}
+                          onChange={setReassignQty}
+                          min={0}
+                          max={reassignLoading.quantite}
+                        />
+                      </div>
+                    )}
+                </>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setReassignDialogOpen(false)}>
+                  Annuler
+                </Button>
+                <Button
+                  disabled={
+                    isSubmitting || !reassignClientId || !reassignOrderId
+                  }
+                  onClick={() => void saveReassign()}
+                >
+                  {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Réaffecter
                 </Button>
               </div>
             </div>

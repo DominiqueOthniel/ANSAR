@@ -16,9 +16,11 @@ import { toast } from 'sonner';
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Première connexion / reset admin : dialogue non fermable tant que le MDP n’est pas changé. */
+  forced?: boolean;
 };
 
-export function ChangePasswordDialog({ open, onOpenChange }: Props) {
+export function ChangePasswordDialog({ open, onOpenChange, forced = false }: Props) {
   const { user, changeOwnPassword } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -40,7 +42,11 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
     setLoading(true);
     try {
       await changeOwnPassword(currentPassword, newPassword);
-      toast.success('Mot de passe mis à jour.');
+      toast.success(
+        forced
+          ? 'Mot de passe mis à jour. Vous pouvez utiliser l’application.'
+          : 'Mot de passe mis à jour.',
+      );
       reset();
       onOpenChange(false);
     } catch (err) {
@@ -54,21 +60,41 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
     <Dialog
       open={open}
       onOpenChange={(v) => {
+        if (forced && !v) return;
         if (!v) reset();
         onOpenChange(v);
       }}
     >
-      <DialogContent className="w-[95vw] max-w-md">
+      <DialogContent
+        className="w-[95vw] max-w-md"
+        showCloseButton={!forced}
+        onPointerDownOutside={forced ? (e) => e.preventDefault() : undefined}
+        onEscapeKeyDown={forced ? (e) => e.preventDefault() : undefined}
+        onInteractOutside={forced ? (e) => e.preventDefault() : undefined}
+      >
         <DialogHeader>
-          <DialogTitle>Mon mot de passe</DialogTitle>
+          <DialogTitle>
+            {forced ? 'Changement de mot de passe obligatoire' : 'Mon mot de passe'}
+          </DialogTitle>
           <DialogDescription>
-            Compte <span className="font-medium text-foreground">{user?.login}</span> — seul vous
-            pouvez modifier votre mot de passe.
+            {forced ? (
+              <>
+                Compte <span className="font-medium text-foreground">{user?.login}</span> — pour
+                votre sécurité, définissez un nouveau mot de passe avant d’utiliser l’application.
+              </>
+            ) : (
+              <>
+                Compte <span className="font-medium text-foreground">{user?.login}</span> — seul vous
+                pouvez modifier votre mot de passe.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="current-pwd">Mot de passe actuel</Label>
+            <Label htmlFor="current-pwd">
+              {forced ? 'Mot de passe temporaire actuel' : 'Mot de passe actuel'}
+            </Label>
             <Input
               id="current-pwd"
               type="password"
@@ -105,12 +131,14 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Annuler
-            </Button>
-            <Button type="submit" disabled={loading}>
+            {!forced ? (
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Annuler
+              </Button>
+            ) : null}
+            <Button type="submit" disabled={loading} className={forced ? 'w-full sm:w-auto' : undefined}>
               {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Enregistrer
+              {forced ? 'Enregistrer et continuer' : 'Enregistrer'}
             </Button>
           </div>
         </form>

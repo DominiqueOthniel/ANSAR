@@ -10,17 +10,21 @@ export type UserRole = 'admin' | 'gestionnaire' | 'comptable';
 export interface User {
   login: string;
   role: UserRole;
+  /** True après création / reset admin : obliger le changement avant usage. */
+  mustChangePassword?: boolean;
 }
 
 export interface UserSummary {
   login: string;
   role: UserRole;
+  mustChangePassword?: boolean;
 }
 
 interface StoredUser {
   login: string;
   passwordHash: string;
   role: UserRole;
+  mustChangePassword?: boolean;
 }
 
 const GESTIONNAIRE_HASH = 'af960ccfc27d3ef7981c7fd8887ae7baa30f21aff0b9b15b6253e7b659545f87';
@@ -59,7 +63,19 @@ function persistUsers(stored: StoredUser[]): UserSummary[] {
   return stored
     .slice()
     .sort((a, b) => a.login.localeCompare(b.login, 'fr'))
-    .map(({ login, role }) => ({ login, role }));
+    .map(({ login, role, mustChangePassword }) => ({
+      login,
+      role,
+      mustChangePassword: Boolean(mustChangePassword),
+    }));
+}
+
+function toSessionUser(stored: StoredUser): User {
+  return {
+    login: stored.login,
+    role: stored.role,
+    mustChangePassword: Boolean(stored.mustChangePassword),
+  };
 }
 
 function initUsers(): void {
@@ -109,7 +125,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => {
     try {
       const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      const session = JSON.parse(raw) as User;
+      if (!session?.login) return null;
+      const stored = getStoredUsers().find(
+        (u) => u.login.toLowerCase() === session.login.toLowerCase(),
+      );
+      if (!stored) return null;
+      return toSessionUser(stored);
     } catch {
       return null;
     }
@@ -129,6 +152,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setApiActor(user ? { login: user.login, role: user.role } : null);
   }, [user]);
 
+  /** Resynchronise le flag mustChangePassword depuis le stockage (après create/reset ailleurs). */
+  useEffect(() => {
+    if (!user) return;
+    const stored = getStoredUsers().find(
+      (u) => u.login.toLowerCase() === user.login.toLowerCase(),
+    );
+    if (!stored) return;
+    const must = Boolean(stored.mustChangePassword);
+    if (must === Boolean(user.mustChangePassword)) return;
+    const next = toSessionUser(stored);
+    setUser(next);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+  }, [user, users]);
+
   const login = async (loginInput: string, password: string): Promise<boolean> => {
     const stored = getStoredUsers();
     const key = loginInput.trim().toLowerCase();
@@ -138,7 +175,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const hash = await hashPassword(password);
     if (hash !== found.passwordHash) return false;
 
-    const u: User = { login: found.login, role: found.role };
+    const u = toSessionUser(found);
     setUser(u);
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u));
     return true;
@@ -163,7 +200,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const passwordHash = await hashPassword(password);
-    stored.push({ login: cleanLogin, passwordHash, role });
+    stored.push({ login: cleanLogin, passwordHash, role, mustChangePassword: true });
     setUsers(persistUsers(stored));
   };
 
@@ -230,8 +267,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       throw new Error('Mot de passe actuel incorrect.');
     }
 
-    stored[idx] = { ...stored[idx], passwordHash: await hashPassword(newPassword) };
+    const newHash = await hashPassword(newPassword);
+    if (newHash === stored[idx].passwordHash) {
+      throw new Error('Le nouveau mot de passe doit être différent de l’actuel.');
+    }
+
+    stored[idx] = {
+      ...stored[idx],
+      passwordHash: newHash,
+      mustChangePassword: false,
+    };
     setUsers(persistUsers(stored));
+
+    const next: User = {
+      login: user.login,
+      role: user.role,
+      mustChangePassword: false,
+    };
+    setUser(next);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
   };
 
   const adminResetUserPassword = async (targetLogin: string, newPassword: string): Promise<void> => {
@@ -248,7 +302,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const idx = stored.findIndex((u) => u.login.toLowerCase() === key);
     if (idx < 0) throw new Error('Utilisateur introuvable.');
 
-    stored[idx] = { ...stored[idx], passwordHash: await hashPassword(newPassword) };
+    stored[idx] = {
+      ...stored[idx],
+      passwordHash: await hashPassword(newPassword),
+      mustChangePassword: true,
+    };
     setUsers(persistUsers(stored));
   };
 

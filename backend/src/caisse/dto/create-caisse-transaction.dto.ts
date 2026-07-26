@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateIf } from 'class-validator';
 
 export class CreateCaisseTransactionDto {
   @IsOptional()
@@ -42,4 +42,9 @@ export class CreateCaisseTransactionDto {
   @IsOptional()
   @IsBoolean()
   exclutRevenu?: boolean;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
+  @IsUUID()
+  clientTierId?: string | null;
 }

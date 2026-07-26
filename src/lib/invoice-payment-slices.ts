@@ -105,7 +105,7 @@ export function mergeTripInvoicePaymentSlices(args: {
   /** Obligatoire si ≥ 2 participants sur le trajet : id du participant payeur. */
   payerParticipantId?: string;
   thirdParties: { id: string; nom: string }[];
-}): { paiementsEncaissements: InvoicePaymentEncaissement[]; payerDescription: string } {
+}): { paiementsEncaissements: InvoicePaymentEncaissement[]; payerDescription: string; payerClientTierId?: string } {
   const { invoice, trip, additionalAmount, payerParticipantId, thirdParties } = args;
   const dejaPaye = Number(invoice.montantPaye ?? 0);
   let rows = normalizeInvoicePaymentSlices(invoice.paiementsEncaissements);
@@ -131,5 +131,9 @@ export function mergeTripInvoicePaymentSlices(args: {
     ];
   }
 
-  return { paiementsEncaissements: rows, payerDescription: payer.payeurLibelle };
+  return {
+    paiementsEncaissements: rows,
+    payerDescription: payer.payeurLibelle,
+    payerClientTierId: payer.clientTierId,
+  };
 }

@@ -432,8 +432,8 @@ async function updateDelivery(id, body, actor) {
       statut = COALESCE($4, statut),
       "datePrevue" = COALESCE($5, "datePrevue"),
       "dateLivraison" = COALESCE($6, "dateLivraison"),
-      "chauffeurId" = COALESCE($7, "chauffeurId"),
-      "tracteurId" = COALESCE($8, "tracteurId"),
+      "chauffeurId" = CASE WHEN $14::boolean THEN $7 ELSE "chauffeurId" END,
+      "tracteurId" = CASE WHEN $15::boolean THEN $8 ELSE "tracteurId" END,
       "montantTransport" = CASE WHEN $13::boolean THEN $9::numeric ELSE "montantTransport" END,
       "transportFactureParFournisseur" = COALESCE($10, "transportFactureParFournisseur"),
       "transportFournisseurId" = COALESCE($11, "transportFournisseurId"),
@@ -446,8 +446,8 @@ async function updateDelivery(id, body, actor) {
       body.statut ?? null,
       body.datePrevue !== undefined ? dateOnly(body.datePrevue) : null,
       dateLivraison !== undefined ? dateLivraison : null,
-      body.chauffeurId !== undefined ? body.chauffeurId : null,
-      body.tracteurId !== undefined ? body.tracteurId : null,
+      body.chauffeurId !== undefined ? body.chauffeurId || null : null,
+      body.tracteurId !== undefined ? body.tracteurId || null : null,
       body.montantTransport != null && body.montantTransport !== ''
         ? num(body.montantTransport)
         : null,
@@ -457,6 +457,8 @@ async function updateDelivery(id, body, actor) {
       body.transportFournisseurId !== undefined ? body.transportFournisseurId : null,
       body.notes !== undefined ? body.notes : null,
       body.montantTransport !== undefined,
+      body.chauffeurId !== undefined,
+      body.tracteurId !== undefined,
     ],
   );
   await syncOrderStatusFromDeliveries(before.clientOrderId);

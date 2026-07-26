@@ -275,8 +275,8 @@ export interface ClientDeliveryPayload {
   statut?: 'planifiee' | 'en_cours' | 'livree' | 'annulee';
   datePrevue?: string;
   dateLivraison?: string;
-  chauffeurId?: string;
-  tracteurId?: string;
+  chauffeurId?: string | null;
+  tracteurId?: string | null;
   montantTransport?: number | null;
   /** Transport sous-traité : montant refacturé au client sur la facture commande (FAC-CMD). */
   transportFactureParFournisseur?: boolean;
@@ -495,7 +495,7 @@ export interface SupplierLoadingPayload {
   dateLivraison?: string;
   statut?: SupplierLoadingStatusPayload;
   modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
-  camionId?: string;
+  camionId?: string | null;
   hubArrivee?: string;
   dateArriveeHub?: string;
   lieu?: string;
@@ -593,6 +593,7 @@ export interface CaisseTransactionPayload {
   compteBanqueId?: string;
   bankTransactionId?: string;
   exclutRevenu?: boolean;
+  clientTierId?: string | null;
 }
 
 export const caisseApi = {

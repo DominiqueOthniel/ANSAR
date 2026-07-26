@@ -92,8 +92,8 @@ async function createTx(body, actor) {
   await query(
     `INSERT INTO caisse_transactions (
       id, type, montant, date, description, utilisateur, categorie, reference,
-      "compteBanqueId", "bankTransactionId", "exclutRevenu", "createdAt"
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+      "compteBanqueId", "bankTransactionId", "exclutRevenu", "clientTierId", "createdAt"
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
     [
       id,
       body.type,
@@ -106,6 +106,7 @@ async function createTx(body, actor) {
       body.compteBanqueId || null,
       body.bankTransactionId || null,
       Boolean(body.exclutRevenu),
+      body.clientTierId || null,
     ],
   );
   const row = mapTx((await query(`SELECT * FROM caisse_transactions WHERE id = $1`, [id])).rows[0]);
@@ -131,7 +132,8 @@ async function updateTx(id, body, actor) {
       reference = COALESCE($8, reference),
       "compteBanqueId" = COALESCE($9, "compteBanqueId"),
       "bankTransactionId" = COALESCE($10, "bankTransactionId"),
-      "exclutRevenu" = COALESCE($11, "exclutRevenu")
+      "exclutRevenu" = COALESCE($11, "exclutRevenu"),
+      "clientTierId" = CASE WHEN $13::boolean THEN $12 ELSE "clientTierId" END
      WHERE id = $1`,
     [
       id,
@@ -147,6 +149,8 @@ async function updateTx(id, body, actor) {
       body.compteBanqueId !== undefined ? body.compteBanqueId : null,
       body.bankTransactionId !== undefined ? body.bankTransactionId : null,
       body.exclutRevenu !== undefined ? Boolean(body.exclutRevenu) : null,
+      body.clientTierId !== undefined ? body.clientTierId || null : null,
+      body.clientTierId !== undefined,
     ],
   );
   const after = mapTx((await query(`SELECT * FROM caisse_transactions WHERE id = $1`, [id])).rows[0]);

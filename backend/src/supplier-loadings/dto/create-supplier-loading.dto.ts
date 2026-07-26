@@ -7,6 +7,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 const STATUTS = [
@@ -82,8 +83,9 @@ export class CreateSupplierLoadingDto {
   modeEntree?: (typeof MODES_ENTREE)[number];
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
   @IsUUID()
-  camionId?: string;
+  camionId?: string | null;
 
   @IsOptional()
   @IsString()

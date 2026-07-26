@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { useApp, Truck, TruckType, TruckStatus, TruckSousType, ThirdParty } from '@/contexts/AppContext';
+import { TruckOperationsPanels } from '@/components/trucks/TruckOperationsPanels';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -94,7 +95,23 @@ function exportRemorqueImmat(truck: Truck): string {
 }
 
 export default function Trucks() {
-  const { trucks, trips, parcelExpeditions, expenses, invoices, clientDeliveries, drivers, thirdParties, createTruck, updateTruck, deleteTruck, deleteExpense } = useApp();
+  const {
+    trucks,
+    trips,
+    parcelExpeditions,
+    expenses,
+    invoices,
+    clientDeliveries,
+    drivers,
+    thirdParties,
+    createTruck,
+    updateTruck,
+    deleteTruck,
+    deleteExpense,
+    refreshSupplierLoadings,
+    refreshClientDeliveries,
+    refreshClientOrders,
+  } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
@@ -113,6 +130,15 @@ export default function Trucks() {
   const [viewingTruck, setViewingTruck] = useState<Truck | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const { isSubmitting, withGuard } = useSubmitGuard();
+
+  useEffect(() => {
+    if (!viewingTruck) return;
+    void Promise.all([
+      refreshSupplierLoadings(),
+      refreshClientDeliveries(),
+      refreshClientOrders(),
+    ]);
+  }, [viewingTruck?.id]);
 
   const [formData, setFormData] = useState({
     immatriculation: '',
@@ -1191,7 +1217,7 @@ export default function Trucks() {
         <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Photo du camion - {viewingTruck?.nom || viewingTruck?.immatriculation}
+              Fiche camion · {viewingTruck?.nom || viewingTruck?.immatriculation}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -1339,6 +1365,12 @@ export default function Trucks() {
                 );
               })()}
             </div>
+            {viewingTruck && (
+              <TruckOperationsPanels
+                truckId={viewingTruck.id}
+                defaultChauffeurId={viewingTruck.chauffeurId}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -38,12 +38,14 @@ export class CreateClientDeliveryDto {
   dateLivraison?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
   @IsUUID()
-  chauffeurId?: string;
+  chauffeurId?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
   @IsUUID()
-  tracteurId?: string;
+  tracteurId?: string | null;
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null && v !== undefined)

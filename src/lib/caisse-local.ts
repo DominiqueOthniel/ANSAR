@@ -18,6 +18,8 @@ export interface CaisseTransaction {
   compteBanqueId?: string;
   bankTransactionId?: string;
   exclutRevenu?: boolean;
+  /** Tiers client métier (versement / encaissement). */
+  clientTierId?: string;
 }
 
 function parseNum(val: unknown): number {
@@ -56,6 +58,7 @@ export function normalizeCaisseTx(r: Record<string, unknown>): CaisseTransaction
     compteBanqueId: r.compteBanqueId ? String(r.compteBanqueId) : undefined,
     bankTransactionId: r.bankTransactionId ? String(r.bankTransactionId) : undefined,
     exclutRevenu: Boolean(r.exclutRevenu),
+    clientTierId: r.clientTierId ? String(r.clientTierId) : undefined,
   };
 }
 
@@ -164,6 +167,7 @@ function payloadFromTx(t: CaisseTransaction): CaisseTransactionPayload {
     compteBanqueId: t.compteBanqueId,
     bankTransactionId: t.bankTransactionId,
     exclutRevenu: Boolean(t.exclutRevenu),
+    clientTierId: t.clientTierId || null,
   };
 }
 
@@ -178,6 +182,8 @@ export async function appendEntreeFromInvoicePayment(params: {
   modeLibelle?: string;
   /** Ex. client payeur ventilé (facture trajet multi-clients). */
   payeurNote?: string;
+  /** Fiche client / payeur rattachée au mouvement. */
+  clientTierId?: string;
 }): Promise<void> {
   if (params.montant <= 0) return;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -192,6 +198,7 @@ export async function appendEntreeFromInvoicePayment(params: {
     reference: `facture:${params.factureId}`,
     categorie: 'Encaissements clients',
     utilisateur: 'Système',
+    clientTierId: params.clientTierId || undefined,
   };
   if (isRemoteCaisse()) {
     await caisseApi.createTransaction(payloadFromTx(tx));
@@ -233,10 +240,9 @@ export async function appendSortieFromExpenseInvoicePayment(params: {
   }
 }
 
-export function isPaiementVersBanque(mode: string | undefined): boolean {
-  if (!mode) return false;
-  return mode.trim().toLowerCase().includes('virement');
-}
+import { isPaiementVersBanque } from '@/lib/payment-modes';
+
+export { isPaiementVersBanque };
 
 /** @deprecated utiliser !isPaiementVersBanque */
 export function isModeEncaissementCaisse(mode: string | undefined): boolean {
