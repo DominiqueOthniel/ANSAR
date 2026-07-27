@@ -47,20 +47,11 @@ export class CaisseService {
     return this.txRepo.find({ order: { date: 'DESC', createdAt: 'DESC' } });
   }
 
-  private affectsCashSolde(t: { type: string; modePaiement?: string | null }): boolean {
-    const mode = (t.modePaiement || '').trim().toLowerCase();
-    if (t.type === 'sortie' && (mode === 'virement direct' || mode.includes('virement direct'))) {
-      return false;
-    }
-    return true;
-  }
-
   async getBalance(): Promise<{ soldeInitial: number; soldeActuel: number }> {
     const config = await this.getOrCreateConfig();
     const txs = await this.txRepo.find();
     let solde = Number(config.soldeInitial);
     for (const t of txs) {
-      if (!this.affectsCashSolde(t)) continue;
       const m = Number(t.montant);
       solde += t.type === 'entree' ? m : -m;
     }
@@ -73,7 +64,6 @@ export class CaisseService {
     let solde = Number(config.soldeInitial);
     for (const t of txs) {
       if (excludeId && t.id === excludeId) continue;
-      if (!this.affectsCashSolde(t)) continue;
       const m = Number(t.montant);
       solde += t.type === 'entree' ? m : -m;
     }
@@ -98,7 +88,7 @@ export class CaisseService {
   }
 
   async create(dto: CreateCaisseTransactionDto, actor?: AuditActor): Promise<CaisseTransactionEntity> {
-    if (dto.type === 'sortie' && this.affectsCashSolde({ type: dto.type, modePaiement: dto.modePaiement })) {
+    if (dto.type === 'sortie') {
       const disponible = await this.computeBalanceExcluding();
       this.assertSortieAllowed(disponible, dto.montant);
     }
@@ -138,8 +128,7 @@ export class CaisseService {
 
     const newType = dto.type ?? existing.type;
     const newMontant = dto.montant !== undefined ? dto.montant : Number(existing.montant);
-    const newMode = dto.modePaiement !== undefined ? dto.modePaiement : existing.modePaiement;
-    if (newType === 'sortie' && this.affectsCashSolde({ type: newType, modePaiement: newMode })) {
+    if (newType === 'sortie') {
       const disponible = await this.computeBalanceExcluding(id);
       this.assertSortieAllowed(disponible, newMontant);
     }

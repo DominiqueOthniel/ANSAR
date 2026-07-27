@@ -716,6 +716,14 @@ function normalizeSupplierLoadingAssignment(
 ): SupplierLoadingAssignment {
   const order = r.clientOrder as Record<string, unknown> | undefined;
   const client = order?.client as Record<string, unknown> | undefined;
+
+  /** Nest : champs via `clientOrder` ; Netlify : champs déjà aplatis sur la ligne. */
+  const clientIdRaw = order?.clientId ?? r.clientId;
+  const clientNomRaw = client?.nom ?? order?.clientNom ?? r.clientNom;
+  const orderDesignationRaw = order?.designation ?? r.orderDesignation;
+  const orderReferenceRaw = order?.reference ?? r.orderReference;
+  const orderStatusRaw = order?.statut ?? r.orderStatus;
+
   return {
     id: String(r.id),
     loadingId: String(r.loadingId ?? loadingId),
@@ -723,16 +731,14 @@ function normalizeSupplierLoadingAssignment(
     quantiteAffectee:
       r.quantiteAffectee != null ? parseNum(r.quantiteAffectee) : undefined,
     notes: r.notes ? String(r.notes) : undefined,
-    orderDesignation: order?.designation != null ? String(order.designation) : undefined,
-    orderReference: order?.reference ? String(order.reference) : undefined,
-    orderStatus: order?.statut ? (String(order.statut) as ClientOrderStatus) : undefined,
-    clientId: order?.clientId ? String(order.clientId) : undefined,
-    clientNom:
-      client?.nom != null
-        ? String(client.nom)
-        : order?.clientNom != null
-          ? String(order.clientNom)
-          : undefined,
+    orderDesignation:
+      orderDesignationRaw != null ? String(orderDesignationRaw) : undefined,
+    orderReference: orderReferenceRaw ? String(orderReferenceRaw) : undefined,
+    orderStatus: orderStatusRaw
+      ? (String(orderStatusRaw) as ClientOrderStatus)
+      : undefined,
+    clientId: clientIdRaw ? String(clientIdRaw) : undefined,
+    clientNom: clientNomRaw != null ? String(clientNomRaw) : undefined,
   };
 }
 

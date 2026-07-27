@@ -16,14 +16,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { BankAccount, BankTransaction } from '@/lib/bank-types';
+import type { BankAccount } from '@/lib/bank-types';
 import {
-  addRetraitPourCaisse,
-  appendBankDebitForCaisse,
   calculateAccountBalance,
   getBankAccounts,
   getBankTransactions,
-  recreateBankTransaction,
   refreshBankFromApi,
   removeBankTransactionAsync,
 } from '@/lib/bank-local';
@@ -45,16 +42,16 @@ import {
   deleteCaisseTransactionRemote,
   assertCaisseSortieAllowed,
   computeCaisseSoldeActuel,
-  caisseAffectsCashSolde,
   InsufficientCaisseError,
 } from '@/lib/caisse-local';
 import {
+  ANSAR_BANQUES,
+  formatPaymentModeWithBanque,
   isPaiementVersBanque,
   isVirementIndirect,
-  listAnsarBankAccountsForDirectTransfer,
   normalizePaymentMode,
+  parseAnsarBanque,
   paymentModeHint,
-  resolveBankAccountLabel,
 } from '@/lib/payment-modes';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
@@ -92,13 +89,8 @@ function formatCaisseModePaiement(t: Pick<CaisseTransaction, 'modePaiement'>): s
   return normalizePaymentMode(t.modePaiement) || '—';
 }
 
-function formatCaisseBanqueLabel(
-  t: Pick<CaisseTransaction, 'compteBanqueId' | 'bankTransactionId'>,
-  accounts: BankAccount[],
-): string {
-  if (t.compteBanqueId) return resolveBankAccountLabel(t.compteBanqueId, accounts);
-  if (t.bankTransactionId) return 'Banque liée';
-  return '—';
+function formatCaisseBanqueLabel(t: Pick<CaisseTransaction, 'modePaiement'>): string {
+  return parseAnsarBanque(t.modePaiement) || '—';
 }
 
 export default function Caisse() {
@@ -136,10 +128,7 @@ export default function Caisse() {
     [thirdParties],
   );
 
-  const [compteBanqueId, setCompteBanqueId] = useState<string>(() => {
-    const { accounts } = listAnsarBankAccountsForDirectTransfer(getBankAccounts());
-    return accounts[0]?.id ?? '';
-  });
+  const [compteBanque, setCompteBanque] = useState<string>(ANSAR_BANQUES[0]);
 
   const refreshBankAccounts = () => {
     setBankAccounts(getBankAccounts());
@@ -198,11 +187,6 @@ export default function Caisse() {
 
   const linkBanque = isPaiementVersBanque(formData.modePaiement);
 
-  const soldeDisponibleBanque = useMemo(() => {
-    if (!compteBanqueId || !linkBanque) return null;
-    return calculateAccountBalance(compteBanqueId, bankAccounts, getBankTransactions());
-  }, [compteBanqueId, linkBanque, bankAccounts]);
-
   const saveTransactions = (newTransactions: CaisseTransaction[]) => {
     setTransactions(newTransactions);
     if (!isRemoteCaisse()) {
@@ -252,8 +236,7 @@ export default function Caisse() {
       modePaiement: '',
     });
     setEditingTransaction(null);
-    const { accounts } = listAnsarBankAccountsForDirectTransfer(getBankAccounts());
-    setCompteBanqueId(accounts[0]?.id ?? '');
+    setCompteBanque(ANSAR_BANQUES[0]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -265,15 +248,14 @@ export default function Caisse() {
       return;
     }
 
-    const mode = normalizePaymentMode(formData.modePaiement) || undefined;
-    const shouldLinkBanque = isPaiementVersBanque(mode);
-
-    if (shouldLinkBanque && !compteBanqueId) {
-      toast.error('Choisis la banque Ansar (Afriland, CBC, UBA ou CCA).');
+    const modeBase = normalizePaymentMode(formData.modePaiement) || undefined;
+    if (isPaiementVersBanque(modeBase) && !compteBanque) {
+      toast.error('Choisis la banque (Afriland, CBC, UBA ou CCA) pour la traçabilité.');
       return;
     }
+    const mode = formatPaymentModeWithBanque(modeBase, compteBanque) || modeBase;
 
-    if (formData.type === 'sortie' && caisseAffectsCashSolde({ type: 'sortie', modePaiement: mode })) {
+    if (formData.type === 'sortie') {
       try {
         assertCaisseSortieAllowed(
           soldeInitial,
@@ -288,15 +270,9 @@ export default function Caisse() {
     }
 
     await withGuard(async () => {
-    const shouldSyncBanque =
-      shouldLinkBanque &&
-      Boolean(compteBanqueId) &&
-      getBankAccounts().length > 0;
-
     if (editingTransaction) {
       const prevLinked = editingTransaction.bankTransactionId;
-
-      if (prevLinked && !shouldSyncBanque) {
+      if (prevLinked) {
         await removeBankTransactionAsync(prevLinked);
       }
 
@@ -305,44 +281,12 @@ export default function Caisse() {
         id: editingTransaction.id,
         montant,
         utilisateur: editingTransaction.utilisateur || user?.login || 'system',
-        compteBanqueId: shouldSyncBanque ? compteBanqueId : undefined,
+        compteBanqueId: undefined,
         bankTransactionId: undefined,
         exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
         clientTierId: formData.clientTierId || undefined,
         modePaiement: mode,
       };
-
-      if (shouldSyncBanque) {
-        const oldBankTx: BankTransaction | undefined = prevLinked
-          ? getBankTransactions().find((x) => x.id === prevLinked)
-          : undefined;
-        if (prevLinked) {
-          await removeBankTransactionAsync(prevLinked);
-        }
-        const result =
-          formData.type === 'entree'
-            ? await addRetraitPourCaisse({
-                compteId: compteBanqueId,
-                montant,
-                date: formData.date,
-                descriptionCaisse: formData.description,
-                caisseTransactionId: editingTransaction.id,
-              })
-            : await appendBankDebitForCaisse({
-                compteId: compteBanqueId,
-                montant,
-                date: formData.date,
-                description: `Sortie caisse (virement) : ${formData.description}`,
-                caisseTransactionId: editingTransaction.id,
-              });
-        if (!result.ok) {
-          if (oldBankTx) await recreateBankTransaction(oldBankTx);
-          toast.error(result.message);
-          return;
-        }
-        base.compteBanqueId = compteBanqueId;
-        base.bankTransactionId = result.bankTransactionId;
-      }
 
       try {
         await saveCaisseTransactionRemote(base, false);
@@ -368,31 +312,6 @@ export default function Caisse() {
       clientTierId: formData.clientTierId || undefined,
       modePaiement: mode,
     };
-
-    if (shouldSyncBanque) {
-      const result =
-        formData.type === 'entree'
-          ? await addRetraitPourCaisse({
-              compteId: compteBanqueId,
-              montant,
-              date: formData.date,
-              descriptionCaisse: formData.description,
-              caisseTransactionId: newId,
-            })
-          : await appendBankDebitForCaisse({
-              compteId: compteBanqueId,
-              montant,
-              date: formData.date,
-              description: `Sortie caisse (virement) : ${formData.description}`,
-              caisseTransactionId: newId,
-            });
-      if (!result.ok) {
-        toast.error(result.message);
-        return;
-      }
-      newTransaction.compteBanqueId = compteBanqueId;
-      newTransaction.bankTransactionId = result.bankTransactionId;
-    }
 
     try {
       await saveCaisseTransactionRemote(newTransaction, true);
@@ -440,10 +359,9 @@ export default function Caisse() {
       reference: t.reference || '',
       exclutRevenu: t.type === 'entree' && Boolean(t.exclutRevenu),
       clientTierId: t.clientTierId || '',
-      modePaiement: normalizePaymentMode(t.modePaiement) || (t.bankTransactionId ? 'Virement direct' : ''),
+      modePaiement: normalizePaymentMode(t.modePaiement) || '',
     });
-    const { accounts } = listAnsarBankAccountsForDirectTransfer(getBankAccounts());
-    setCompteBanqueId(t.compteBanqueId || accounts[0]?.id || '');
+    setCompteBanque(parseAnsarBanque(t.modePaiement) || ANSAR_BANQUES[0]);
     setIsDialogOpen(true);
   };
 
@@ -519,7 +437,7 @@ export default function Caisse() {
       const q = searchTerm.toLowerCase();
       const clientNom = resolveCaisseClientNom(t, thirdParties).toLowerCase();
       const mode = formatCaisseModePaiement(t).toLowerCase();
-      const banque = formatCaisseBanqueLabel(t, bankAccounts).toLowerCase();
+      const banque = formatCaisseBanqueLabel(t).toLowerCase();
       if (
         !t.description.toLowerCase().includes(q) &&
         !t.reference?.toLowerCase().includes(q) &&
@@ -570,9 +488,7 @@ export default function Caisse() {
       (a, b) => parseDateMs(a.date) - parseDateMs(b.date) || a.id.localeCompare(b.id),
     );
     chronological.forEach((t) => {
-      if (caisseAffectsCashSolde(t)) {
-        solde += t.type === 'entree' ? t.montant : -t.montant;
-      }
+      solde += t.type === 'entree' ? t.montant : -t.montant;
       map.set(t.id, solde);
     });
     return map;
@@ -604,7 +520,7 @@ export default function Caisse() {
         { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Mode', value: (t) => formatCaisseModePaiement(t) },
-        { header: 'Banque', value: (t) => formatCaisseBanqueLabel(t, bankAccounts) },
+        { header: 'Banque', value: (t) => formatCaisseBanqueLabel(t) },
         { header: 'Catégorie', value: (t) => t.categorie || '-' },
         {
           header: 'Financement (hors encaissement)',
@@ -675,7 +591,7 @@ export default function Caisse() {
         { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Mode', value: (t) => formatCaisseModePaiement(t) },
-        { header: 'Banque', value: (t) => formatCaisseBanqueLabel(t, bankAccounts) },
+        { header: 'Banque', value: (t) => formatCaisseBanqueLabel(t) },
       ],
       rows: sortedTransactionRows,
     });
@@ -752,14 +668,11 @@ export default function Caisse() {
                     <PaymentModePicker
                       id="caisse-mode-paiement"
                       label="Mode de paiement (optionnel)"
-                      value={formData.modePaiement}
+                      value={normalizePaymentMode(formData.modePaiement) || ''}
                       onChange={(mode) => {
                         setFormData((f) => ({ ...f, modePaiement: mode }));
                         if (mode && isPaiementVersBanque(mode)) {
-                          const { accounts: ansarAccs } = listAnsarBankAccountsForDirectTransfer(
-                            getBankAccounts(),
-                          );
-                          setCompteBanqueId((prev) => prev || ansarAccs[0]?.id || '');
+                          setCompteBanque((prev) => prev || ANSAR_BANQUES[0]);
                         }
                       }}
                     />
@@ -768,34 +681,14 @@ export default function Caisse() {
                       <div className="space-y-3 rounded-lg border border-dashed border-emerald-200 dark:border-emerald-900/50 p-3 bg-emerald-50/50 dark:bg-emerald-950/20">
                         <div className="flex items-center gap-2 text-sm font-medium">
                           <Landmark className="h-4 w-4 shrink-0 text-emerald-700" />
-                          {formData.type === 'entree'
-                            ? 'Banque Ansar débitée (alimentation caisse)'
-                            : 'Banque Ansar débitée (sortie virement)'}
+                          Banque (traçabilité)
                         </div>
                         <AnsarBankAccountSelect
                           id="caisse-bank-account"
                           label="Banque *"
-                          value={compteBanqueId}
-                          onChange={setCompteBanqueId}
-                          accounts={bankAccounts}
-                          intent="debit"
+                          value={compteBanque}
+                          onChange={setCompteBanque}
                         />
-                        {soldeDisponibleBanque !== null && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Landmark className="h-4 w-4 text-muted-foreground" />
-                            <span>
-                              Solde disponible :{' '}
-                              <strong className="tabular-nums">
-                                {soldeDisponibleBanque.toLocaleString('fr-FR')} FCFA
-                              </strong>
-                            </span>
-                          </div>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          {formData.type === 'entree'
-                            ? 'Le montant est prélevé sur ce compte pour alimenter la caisse.'
-                            : 'Le montant est prélevé sur ce compte (hors solde espèces).'}
-                        </p>
                       </div>
                     )}
 
@@ -1167,10 +1060,10 @@ export default function Caisse() {
                         <span className="text-sm whitespace-nowrap">{formatCaisseModePaiement(t)}</span>
                       </TableCell>
                       <TableCell>
-                        {t.compteBanqueId || t.bankTransactionId ? (
-                          <Badge variant="outline" className="gap-1 font-normal max-w-[220px]">
+                        {parseAnsarBanque(t.modePaiement) ? (
+                          <Badge variant="outline" className="gap-1 font-normal">
                             <Landmark className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{formatCaisseBanqueLabel(t, bankAccounts)}</span>
+                            {formatCaisseBanqueLabel(t)}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground">—</span>

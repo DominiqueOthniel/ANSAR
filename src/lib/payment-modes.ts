@@ -1,6 +1,4 @@
-import type { BankAccount } from '@/lib/bank-types';
-
-/** Libellés canoniques enregistrés sur `invoice.modePaiement`. */
+/** Libellés canoniques enregistrés sur `invoice.modePaiement` / caisse. */
 export const PAYMENT_MODE = {
   ESPECES: 'Espèces',
   CHEQUE: 'Chèque',
@@ -15,11 +13,17 @@ export type PaymentModeValue = (typeof PAYMENT_MODE)[keyof typeof PAYMENT_MODE];
 /** Famille UI (sélection en 2 étapes). */
 export type PaymentModeFamily = 'especes' | 'cheque' | 'electronique' | 'virement';
 
-/** Où le règlement impacte la trésorerie Ansar. */
-export type PaymentTreasuryDestination = 'caisse' | 'banque' | 'aucun';
+/** Où le règlement impacte la trésorerie Ansar (espèces / mobile). */
+export type PaymentTreasuryDestination = 'caisse' | 'aucun';
 
-/** Banques des comptes Ansar (virement direct). */
-export const ANSAR_BANQUE_KEYWORDS = ['afriland', 'cbc', 'uba', 'cca'] as const;
+/**
+ * Banques Ansar pour traçabilité d’un virement direct.
+ * Liste fixe : aucun compte à créer dans le module Banque.
+ */
+export const ANSAR_BANQUES = ['Afriland', 'CBC', 'UBA', 'CCA'] as const;
+export type AnsarBanque = (typeof ANSAR_BANQUES)[number];
+
+const BANQUE_SEP = ' · ';
 
 const LEGACY_TO_CANONICAL: Record<string, PaymentModeValue> = {
   Virement: PAYMENT_MODE.VIREMENT_DIRECT,
@@ -28,10 +32,46 @@ const LEGACY_TO_CANONICAL: Record<string, PaymentModeValue> = {
   'Mobile money': PAYMENT_MODE.MTN,
 };
 
-export function normalizePaymentMode(mode: string | undefined | null): string | undefined {
+/** Extrait la banque traçabilité depuis un mode du type « Virement direct · Afriland ». */
+export function parseAnsarBanque(mode: string | undefined | null): AnsarBanque | undefined {
   if (!mode?.trim()) return undefined;
   const raw = mode.trim();
-  return LEGACY_TO_CANONICAL[raw] ?? raw;
+  const sep = raw.lastIndexOf(BANQUE_SEP);
+  if (sep < 0) return undefined;
+  const banque = raw.slice(sep + BANQUE_SEP.length).trim();
+  return (ANSAR_BANQUES as readonly string[]).includes(banque)
+    ? (banque as AnsarBanque)
+    : undefined;
+}
+
+/** Mode sans suffixe banque (pour famille / destination). */
+export function paymentModeBase(mode: string | undefined | null): string | undefined {
+  if (!mode?.trim()) return undefined;
+  const raw = mode.trim();
+  const sep = raw.lastIndexOf(BANQUE_SEP);
+  if (sep > 0 && parseAnsarBanque(raw)) {
+    return raw.slice(0, sep).trim();
+  }
+  return raw;
+}
+
+export function normalizePaymentMode(mode: string | undefined | null): string | undefined {
+  const base = paymentModeBase(mode);
+  if (!base) return undefined;
+  return LEGACY_TO_CANONICAL[base] ?? base;
+}
+
+/** Mode enregistré : « Virement direct · Afriland » si banque choisie. */
+export function formatPaymentModeWithBanque(
+  mode: string | undefined | null,
+  banque: string | undefined | null,
+): string | undefined {
+  const m = normalizePaymentMode(mode);
+  if (!m) return undefined;
+  if (!isPaiementVersBanque(m)) return m;
+  const b = banque?.trim();
+  if (!b || !(ANSAR_BANQUES as readonly string[]).includes(b)) return m;
+  return `${PAYMENT_MODE.VIREMENT_DIRECT}${BANQUE_SEP}${b}`;
 }
 
 export function paymentModeFamily(mode: string | undefined | null): PaymentModeFamily | '' {
@@ -52,71 +92,36 @@ export function paymentModeFamily(mode: string | undefined | null): PaymentModeF
 
 /**
  * - caisse : espèces, chèque, MTN, Orange
- * - banque : virement direct (comptes Afriland / CBC / UBA / CCA)
- * - aucun : virement indirect (versé chez le fournisseur au nom d’Ansar, pas encore sur un compte Ansar)
+ * - aucun : virement (direct ou indirect) : traçabilité seule, pas d’écriture auto caisse/banque
  */
 export function paymentTreasuryDestination(
   mode: string | undefined | null,
 ): PaymentTreasuryDestination {
   const m = normalizePaymentMode(mode);
   if (!m) return 'caisse';
-  if (m === PAYMENT_MODE.VIREMENT_INDIRECT) return 'aucun';
-  if (m === PAYMENT_MODE.VIREMENT_DIRECT) return 'banque';
-  if (m.toLowerCase().includes('virement') && m.toLowerCase().includes('indirect')) return 'aucun';
-  if (m.toLowerCase().includes('virement')) return 'banque';
+  if (m === PAYMENT_MODE.VIREMENT_INDIRECT || m === PAYMENT_MODE.VIREMENT_DIRECT) return 'aucun';
+  if (m.toLowerCase().includes('virement')) return 'aucun';
   return 'caisse';
 }
 
-/** Crédit / débit d’un compte bancaire Ansar. */
+/** Virement direct : choix d’une banque Ansar pour traçabilité. */
 export function isPaiementVersBanque(mode: string | undefined | null): boolean {
-  return paymentTreasuryDestination(mode) === 'banque';
+  const m = normalizePaymentMode(mode);
+  if (!m) return false;
+  if (m === PAYMENT_MODE.VIREMENT_DIRECT) return true;
+  return m.toLowerCase().includes('virement') && !m.toLowerCase().includes('indirect');
 }
 
 /** Versement via compte fournisseur, au nom d’Ansar. */
 export function isVirementIndirect(mode: string | undefined | null): boolean {
-  return paymentTreasuryDestination(mode) === 'aucun';
+  const m = normalizePaymentMode(mode);
+  if (!m) return false;
+  if (m === PAYMENT_MODE.VIREMENT_INDIRECT) return true;
+  return m.toLowerCase().includes('virement') && m.toLowerCase().includes('indirect');
 }
 
 export function isPaiementElectronique(mode: string | undefined | null): boolean {
   return paymentModeFamily(mode) === 'electronique';
-}
-
-export function isAnsarBankAccount(account: Pick<BankAccount, 'banque' | 'nom'>): boolean {
-  const hay = `${account.banque} ${account.nom}`.toLowerCase();
-  return ANSAR_BANQUE_KEYWORDS.some((k) => hay.includes(k));
-}
-
-/**
- * Comptes Ansar pour un virement direct.
- * Si aucun n’est reconnu (Afriland / CBC / UBA / CCA), on renvoie tous les comptes.
- */
-export function listAnsarBankAccountsForDirectTransfer(accounts: BankAccount[]): {
-  accounts: BankAccount[];
-  filteredToAnsar: boolean;
-} {
-  const filtered = accounts.filter(isAnsarBankAccount);
-  if (filtered.length > 0) return { accounts: filtered, filteredToAnsar: true };
-  return { accounts, filteredToAnsar: false };
-}
-
-/** Libellé affichage : banque puis nom du compte. */
-export function formatBankAccountLabel(account: Pick<BankAccount, 'banque' | 'nom' | 'numeroCompte'>): string {
-  const banque = account.banque?.trim() || 'Banque';
-  const nom = account.nom?.trim();
-  const num = account.numeroCompte?.trim();
-  const parts = [banque];
-  if (nom && nom.toLowerCase() !== banque.toLowerCase()) parts.push(nom);
-  if (num) parts.push(num);
-  return parts.join(' · ');
-}
-
-export function resolveBankAccountLabel(
-  compteId: string | undefined | null,
-  accounts: BankAccount[],
-): string {
-  if (!compteId) return '—';
-  const acc = accounts.find((a) => a.id === compteId);
-  return acc ? formatBankAccountLabel(acc) : '—';
 }
 
 export function defaultModeForFamily(family: PaymentModeFamily): PaymentModeValue {
@@ -143,7 +148,7 @@ export const PAYMENT_FAMILY_OPTIONS: { value: PaymentModeFamily; label: string; 
   {
     value: 'virement',
     label: 'Virement bancaire',
-    hint: 'Direct (comptes Ansar) ou indirect (compte fournisseur au nom d’Ansar)',
+    hint: 'Direct (banque Ansar pour traçabilité) ou indirect (compte fournisseur au nom d’Ansar)',
   },
 ];
 
@@ -160,7 +165,7 @@ export const VIREMENT_KIND_OPTIONS: {
   {
     value: PAYMENT_MODE.VIREMENT_DIRECT,
     label: 'Direct',
-    hint: 'Sur un compte Ansar (Afriland, CBC, UBA, CCA)',
+    hint: 'Indiquer la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité',
   },
   {
     value: PAYMENT_MODE.VIREMENT_INDIRECT,
@@ -170,12 +175,14 @@ export const VIREMENT_KIND_OPTIONS: {
 ];
 
 export function paymentModeHint(mode: string | undefined | null): string {
-  const dest = paymentTreasuryDestination(mode);
-  if (dest === 'banque') {
-    return 'Ce montant sera crédité ou débité sur le compte bancaire Ansar choisi (Afriland, CBC, UBA, CCA).';
+  if (isPaiementVersBanque(mode)) {
+    const banque = parseAnsarBanque(mode);
+    return banque
+      ? `Virement direct sur ${banque} (traçabilité). Aucun compte à créer dans Banque.`
+      : 'Choisis la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité. Aucun compte à créer.';
   }
-  if (dest === 'aucun') {
-    return 'Virement indirect : le client verse sur le compte du fournisseur au nom d’Ansar. Aucun mouvement sur les comptes Ansar pour l’instant.';
+  if (isVirementIndirect(mode)) {
+    return 'Virement indirect : le client verse sur le compte du fournisseur au nom d’Ansar.';
   }
   if (isPaiementElectronique(mode)) {
     return 'Paiement électronique (MTN / Orange) enregistré en caisse.';

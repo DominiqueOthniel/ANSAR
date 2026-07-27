@@ -21,23 +21,12 @@ async function ensureConfig() {
   return rows[0];
 }
 
-function affectsCashSolde(t) {
-  const mode = String(t.modePaiement || '')
-    .trim()
-    .toLowerCase();
-  if (t.type === 'sortie' && (mode === 'virement direct' || mode.includes('virement direct'))) {
-    return false;
-  }
-  return true;
-}
-
 async function balanceExcluding(excludeId) {
   const cfg = await ensureConfig();
   let solde = num(cfg.soldeInitial);
-  const { rows } = await query(`SELECT id, type, montant, "modePaiement" FROM caisse_transactions`);
+  const { rows } = await query(`SELECT id, type, montant FROM caisse_transactions`);
   for (const t of rows) {
     if (excludeId && t.id === excludeId) continue;
-    if (!affectsCashSolde(t)) continue;
     const m = num(t.montant);
     solde += t.type === 'entree' ? m : -m;
   }
@@ -98,9 +87,7 @@ async function listTx() {
 }
 
 async function createTx(body, actor) {
-  if (body.type === 'sortie' && affectsCashSolde({ type: body.type, modePaiement: body.modePaiement })) {
-    await assertSortie(num(body.montant));
-  }
+  if (body.type === 'sortie') await assertSortie(num(body.montant));
   const id = body.id?.trim() || randomUUID();
   await query(
     `INSERT INTO caisse_transactions (
@@ -134,10 +121,7 @@ async function updateTx(id, body, actor) {
   const before = mapTx(rows[0]);
   const newType = body.type ?? before.type;
   const newMontant = body.montant !== undefined ? num(body.montant) : before.montant;
-  const newMode = body.modePaiement !== undefined ? body.modePaiement : before.modePaiement;
-  if (newType === 'sortie' && affectsCashSolde({ type: newType, modePaiement: newMode })) {
-    await assertSortie(newMontant, id);
-  }
+  if (newType === 'sortie') await assertSortie(newMontant, id);
   await query(
     `UPDATE caisse_transactions SET
       type = COALESCE($2, type),

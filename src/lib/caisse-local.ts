@@ -97,27 +97,21 @@ export function getCaisseSoldeInitialSync(): number {
 }
 
 /**
- * Sortie en virement direct : débit banque Ansar uniquement (hors solde espèces).
- * Entrée en virement : alimentation caisse (prélèvement banque → espèces), compte dans le solde.
+ * Toutes les transactions caisse impactent le solde espèces.
+ * La banque Ansar (Afriland / CBC / UBA / CCA) est une simple traçabilité sur le mode.
  */
-export function caisseAffectsCashSolde(
-  t: Pick<CaisseTransaction, 'type' | 'modePaiement'>,
-): boolean {
-  if (t.type === 'sortie' && isPaiementVersBanque(t.modePaiement)) return false;
+export function caisseAffectsCashSolde(_t: Pick<CaisseTransaction, 'type' | 'modePaiement'>): boolean {
   return true;
 }
 
-/** Solde caisse = solde initial + entrées − sorties (hors sorties virement banque). */
+/** Solde caisse = solde initial + entrées − sorties. */
 export function computeCaisseSoldeActuel(
   soldeInitial: number,
   transactions: CaisseTransaction[],
 ): number {
   return (
     soldeInitial +
-    transactions.reduce((sum, t) => {
-      if (!caisseAffectsCashSolde(t)) return sum;
-      return t.type === 'entree' ? sum + t.montant : sum - t.montant;
-    }, 0)
+    transactions.reduce((sum, t) => (t.type === 'entree' ? sum + t.montant : sum - t.montant), 0)
   );
 }
 

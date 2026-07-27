@@ -198,9 +198,12 @@ export default function Chargements() {
   const getOrderClientName = (order: { clientId?: string; clientNom?: string }) =>
     formatClientDisplayName(order, (id) => clientsById.get(id));
 
-  const getClientKeyLabel = (key: string) =>
-    key.startsWith('comptoir:') ? 'Client comptoir' : clientsById.get(key) ?? '—';
-
+  const getClientKeyLabel = (key: string) => {
+    if (key.startsWith('comptoir:')) {
+      return key.slice('comptoir:'.length).trim() || 'Client comptoir';
+    }
+    return clientsById.get(key) ?? '—';
+  };
   const activeTrucks = useMemo(
     () =>
       stableSort(
@@ -574,11 +577,8 @@ export default function Chargements() {
     if (!reassignLoading) return '—';
     const names = [
       ...new Set(
-        activeAssignmentsOf(reassignLoading).map(
-          (a) =>
-            a.clientNom ||
-            (a.clientId ? clientsById.get(a.clientId) : undefined) ||
-            'Client comptoir',
+        activeAssignmentsOf(reassignLoading).map((a) =>
+          formatClientDisplayName(a, (id) => clientsById.get(id)),
         ),
       ),
     ];
@@ -1305,11 +1305,10 @@ export default function Chargements() {
                           const clients = [
                             ...new Map(
                               activeAssignments.map((a) => {
-                                const name =
-                                  a.clientNom ||
-                                  (a.clientId ? clientsById.get(a.clientId) : undefined) ||
-                                  'Client comptoir';
-                                const key = a.clientId || `comptoir:${name}`;
+                                const name = formatClientDisplayName(a, (id) =>
+                                  clientsById.get(id),
+                                );
+                                const key = getClientAccountKey(a);
                                 return [key, { key, name, assignment: a }] as const;
                               }),
                             ).values(),
@@ -1485,7 +1484,9 @@ export default function Chargements() {
                     },
                   ]}
                   orphanLabel={
-                    assignClientId.startsWith('comptoir:') ? 'Client comptoir' : undefined
+                    assignClientId.startsWith('comptoir:')
+                      ? getClientKeyLabel(assignClientId)
+                      : undefined
                   }
                 />
                 <p className="text-xs text-muted-foreground">
@@ -1608,7 +1609,9 @@ export default function Chargements() {
                     },
                   ]}
                   orphanLabel={
-                    reassignClientId.startsWith('comptoir:') ? 'Client comptoir' : undefined
+                    reassignClientId.startsWith('comptoir:')
+                      ? getClientKeyLabel(reassignClientId)
+                      : undefined
                   }
                 />
               </div>
