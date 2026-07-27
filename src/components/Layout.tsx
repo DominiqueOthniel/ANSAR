@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Truck,
+  Route,
   DollarSign,
   FileText,
   Users,
@@ -46,6 +47,7 @@ const navigation = [
   { name: 'Clients',    href: '/clients',    icon: UserCircle2,     color: 'from-emerald-500 to-teal-500' },
   { name: 'Mouvements', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
   { name: 'Camions',    href: '/camions',    icon: Truck,           color: 'from-purple-500 to-pink-500' },
+  { name: 'Trajets',    href: '/trajets',    icon: Route,           color: 'from-teal-500 to-cyan-500' },
   { name: 'Dépenses',   href: '/depenses',   icon: DollarSign,      color: 'from-orange-500 to-red-500' },
   { name: 'Factures',   href: '/factures',   icon: FileText,        color: 'from-blue-500 to-cyan-500' },
   { name: 'Chauffeurs', href: '/chauffeurs', icon: Users,           color: 'from-cyan-500 to-sky-500' },

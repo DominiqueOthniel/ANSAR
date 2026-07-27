@@ -21,12 +21,13 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus, Receipt } from 'lucide-react';
+import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus, Receipt, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemainingRecetteToInvoice, sumMontantTTCForTripInvoices } from '@/lib/sync-utils';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import PageHeader from '@/components/PageHeader';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
+import { TripMissionContextPanel } from '@/components/trips/TripMissionContextPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -47,6 +48,11 @@ import {
 } from '@/lib/trip-client-participants';
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
 import { formatTripCode } from '@/lib/trip-display';
+import {
+  filterActivityNearDate,
+  getTripMissionActivity,
+  truckMissionLabel,
+} from '@/lib/trip-mission-context';
 
 /** Affichage itinéraire quand la destination résumé est vide. */
 function itineraireResume(origine: string, destination: string | undefined): string {
@@ -166,6 +172,8 @@ export default function Trips() {
     expenses,
     thirdParties,
     merchandiseQualities,
+    supplierLoadings,
+    clientDeliveries,
     createTrip,
     updateTrip,
     deleteTrip,
@@ -190,6 +198,8 @@ export default function Trips() {
   const [editingMerchandiseId, setEditingMerchandiseId] = useState<string | null>(null);
   const [merchEditDraft, setMerchEditDraft] = useState('');
   const { isSubmitting, withGuard } = useSubmitGuard();
+  const [filterTruck, setFilterTruck] = useState<string>('all');
+  const [filterDriver, setFilterDriver] = useState<string>('all');
 
   const tiersClientsFiches = useMemo(
     () => thirdParties.filter((tp) => tp.type === 'client'),
@@ -644,8 +654,7 @@ export default function Trips() {
 
   const getTruckLabel = (id?: string) => {
     if (!id) return '-';
-    const truck = trucks.find(t => t.id === id);
-    return truck ? truck.immatriculation : '-';
+    return truckMissionLabel(trucks.find((t) => t.id === id));
   };
 
   const getDriverLabel = (id: string) => {
@@ -862,18 +871,18 @@ export default function Trips() {
   const filteredTrips = useMemo(
     () =>
       trips.filter(trip => {
-        // Filtre par origine
         if (filterOrigin !== 'all' && trip.origine !== filterOrigin) return false;
-        
-        // Filtre par destination
         if (filterDestination !== 'all' && trip.destination !== filterDestination) return false;
-        
-        // Filtre par statut
         if (filterStatus !== 'all' && trip.statut !== filterStatus) return false;
-        
-        // Recherche générale (client, marchandise, description, itinéraire)
+        if (filterTruck !== 'all') {
+          if (trip.tracteurId !== filterTruck && trip.remorqueuseId !== filterTruck) return false;
+        }
+        if (filterDriver !== 'all' && trip.chauffeurId !== filterDriver) return false;
+
         if (searchTerm) {
           const search = searchTerm.toLowerCase();
+          const truck = trucks.find((t) => t.id === trip.tracteurId || t.id === trip.remorqueuseId);
+          const matchesTruck = truckMissionLabel(truck).toLowerCase().includes(search);
           const matchesClient = trip.client?.toLowerCase().includes(search);
           const partLine = formatTripClientsSummary(trip).toLowerCase();
           const matchesParticipants =
@@ -896,6 +905,7 @@ export default function Trips() {
             ) ?? false;
 
           if (
+            !matchesTruck &&
             !matchesClient &&
             !matchesParticipants &&
             !matchesMarchandise &&
@@ -912,11 +922,28 @@ export default function Trips() {
             return false;
           }
         }
-        
+
         return true;
       }),
-    [trips, filterOrigin, filterDestination, filterStatus, searchTerm],
+    [trips, trucks, filterOrigin, filterDestination, filterStatus, filterTruck, filterDriver, searchTerm],
   );
+
+  const formMissionActivity = useMemo(() => {
+    const truckId = formData.tracteurId || formData.remorqueuseId;
+    const base = getTripMissionActivity(truckId, supplierLoadings, clientDeliveries);
+    return filterActivityNearDate(base, formData.dateDepart, 21);
+  }, [
+    formData.tracteurId,
+    formData.remorqueuseId,
+    formData.dateDepart,
+    supplierLoadings,
+    clientDeliveries,
+  ]);
+
+  const formTruckLabel = useMemo(() => {
+    const id = formData.tracteurId || formData.remorqueuseId;
+    return truckMissionLabel(trucks.find((t) => t.id === id));
+  }, [formData.tracteurId, formData.remorqueuseId, trucks]);
 
   const driverLabel = (id: string) => {
     const driver = drivers.find(d => d.id === id);
@@ -963,6 +990,16 @@ export default function Trips() {
         return stableSort(list, (a, b) => parseDateMs(b.dateDepart) - parseDateMs(a.dateDepart));
     }
   }, [filteredTrips, listSort, drivers]);
+
+  const tripActivityById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getTripMissionActivity>>();
+    for (const trip of sortedTrips) {
+      const truckId = trip.tracteurId || trip.remorqueuseId;
+      const base = getTripMissionActivity(truckId, supplierLoadings, clientDeliveries);
+      map.set(trip.id, filterActivityNearDate(base, trip.dateDepart, 21));
+    }
+    return map;
+  }, [sortedTrips, supplierLoadings, clientDeliveries]);
 
   const tripCoordsById = useMemo(() => {
     const map = new Map<string, { origin: GeoPoint; destination: GeoPoint }>();
@@ -1213,25 +1250,30 @@ export default function Trips() {
     });
   };
 
-  // Réinitialiser les filtres
   const resetFilters = () => {
     setFilterOrigin('all');
     setFilterDestination('all');
     setFilterStatus('all');
+    setFilterTruck('all');
+    setFilterDriver('all');
     setSearchTerm('');
     setListSort('date_depart_desc');
   };
-  
-  // Vérifier si des filtres sont actifs
-  const hasActiveFilters = filterOrigin !== 'all' || filterDestination !== 'all' || filterStatus !== 'all' || searchTerm !== '';
+
+  const hasActiveFilters =
+    filterOrigin !== 'all' ||
+    filterDestination !== 'all' ||
+    filterStatus !== 'all' ||
+    filterTruck !== 'all' ||
+    filterDriver !== 'all' ||
+    searchTerm !== '';
 
   return (
     <div className="space-y-6 p-1">
-      {/* En-tête professionnel */}
       <PageHeader
-        title="Gestion des Trajets"
+        title="Trajets · Missions flotte"
         icon={Route}
-        gradient="from-green-500/20 via-cyan-500/10 to-transparent"
+        gradient="from-teal-500/20 via-cyan-500/10 to-transparent"
         stats={[
           {
             label: 'Terminés',
@@ -1266,6 +1308,15 @@ export default function Trips() {
         ]}
         actions={
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/chargements">
+              <Link2 className="mr-2 h-4 w-4" />
+              Chargements
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/clients">Clients</Link>
+          </Button>
           <Button
             variant="outline"
             className="shadow-sm"
@@ -1293,15 +1344,25 @@ export default function Trips() {
                   onClick={() => resetForm()}
                 >
                 <Plus className="mr-2 h-4 w-4" />
-                Ajouter un trajet
+                Nouvelle mission
               </Button>
             </DialogTrigger>
             )}
             <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>{editingTripId ? 'Modifier le trajet' : 'Ajouter un trajet'}</DialogTitle>
+                <DialogTitle>{editingTripId ? 'Modifier la mission' : 'Nouvelle mission flotte'}</DialogTitle>
+                <DialogDescription>
+                  Mission camion + chauffeur + recette / dépenses. Les bons et livraisons clients
+                  restent dans Chargements et Clients.
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
+              {(formData.tracteurId || formData.remorqueuseId) && (
+                <TripMissionContextPanel
+                  activity={formMissionActivity}
+                  truckLabel={formTruckLabel}
+                />
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="tracteur">
@@ -1312,11 +1373,9 @@ export default function Trips() {
                   </Label>
                   <Select value={formData.tracteurId || 'none'} onValueChange={(value) => {
                     const tracteurId = value === 'none' ? '' : value;
-                    // Trouver le chauffeur attitré au tracteur sélectionné
                     const selectedTruck = trucks.find(t => t.id === tracteurId);
                     const chauffeurAttitreId = selectedTruck?.chauffeurId || '';
                     
-                    // Si le tracteur a un chauffeur attitré, le sélectionner automatiquement
                     setFormData({ 
                       ...formData, 
                       tracteurId,
@@ -1344,7 +1403,7 @@ export default function Trips() {
                           const chauffeurAttitre = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
                           return (
                             <SelectItem key={t.id} value={t.id}>
-                              {t.immatriculation} - {t.modele}
+                              {truckMissionLabel(t)} · {t.modele}
                               {chauffeurAttitre && (
                                 <span className="ml-2 text-xs text-muted-foreground">
                                   ({EMOJI.personne} {chauffeurAttitre.prenom} {chauffeurAttitre.nom})
@@ -1376,7 +1435,7 @@ export default function Trips() {
                         </div>
                       ) : (
                         remorqueuses.map(t => (
-                          <SelectItem key={t.id} value={t.id}>{t.immatriculation} - {t.modele}</SelectItem>
+                          <SelectItem key={t.id} value={t.id}>{truckMissionLabel(t)} · {t.modele}</SelectItem>
                         ))
                       )}
                     </SelectContent>
@@ -1987,6 +2046,22 @@ export default function Trips() {
         }
       />
 
+      <Card className="border-teal-500/25 bg-teal-500/5 dark:bg-teal-950/20">
+        <CardContent className="pt-4 pb-4 space-y-2 text-sm">
+          <p className="font-medium text-teal-900 dark:text-teal-100">
+            Rôle de cet écran dans le système actuel
+          </p>
+          <p className="text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Chargements / Clients</strong> gèrent la chaîne
+            marchandises (bon → affectation → livraison → facture commande).{' '}
+            <strong className="text-foreground">Trajets</strong> gère la mission flotte : quel
+            camion, quel chauffeur, quelles dates, préfinancement, dépenses et facture transport.
+            Les deux se croisent sur le même véhicule : la mission affiche l’activité client déjà
+            rattachée au camion pour éviter le double emploi.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Section de filtres */}
       <Card className="shadow-md">
         <CardHeader className="bg-gradient-to-br from-background to-muted/20 pb-3">
@@ -2026,6 +2101,44 @@ export default function Trips() {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label>Camion</Label>
+                <Select value={filterTruck} onValueChange={setFilterTruck}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tous les camions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les camions</SelectItem>
+                    {stableSort(
+                      trucks.filter((t) => t.statut === 'actif'),
+                      (a, b) => frCollator.compare(truckMissionLabel(a), truckMissionLabel(b)),
+                    ).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {truckMissionLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Chauffeur</Label>
+                <Select value={filterDriver} onValueChange={setFilterDriver}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tous les chauffeurs" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les chauffeurs</SelectItem>
+                    {stableSort(
+                      [...drivers],
+                      (a, b) => frCollator.compare(`${a.prenom} ${a.nom}`, `${b.prenom} ${b.nom}`),
+                    ).map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.prenom} {d.nom}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {/* Filtre par origine */}
               <div>
                 <Label htmlFor="filter-origin">Origine</Label>
@@ -2114,15 +2227,17 @@ export default function Trips() {
       <Card className="shadow-md">
         <CardHeader className="bg-gradient-to-br from-background to-muted/20">
               <CardTitle className="flex items-center gap-2">
-            🚚 Liste des Trajets
+            Missions flotte
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[160px]">Itinéraire</TableHead>
+                <TableHead className="min-w-[100px]">Camion</TableHead>
+                <TableHead className="min-w-[160px]">Mission</TableHead>
                 <TableHead className="min-w-[120px]">Client</TableHead>
+                <TableHead className="min-w-[110px]">Activité liée</TableHead>
                 <TableHead className="min-w-[130px]">Chauffeur</TableHead>
                 <TableHead className="min-w-[120px]">Statut</TableHead>
                 <TableHead className="min-w-[90px]">Départ</TableHead>
@@ -2138,18 +2253,23 @@ export default function Trips() {
             <TableBody>
               {sortedTrips.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center text-muted-foreground">
+                  <TableCell colSpan={14} className="text-center text-muted-foreground">
                     {trips.length === 0 
-                      ? 'Aucun trajet enregistré'
+                      ? 'Aucune mission enregistrée. Les bons et livraisons se gèrent dans Chargements / Clients.'
                       : hasActiveFilters
-                        ? 'Aucun trajet ne correspond aux filtres sélectionnés'
-                        : 'Aucun trajet enregistré'
+                        ? 'Aucune mission ne correspond aux filtres sélectionnés'
+                        : 'Aucune mission enregistrée'
                     }
                   </TableCell>
                 </TableRow>
               ) : (
                 sortedTrips.map((trip) => (
                   <TableRow key={trip.id} className="hover:bg-muted/50 transition-colors duration-200">
+                    <TableCell className="font-semibold whitespace-nowrap">
+                      {truckMissionLabel(
+                        trucks.find((t) => t.id === trip.tracteurId || t.id === trip.remorqueuseId),
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline" className="font-mono text-[10px]">
@@ -2194,6 +2314,21 @@ export default function Trips() {
                       {trip.description && <div className="text-xs text-muted-foreground mt-1">{trip.description}</div>}
                     </TableCell>
                     <TableCell>{formatTripClientsSummary(trip)}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const act = tripActivityById.get(trip.id);
+                        if (!act || (act.loadingsCount === 0 && act.deliveriesCount === 0)) {
+                          return <span className="text-muted-foreground text-xs">—</span>;
+                        }
+                        return (
+                          <div className="text-xs space-y-0.5">
+                            <Badge variant="secondary" className="font-normal text-[10px]">
+                              {act.summaryLine}
+                            </Badge>
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell>{getDriverLabel(trip.chauffeurId)}</TableCell>
                     <TableCell>{getStatusBadge(trip.statut)}</TableCell>
                     <TableCell>{new Date(trip.dateDepart).toLocaleDateString('fr-FR')}</TableCell>
