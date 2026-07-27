@@ -24,7 +24,7 @@ import {
   type ExportTotal,
 } from '@/lib/export-utils';
 import { findSupplierLoadingForOrder } from '@/lib/supplier-loadings';
-import { frCollator, stableSort } from '@/lib/list-sort';
+import { parseDateMs, stableSort } from '@/lib/list-sort';
 import type { CaisseTransaction } from '@/lib/caisse-local';
 
 function formatFcfaPlain(n: number): string {
@@ -101,6 +101,28 @@ type ClientLedgerEntry = {
   credit: number;
   sortKey: string;
 };
+
+function fmtLedgerDate(value: string): string {
+  if (!value || value === '—') return '—';
+  const ms = parseDateMs(value);
+  return ms > 0 ? new Date(ms).toLocaleDateString('fr-FR') : value;
+}
+
+function compareLedgerChrono(
+  a: { sortKey: string; index: number },
+  b: { sortKey: string; index: number },
+): number {
+  const da =
+    a.sortKey === '0000-00-00' ? Number.NEGATIVE_INFINITY : parseDateMs(a.sortKey);
+  const db =
+    b.sortKey === '0000-00-00' ? Number.NEGATIVE_INFINITY : parseDateMs(b.sortKey);
+  if (da !== db) return da - db;
+  return a.index - b.index;
+}
+
+function compareDateAsc(a: string | undefined | null, b: string | undefined | null): number {
+  return parseDateMs(a) - parseDateMs(b);
+}
 
 function getOrderInvoice(order: ClientOrder, invoices: Invoice[]): Invoice | undefined {
   return order.invoiceId
@@ -243,10 +265,7 @@ function buildClientLedgerRows(
   let solde = 0;
   const sorted = stableSort(
     entries.map((entry, index) => ({ ...entry, index })),
-    (a, b) => {
-      const byDate = frCollator.compare(a.sortKey, b.sortKey);
-      return byDate !== 0 ? byDate : a.index - b.index;
-    },
+    compareLedgerChrono,
   );
 
   if (sorted.length === 0) {
@@ -256,7 +275,7 @@ function buildClientLedgerRows(
   return sorted.map((entry) => {
     solde += entry.debit - entry.credit;
     return [
-      entry.date,
+      fmtLedgerDate(entry.date),
       entry.qtes,
       entry.qltes,
       entry.atc,
@@ -275,17 +294,17 @@ function buildClientDetailBlocks(
 ): ExportDetailBlock[] {
   const orders = stableSort(
     ordersForExportClient(client, ctx.clientOrders),
-    (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
+    (a, b) => compareDateAsc(a.dateCommande, b.dateCommande),
   );
   const orderIds = new Set(orders.map((o) => o.id));
   const deliveries = stableSort(
     deliveriesForExportClient(client, ctx.clientDeliveries),
-    (a, b) => frCollator.compare(b.datePrevue ?? '', a.datePrevue ?? ''),
+    (a, b) => compareDateAsc(a.datePrevue ?? a.dateLivraison, b.datePrevue ?? b.dateLivraison),
   );
   const deliveryIds = new Set(deliveries.map((d) => d.id));
   const clientInvoices = stableSort(
     invoicesForClient(client.id, ctx.invoices, orderIds, deliveryIds),
-    (a, b) => frCollator.compare(b.dateCreation, a.dateCreation),
+    (a, b) => compareDateAsc(a.dateCreation, b.dateCreation),
   );
 
   const encours = sumEncoursClientPourPlafond({
@@ -464,17 +483,17 @@ function buildClientLedgerBlock(
 ): ExportDetailBlock {
   const orders = stableSort(
     ordersForExportClient(client, ctx.clientOrders),
-    (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
+    (a, b) => compareDateAsc(a.dateCommande, b.dateCommande),
   );
   const orderIds = new Set(orders.map((o) => o.id));
   const deliveries = stableSort(
     deliveriesForExportClient(client, ctx.clientDeliveries),
-    (a, b) => frCollator.compare(b.datePrevue ?? '', a.datePrevue ?? ''),
+    (a, b) => compareDateAsc(a.datePrevue ?? a.dateLivraison, b.datePrevue ?? b.dateLivraison),
   );
   const deliveryIds = new Set(deliveries.map((d) => d.id));
   const clientInvoices = stableSort(
     invoicesForClient(client.id, ctx.invoices, orderIds, deliveryIds),
-    (a, b) => frCollator.compare(b.dateCreation, a.dateCreation),
+    (a, b) => compareDateAsc(a.dateCreation, b.dateCreation),
   );
 
   return {

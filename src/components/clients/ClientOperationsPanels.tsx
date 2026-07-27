@@ -126,7 +126,7 @@ export function ClientOperationsPanels({
     () =>
       clientOrders
         .filter((o) => (isWalkIn ? !o.clientId : o.clientId === clientId))
-        .sort((a, b) => b.dateCommande.localeCompare(a.dateCommande)),
+        .sort((a, b) => a.dateCommande.localeCompare(b.dateCommande)),
     [clientOrders, clientId, isWalkIn],
   );
 
@@ -149,7 +149,7 @@ export function ClientOperationsPanels({
         return d.clientId === clientId;
       })
       .sort((a, b) =>
-        (b.dateLivraison ?? '').localeCompare(a.dateLivraison ?? ''),
+        (a.dateLivraison ?? a.datePrevue ?? '').localeCompare(b.dateLivraison ?? b.datePrevue ?? ''),
       );
   }, [clientDeliveries, orders, clientId, isWalkIn]);
 
