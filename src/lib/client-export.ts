@@ -231,7 +231,7 @@ function buildClientLedgerRows(
         qltes: isEntree
           ? `Versement caisse${t.categorie ? ` (${t.categorie})` : ''}`
           : `Sortie caisse${t.categorie ? ` (${t.categorie})` : ''}`,
-        atc: cell(t.reference),
+        atc: '',
         camion: '',
         prixUnitaire: '',
         debit: isEntree ? 0 : montant,
