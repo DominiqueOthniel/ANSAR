@@ -32,7 +32,19 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
   }
->(({ className, children, showCloseButton = true, ...props }, ref) => (
+>(({ className, children, showCloseButton = true, onPointerDownOutside, onInteractOutside, ...props }, ref) => {
+  const allowPortaledOverlays = (event: { target: EventTarget; preventDefault: () => void }) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        '[data-radix-popper-content-wrapper], [data-radix-select-content], [role="listbox"], [cmdk-root]',
+      )
+    ) {
+      event.preventDefault();
+    }
+  };
+
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -41,6 +53,14 @@ const DialogContent = React.forwardRef<
         "fixed left-[50vw] top-[50vh] z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border bg-background p-6 shadow-lg duration-300 ease-ios data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
         className,
       )}
+      onPointerDownOutside={(event) => {
+        allowPortaledOverlays(event);
+        onPointerDownOutside?.(event);
+      }}
+      onInteractOutside={(event) => {
+        allowPortaledOverlays(event);
+        onInteractOutside?.(event);
+      }}
       {...props}
     >
       {children}
@@ -52,7 +72,8 @@ const DialogContent = React.forwardRef<
       ) : null}
     </DialogPrimitive.Content>
   </DialogPortal>
-));
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

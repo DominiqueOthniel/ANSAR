@@ -75,8 +75,19 @@ import {
 } from '@/lib/article-pricing';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
-const WALK_IN_CLIENT_KEY = 'comptoir:Client comptoir';
+/** Filtre : toutes les commandes (pas de restriction client). */
+const ALL_CLIENTS_FILTER = '__all__';
+/** Filtre : toutes les commandes clients comptoir (sans fiche). */
+const WALK_IN_CLIENT_FILTER = '__walk_in__';
 
+function orderMatchesAssignClientFilter(
+  order: { clientId?: string; clientNom?: string },
+  filterId: string,
+): boolean {
+  if (!filterId || filterId === ALL_CLIENTS_FILTER) return true;
+  if (filterId === WALK_IN_CLIENT_FILTER) return getClientAccountKind(order) === 'walk_in';
+  return getClientAccountKey(order) === filterId;
+}
 function statusBadgeVariant(
   statut: SupplierLoadingStatus,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -199,6 +210,8 @@ export default function Chargements() {
     formatClientDisplayName(order, (id) => clientsById.get(id));
 
   const getClientKeyLabel = (key: string) => {
+    if (!key || key === ALL_CLIENTS_FILTER) return 'Tous les clients';
+    if (key === WALK_IN_CLIENT_FILTER) return 'Clients comptoir';
     if (key.startsWith('comptoir:')) {
       return key.slice('comptoir:'.length).trim() || 'Client comptoir';
     }
@@ -476,7 +489,7 @@ export default function Chargements() {
     return stableSort(
       clientOrders.filter((o) => {
         if (o.statut === 'annulee') return false;
-        if (assignClientId && getClientAccountKey(o) !== assignClientId) return false;
+        if (!orderMatchesAssignClientFilter(o, assignClientId)) return false;
         return true;
       }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
@@ -591,7 +604,7 @@ export default function Chargements() {
     return stableSort(
       clientOrders.filter((o) => {
         if (o.statut === 'annulee') return false;
-        if (getClientAccountKey(o) !== reassignClientId) return false;
+        if (!orderMatchesAssignClientFilter(o, reassignClientId)) return false;
         return true;
       }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
@@ -1472,18 +1485,27 @@ export default function Chargements() {
                 <Label>Filtrer par client (optionnel)</Label>
                 <ThirdPartyPicker
                   options={clients}
-                  value={assignClientId}
-                  onValueChange={setAssignClientId}
+                  value={assignClientId || ALL_CLIENTS_FILTER}
+                  onValueChange={(id) =>
+                    setAssignClientId(id === ALL_CLIENTS_FILTER ? '' : id)
+                  }
                   placeholder="Tous les clients…"
                   searchPlaceholder="Rechercher un client…"
                   topChoices={[
                     {
-                      id: WALK_IN_CLIENT_KEY,
-                      label: 'Client comptoir',
+                      id: ALL_CLIENTS_FILTER,
+                      label: 'Tous les clients',
+                      keywords: 'tous reset filtre',
+                    },
+                    {
+                      id: WALK_IN_CLIENT_FILTER,
+                      label: 'Clients comptoir',
                       keywords: 'passager sans fiche comptoir',
                     },
                   ]}
                   orphanLabel={
+                    assignClientId &&
+                    assignClientId !== WALK_IN_CLIENT_FILTER &&
                     assignClientId.startsWith('comptoir:')
                       ? getClientKeyLabel(assignClientId)
                       : undefined
@@ -1596,19 +1618,21 @@ export default function Chargements() {
                   options={clients}
                   value={reassignClientId}
                   onValueChange={(id) => {
-                    setReassignClientId(id);
+                    setReassignClientId(id === ALL_CLIENTS_FILTER ? '' : id);
                     setReassignOrderId('');
                   }}
                   placeholder="Choisir le nouveau client…"
                   searchPlaceholder="Rechercher un client…"
                   topChoices={[
                     {
-                      id: WALK_IN_CLIENT_KEY,
-                      label: 'Client comptoir',
+                      id: WALK_IN_CLIENT_FILTER,
+                      label: 'Clients comptoir',
                       keywords: 'passager sans fiche comptoir',
                     },
                   ]}
                   orphanLabel={
+                    reassignClientId &&
+                    reassignClientId !== WALK_IN_CLIENT_FILTER &&
                     reassignClientId.startsWith('comptoir:')
                       ? getClientKeyLabel(reassignClientId)
                       : undefined

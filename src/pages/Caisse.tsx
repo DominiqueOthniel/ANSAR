@@ -27,7 +27,6 @@ import {
 import { useApp } from '@/contexts/AppContext';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PaymentModePicker } from '@/components/PaymentModePicker';
-import { AnsarBankAccountSelect } from '@/components/AnsarBankAccountSelect';
 import { getTotalCreancesClients } from '@/lib/sync-utils';
 import {
   type CaisseTransaction,
@@ -45,13 +44,10 @@ import {
   InsufficientCaisseError,
 } from '@/lib/caisse-local';
 import {
-  ANSAR_BANQUES,
-  formatPaymentModeWithBanque,
-  isPaiementVersBanque,
-  isVirementIndirect,
+  missingVersementDetailMessage,
   normalizePaymentMode,
   parseAnsarBanque,
-  paymentModeHint,
+  parseIndirectVersement,
 } from '@/lib/payment-modes';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
@@ -90,7 +86,15 @@ function formatCaisseModePaiement(t: Pick<CaisseTransaction, 'modePaiement'>): s
 }
 
 function formatCaisseBanqueLabel(t: Pick<CaisseTransaction, 'modePaiement'>): string {
-  return parseAnsarBanque(t.modePaiement) || '—';
+  const direct = parseAnsarBanque(t.modePaiement);
+  if (direct) return direct;
+  const indirect = parseIndirectVersement(t.modePaiement);
+  if (indirect) {
+    return indirect.banque
+      ? `${indirect.entreprise} / ${indirect.banque}`
+      : indirect.entreprise;
+  }
+  return '—';
 }
 
 export default function Caisse() {
@@ -115,8 +119,6 @@ export default function Caisse() {
     montant: 0,
     date: new Date().toISOString().split('T')[0],
     description: '',
-    categorie: '',
-    reference: '',
     /** Financement (entrée uniquement) : hors encaissement d’activité sur le tableau de bord. */
     exclutRevenu: false,
     clientTierId: '',
@@ -128,7 +130,10 @@ export default function Caisse() {
     [thirdParties],
   );
 
-  const [compteBanque, setCompteBanque] = useState<string>(ANSAR_BANQUES[0]);
+  const fournisseurs = useMemo(
+    () => thirdParties.filter((tp) => tp.type === 'fournisseur'),
+    [thirdParties],
+  );
 
   const refreshBankAccounts = () => {
     setBankAccounts(getBankAccounts());
@@ -185,8 +190,6 @@ export default function Caisse() {
     return { totalDisponible, parCompte };
   }, [bankAccounts, transactions]);
 
-  const linkBanque = isPaiementVersBanque(formData.modePaiement);
-
   const saveTransactions = (newTransactions: CaisseTransaction[]) => {
     setTransactions(newTransactions);
     if (!isRemoteCaisse()) {
@@ -229,14 +232,11 @@ export default function Caisse() {
       montant: 0,
       date: new Date().toISOString().split('T')[0],
       description: '',
-      categorie: '',
-      reference: '',
       exclutRevenu: false,
       clientTierId: '',
       modePaiement: '',
     });
     setEditingTransaction(null);
-    setCompteBanque(ANSAR_BANQUES[0]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -248,12 +248,12 @@ export default function Caisse() {
       return;
     }
 
-    const modeBase = normalizePaymentMode(formData.modePaiement) || undefined;
-    if (isPaiementVersBanque(modeBase) && !compteBanque) {
-      toast.error('Choisis la banque (Afriland, CBC, UBA ou CCA) pour la traçabilité.');
+    const mode = formData.modePaiement.trim() || undefined;
+    const missingVersement = missingVersementDetailMessage(mode);
+    if (missingVersement) {
+      toast.error(missingVersement);
       return;
     }
-    const mode = formatPaymentModeWithBanque(modeBase, compteBanque) || modeBase;
 
     if (formData.type === 'sortie') {
       try {
@@ -283,6 +283,8 @@ export default function Caisse() {
         utilisateur: editingTransaction.utilisateur || user?.login || 'system',
         compteBanqueId: undefined,
         bankTransactionId: undefined,
+        categorie: editingTransaction.categorie,
+        reference: editingTransaction.reference,
         exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
         clientTierId: formData.clientTierId || undefined,
         modePaiement: mode,
@@ -355,13 +357,10 @@ export default function Caisse() {
       montant: t.montant,
       date: t.date.split('T')[0] || t.date,
       description: t.description,
-      categorie: t.categorie || '',
-      reference: t.reference || '',
       exclutRevenu: t.type === 'entree' && Boolean(t.exclutRevenu),
       clientTierId: t.clientTierId || '',
-      modePaiement: normalizePaymentMode(t.modePaiement) || '',
+      modePaiement: t.modePaiement || '',
     });
-    setCompteBanque(parseAnsarBanque(t.modePaiement) || ANSAR_BANQUES[0]);
     setIsDialogOpen(true);
   };
 
@@ -440,7 +439,6 @@ export default function Caisse() {
       const banque = formatCaisseBanqueLabel(t).toLowerCase();
       if (
         !t.description.toLowerCase().includes(q) &&
-        !t.reference?.toLowerCase().includes(q) &&
         !clientNom.includes(q) &&
         !mode.includes(q) &&
         !banque.includes(q) &&
@@ -521,7 +519,6 @@ export default function Caisse() {
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Mode', value: (t) => formatCaisseModePaiement(t) },
         { header: 'Banque', value: (t) => formatCaisseBanqueLabel(t) },
-        { header: 'Catégorie', value: (t) => t.categorie || '-' },
         {
           header: 'Financement (hors encaissement)',
           value: (t) => (isFinancementEntree(t) ? 'Oui' : '—'),
@@ -668,35 +665,10 @@ export default function Caisse() {
                     <PaymentModePicker
                       id="caisse-mode-paiement"
                       label="Mode de paiement (optionnel)"
-                      value={normalizePaymentMode(formData.modePaiement) || ''}
-                      onChange={(mode) => {
-                        setFormData((f) => ({ ...f, modePaiement: mode }));
-                        if (mode && isPaiementVersBanque(mode)) {
-                          setCompteBanque((prev) => prev || ANSAR_BANQUES[0]);
-                        }
-                      }}
+                      value={formData.modePaiement}
+                      onChange={(mode) => setFormData((f) => ({ ...f, modePaiement: mode }))}
+                      entreprises={fournisseurs}
                     />
-
-                    {linkBanque && (
-                      <div className="space-y-3 rounded-lg border border-dashed border-emerald-200 dark:border-emerald-900/50 p-3 bg-emerald-50/50 dark:bg-emerald-950/20">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <Landmark className="h-4 w-4 shrink-0 text-emerald-700" />
-                          Banque (traçabilité)
-                        </div>
-                        <AnsarBankAccountSelect
-                          id="caisse-bank-account"
-                          label="Banque *"
-                          value={compteBanque}
-                          onChange={setCompteBanque}
-                        />
-                      </div>
-                    )}
-
-                    {isVirementIndirect(formData.modePaiement) && (
-                      <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 dark:bg-sky-950/20 p-3 text-sm text-sky-900 dark:text-sky-200">
-                        {paymentModeHint(formData.modePaiement)}
-                      </div>
-                    )}
 
                     <div>
                       <Label htmlFor="date">Date *</Label>
@@ -716,24 +688,6 @@ export default function Caisse() {
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         required
                       />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="categorie">Catégorie</Label>
-                        <Input
-                          id="categorie"
-                          value={formData.categorie}
-                          onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="reference">Référence</Label>
-                        <Input
-                          id="reference"
-                          value={formData.reference}
-                          onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
-                        />
-                      </div>
                     </div>
 
                     <div>
@@ -764,10 +718,6 @@ export default function Caisse() {
                             setFormData((f) => ({
                               ...f,
                               exclutRevenu: on,
-                              categorie:
-                                on && !f.categorie.trim()
-                                  ? 'Financement'
-                                  : f.categorie,
                             }));
                           }}
                           className="mt-1"
@@ -987,7 +937,7 @@ export default function Caisse() {
           </div>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
-            <Table className="min-w-[980px]">
+            <Table className="min-w-[900px]">
               <TableHeader>
                 <TableRow>
                   <TableHead rowSpan={2}>Date</TableHead>
@@ -1001,7 +951,6 @@ export default function Caisse() {
                   <TableHead rowSpan={2}>Utilisateur</TableHead>
                   <TableHead rowSpan={2} className="whitespace-nowrap">Mode</TableHead>
                   <TableHead rowSpan={2} className="whitespace-nowrap">Banque</TableHead>
-                  <TableHead rowSpan={2}>Référence</TableHead>
                   {canManageTreasury && (
                     <TableHead rowSpan={2} className="text-right">Actions</TableHead>
                   )}
@@ -1018,7 +967,7 @@ export default function Caisse() {
               <TableBody>
                 {sortedTransactionRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManageTreasury ? 12 : 11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={canManageTreasury ? 11 : 10} className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-12 w-12 mx-auto mb-2 opacity-50" />
                       <p>Aucune transaction enregistrée</p>
                     </TableCell>
@@ -1069,7 +1018,6 @@ export default function Caisse() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{t.reference || '-'}</TableCell>
                       {canManageTreasury && (
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">

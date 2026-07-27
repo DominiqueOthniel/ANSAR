@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, Truck, TruckType, TruckStatus, TruckSousType, ThirdParty } from '@/contexts/AppContext';
+import { useApp, Truck, TruckType, TruckStatus, TruckSousType, ThirdParty, type SupplierLoading, type ClientDelivery, type ClientOrder } from '@/contexts/AppContext';
 import { TruckOperationsPanels } from '@/components/trucks/TruckOperationsPanels';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,10 +20,21 @@ import {
 } from '@/lib/sync-utils';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
-import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
+import { exportToExcel, exportToPrintablePDFWithDetails, type ExportDetailBlock } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
+import {
+  listDeliveriesForTruck,
+  listLoadingsForTruck,
+  listOrdersLinkedToTruck,
+} from '@/lib/truck-operations';
+import { formatSupplierLoadingStatusFr } from '@/lib/supplier-loadings';
+import {
+  formatClientDeliveryStatusFr,
+  formatClientOrderStatusFr,
+} from '@/lib/client-operations';
+import { formatLoadingEntryModeFr } from '@/lib/hub-transit';
 
 const TRUCK_SORT_OPTIONS = [
   { value: 'immat_asc', label: 'Immatriculation A → Z' },
@@ -94,6 +105,129 @@ function exportRemorqueImmat(truck: Truck): string {
   return splitCombinedTruckImmat(truck.immatriculation).remorque || '-';
 }
 
+/** Immatriculation courte pour exports (ex. TF3) ; repli sur la plaque longue. */
+function exportShortImmat(truck: Truck): string {
+  const short = truck.nom?.trim();
+  if (short) return short;
+  if (truck.type === 'remorqueuse') return truck.immatriculation;
+  return exportTracteurImmat(truck);
+}
+
+function fmtExportDate(value?: string | null): string {
+  if (!value?.trim()) return '—';
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return value;
+  return new Date(ms).toLocaleDateString('fr-FR');
+}
+
+function loadingClientsLabel(l: SupplierLoading): string {
+  const names = [
+    ...new Set(
+      (l.assignments ?? [])
+        .filter((a) => a.orderStatus !== 'annulee')
+        .map((a) => a.clientNom?.trim())
+        .filter(Boolean) as string[],
+    ),
+  ];
+  return names.length ? names.join(', ') : '—';
+}
+
+function buildTruckDetailBlocks(
+  truck: Truck,
+  supplierLoadings: SupplierLoading[],
+  clientDeliveries: ClientDelivery[],
+  clientOrders: ClientOrder[],
+): ExportDetailBlock[] {
+  const loadings = stableSort(
+    listLoadingsForTruck(supplierLoadings, truck.id),
+    (a, b) => frCollator.compare(b.dateChargement, a.dateChargement),
+  );
+  const deliveries = stableSort(
+    listDeliveriesForTruck(clientDeliveries, truck.id),
+    (a, b) => frCollator.compare(b.datePrevue ?? b.dateLivraison ?? '', a.datePrevue ?? a.dateLivraison ?? ''),
+  );
+  const orders = stableSort(
+    listOrdersLinkedToTruck(clientOrders, supplierLoadings, clientDeliveries, truck.id),
+    (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
+  );
+
+  return [
+    {
+      title: `Bons de chargement (${loadings.length})`,
+      columns: [
+        'Date bon',
+        'Date livraison',
+        'N° bon',
+        'Fournisseur',
+        'Désignation',
+        'Clients',
+        'Qté',
+        'Mode',
+        'Statut',
+        'Lieu',
+      ],
+      rows:
+        loadings.length > 0
+          ? loadings.map((l) => [
+              fmtExportDate(l.dateChargement),
+              fmtExportDate(l.dateLivraison),
+              l.numeroBon?.trim() || '—',
+              l.fournisseurNom ?? '—',
+              l.designation || '—',
+              loadingClientsLabel(l),
+              l.quantite != null ? `${l.quantite}${l.unite ? ` ${l.unite}` : ''}` : '—',
+              formatLoadingEntryModeFr(l.modeEntree),
+              formatSupplierLoadingStatusFr(l.statut),
+              l.lieu?.trim() || '—',
+            ])
+          : [['—', '—', 'Aucun bon rattaché', '', '', '', '', '', '', '']],
+    },
+    {
+      title: `Livraisons clients (${deliveries.length})`,
+      columns: [
+        'Date prévue',
+        'Date livrée',
+        'Client',
+        'Commande',
+        'Lieu',
+        'Statut',
+        'Transport (FCFA)',
+        'Notes',
+      ],
+      rows:
+        deliveries.length > 0
+          ? deliveries.map((d) => [
+              fmtExportDate(d.datePrevue),
+              fmtExportDate(d.dateLivraison),
+              d.clientNom?.trim() || '—',
+              d.orderDesignation?.trim() || '—',
+              d.lieuLivraison || '—',
+              formatClientDeliveryStatusFr(d.statut),
+              d.montantTransport != null ? Math.round(d.montantTransport) : '—',
+              d.notes?.trim() || '—',
+            ])
+          : [['—', '—', 'Aucune livraison', '', '', '', '', '']],
+    },
+    {
+      title: `Commandes liées (${orders.length})`,
+      columns: ['Date', 'Client', 'Réf.', 'Désignation', 'Destination', 'Qté', 'Montant (FCFA)', 'Statut'],
+      rows:
+        orders.length > 0
+          ? orders.map((o) => [
+              fmtExportDate(o.dateCommande),
+              o.clientNom?.trim() || '—',
+              o.reference?.trim() || '—',
+              o.designation || '—',
+              o.destination?.trim() || '—',
+              o.quantite != null ? `${o.quantite}${o.unite ? ` ${o.unite}` : ''}` : '—',
+              o.montant != null ? Math.round(o.montant) : '—',
+              formatClientOrderStatusFr(o.statut),
+            ])
+          : [['—', 'Aucune commande liée', '', '', '', '', '', '']],
+    },
+  ];
+}
+
 export default function Trucks() {
   const {
     trucks,
@@ -102,6 +236,8 @@ export default function Trucks() {
     expenses,
     invoices,
     clientDeliveries,
+    clientOrders,
+    supplierLoadings,
     drivers,
     thirdParties,
     createTruck,
@@ -450,8 +586,7 @@ export default function Trucks() {
       fileName: `camions_${new Date().toISOString().split('T')[0]}.xlsx`,
       filtersDescription: getFiltersDescription(),
       columns: [
-        { header: 'Nom du camion', value: (t) => t.nom || '-' },
-        { header: 'Immatriculation tracteur', value: exportTracteurImmat },
+        { header: 'Immatriculation', value: exportShortImmat },
         { header: 'Immatriculation remorque', value: exportRemorqueImmat },
         { header: 'Chauffeur attitré', value: (t) => {
           const chauffeur = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
@@ -471,23 +606,22 @@ export default function Trucks() {
   };
 
   const handleExportPDF = () => {
-    // Calculer les totaux
     const totalRecettes = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).revenue, 0);
     const totalDepenses = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).expenses, 0);
     const totalBenefice = totalRecettes - totalDepenses;
     const totalTrajetsTermines = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCount, 0);
     const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCancelledCount, 0);
 
-    exportToPrintablePDF({
+    exportToPrintablePDFWithDetails({
       title: 'Liste des Camions',
       fileName: `camions_${new Date().toISOString().split('T')[0]}.pdf`,
       filtersDescription: getFiltersDescription(),
-      // Couleurs thématiques pour les camions (orange/rouge)
       headerColor: '#ea580c',
       headerTextColor: '#ffffff',
       evenRowColor: '#fff7ed',
       oddRowColor: '#ffffff',
       accentColor: '#ea580c',
+      detailsSectionTitle: 'DÉTAIL PAR CAMION (bons, clients, dates)',
       totals: [
         { label: 'Trajets terminés', value: totalTrajetsTermines, style: 'neutral', icon: '🚛' },
         { label: 'Trajets annulés', value: totalTrajetsAnnules, style: totalTrajetsAnnules > 0 ? 'negative' : 'neutral', icon: '❌' },
@@ -496,8 +630,7 @@ export default function Trucks() {
         { label: 'Bénéfice Net', value: `${totalBenefice >= 0 ? '+' : ''}${totalBenefice.toLocaleString('fr-FR')} FCFA`, style: totalBenefice >= 0 ? 'positive' : 'negative', icon: '📊' },
       ],
       columns: [
-        { header: 'Nom du camion', value: (t) => t.nom || '-' },
-        { header: 'Immat. tracteur', value: exportTracteurImmat },
+        { header: 'Immatriculation', value: exportShortImmat },
         { header: 'Immat. remorque', value: exportRemorqueImmat },
         { header: 'Modèle', value: (t) => t.modele },
         { header: 'Type', value: (t) => labelTruckType(t) },
@@ -532,7 +665,11 @@ export default function Trucks() {
         },
       ],
       rows: sortedTrucks,
+      getDetailHeading: (t) => exportShortImmat(t),
+      buildDetailBlocks: (t) =>
+        buildTruckDetailBlocks(t, supplierLoadings, clientDeliveries, clientOrders),
     });
+    toast.success('Export PDF — enregistrez via la fenêtre d’impression');
   };
 
   return (

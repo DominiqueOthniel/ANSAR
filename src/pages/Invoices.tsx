@@ -30,16 +30,12 @@ import { EMOJI } from '@/lib/emoji-palette';
 import {
   appendEntreeFromInvoicePayment,
   appendSortieFromExpenseInvoicePayment,
-  isPaiementVersBanque,
 } from '@/lib/caisse-local';
 import { PaymentModePicker } from '@/components/PaymentModePicker';
-import { AnsarBankAccountSelect } from '@/components/AnsarBankAccountSelect';
 import {
-  ANSAR_BANQUES,
-  formatPaymentModeWithBanque,
-  isVirementIndirect,
-  normalizePaymentMode,
+  missingVersementDetailMessage,
   parseAnsarBanque,
+  parseIndirectVersement,
   paymentModeHint,
   paymentTreasuryDestination,
 } from '@/lib/payment-modes';
@@ -114,14 +110,11 @@ export default function Invoices() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   /** Participant trajet (ligne client) ayant versé l’encaissement en cours — si ≥ 2 clients sur le trajet. */
   const [paymentPayerParticipantId, setPaymentPayerParticipantId] = useState('');
-  /** Banque Ansar (traçabilité virement direct) : Afriland, CBC, UBA, CCA */
-  const [paymentBanque, setPaymentBanque] = useState<string>('');
   const [selectedTripId, setSelectedTripId] = useState('');
   /** Facture liée à une expédition (exclusif avec trajet). */
   const [invoiceMissionKind, setInvoiceMissionKind] = useState<'trip' | 'parcel'>('trip');
   const [selectedParcelExpeditionId, setSelectedParcelExpeditionId] = useState('');
   const [modePaiement, setModePaiement] = useState('');
-  const [createBanque, setCreateBanque] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [tva, setTva] = useState<number>(0);
   const [tps, setTps] = useState<number>(0);
@@ -139,6 +132,15 @@ export default function Invoices() {
     () =>
       stableSort(
         thirdParties.filter((tp) => tp.type === 'client'),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
+  const tierFournisseursFiches = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'fournisseur'),
         (a, b) => frCollator.compare(a.nom, b.nom),
       ),
     [thirdParties],
@@ -276,6 +278,12 @@ export default function Invoices() {
     const montantTPS = montantHTApresRemise * (tps / 100);
     const montantTTC = montantHTApresRemise + montantTVA + montantTPS;
 
+    const missingMode = missingVersementDetailMessage(modePaiement);
+    if (missingMode) {
+      toast.error(missingMode);
+      return;
+    }
+
     await withTripInvoiceGuard(async () => {
       try {
         const trip =
@@ -303,7 +311,7 @@ export default function Invoices() {
           montantTTC,
           montantPaye: 0,
           dateCreation: new Date().toISOString().split('T')[0],
-          modePaiement: formatPaymentModeWithBanque(modePaiement, createBanque) || undefined,
+          modePaiement: modePaiement || undefined,
           notes: notes || undefined,
           clientTierId: invoiceMissionKind === 'trip' ? invoiceTripClientTierId || undefined : undefined,
           factureClientLibelle: resolvedLibelle,
@@ -314,7 +322,6 @@ export default function Invoices() {
         setSelectedParcelExpeditionId('');
         setInvoiceMissionKind('trip');
         setModePaiement('');
-        setCreateBanque('');
         setNotes('');
         setTva(0);
         setTps(0);
@@ -346,7 +353,6 @@ export default function Invoices() {
         if (def) setPaymentPayerParticipantId(def.id);
       }
     }
-    setPaymentBanque(parseAnsarBanque(invoice.modePaiement) || ANSAR_BANQUES[0]);
     setIsPaymentDialogOpen(true);
   };
 
@@ -370,11 +376,13 @@ export default function Invoices() {
       return;
     }
 
-    const modeBase = normalizePaymentMode(selectedInvoice.modePaiement);
-    const modeStored = formatPaymentModeWithBanque(modeBase, paymentBanque) || modeBase;
-    if (paymentAmount > 0 && isPaiementVersBanque(modeBase) && !paymentBanque) {
-      toast.error('Choisis la banque (Afriland, CBC, UBA ou CCA) pour la traçabilité.');
-      return;
+    const modeStored = selectedInvoice.modePaiement?.trim() || undefined;
+    if (paymentAmount > 0) {
+      const missing = missingVersementDetailMessage(modeStored);
+      if (missing) {
+        toast.error(missing);
+        return;
+      }
     }
 
     const tripForPay = selectedInvoice.trajetId
@@ -425,7 +433,7 @@ export default function Invoices() {
             : {}),
         });
 
-        const treasuryDest = paymentTreasuryDestination(modeBase);
+        const treasuryDest = paymentTreasuryDestination(modeStored);
 
         if (paymentAmount > 0 && treasuryDest === 'caisse') {
           try {
@@ -436,7 +444,7 @@ export default function Invoices() {
                 date: datePaiementJour,
                 factureNumero: selectedInvoice.numero,
                 factureId: selectedInvoice.id,
-                modeLibelle: modeStored || modeBase,
+                modeLibelle: modeStored,
               });
               toast.success(
                 `Facture fournisseur soldée — ${paymentAmount.toLocaleString('fr-FR')} FCFA sortis de caisse`,
@@ -447,7 +455,7 @@ export default function Invoices() {
                 date: datePaiementJour,
                 factureNumero: selectedInvoice.numero,
                 factureId: selectedInvoice.id,
-                modeLibelle: modeStored || modeBase,
+                modeLibelle: modeStored,
                 payeurNote: payeurDescription || undefined,
                 clientTierId: payeurClientTierId,
               });
@@ -466,11 +474,16 @@ export default function Invoices() {
           }
         } else if (paymentAmount > 0 && treasuryDest === 'aucun') {
           const factureSoldée = nouveauTotalPaye >= selectedInvoice.montantTTC;
-          const banqueNote = isPaiementVersBanque(modeBase) && paymentBanque ? ` (${paymentBanque})` : '';
+          const indirect = parseIndirectVersement(modeStored);
+          const banqueNote = parseAnsarBanque(modeStored)
+            ? ` (${parseAnsarBanque(modeStored)})`
+            : indirect
+              ? ` (${indirect.entreprise} / ${indirect.banque})`
+              : '';
           toast.success(
             factureSoldée
-              ? `Facture soldée — virement${banqueNote} enregistré pour traçabilité`
-              : `Paiement virement${banqueNote} enregistré — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA`,
+              ? `Facture soldée — versement${banqueNote} enregistré pour traçabilité`
+              : `Paiement versement${banqueNote} enregistré — reste ${(selectedInvoice.montantTTC - nouveauTotalPaye).toLocaleString('fr-FR')} FCFA`,
           );
         } else if (nouveauTotalPaye >= selectedInvoice.montantTTC) {
           toast.success('Facture marquée comme payée complètement');
@@ -482,7 +495,6 @@ export default function Invoices() {
         setSelectedInvoice(null);
         setPaymentAmount(0);
         setPaymentPayerParticipantId('');
-        setPaymentBanque('');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors du paiement');
       }
@@ -1626,23 +1638,9 @@ export default function Invoices() {
                   id="modePaiement"
                   label="Mode de paiement (optionnel)"
                   value={modePaiement}
-                  onChange={(mode) => {
-                    setModePaiement(mode);
-                    if (mode && isPaiementVersBanque(mode)) {
-                      setCreateBanque((prev) => prev || ANSAR_BANQUES[0]);
-                    } else {
-                      setCreateBanque('');
-                    }
-                  }}
+                  onChange={setModePaiement}
+                  entreprises={tierFournisseursFiches}
                 />
-                {isPaiementVersBanque(modePaiement) && (
-                  <AnsarBankAccountSelect
-                    id="createBankAccount"
-                    label="Banque *"
-                    value={createBanque}
-                    onChange={setCreateBanque}
-                  />
-                )}
 
                 {/* Section Remise, TVA et TPS */}
                 {(invoiceMissionKind === 'trip' ? selectedTripId : selectedParcelExpeditionId) && (() => {
@@ -2998,7 +2996,6 @@ export default function Invoices() {
         onOpenChange={(open) => {
           setIsPaymentDialogOpen(open);
           if (!open) {
-            setPaymentBanque('');
             setPaymentPayerParticipantId('');
           }
         }}
@@ -3121,46 +3118,16 @@ export default function Invoices() {
               <PaymentModePicker
                 id="paymentMode"
                 label="Mode de paiement (optionnel)"
-                value={normalizePaymentMode(selectedInvoice.modePaiement) || ''}
+                value={selectedInvoice.modePaiement || ''}
                 onChange={(mode) => {
                   if (!selectedInvoice) return;
                   setSelectedInvoice({
                     ...selectedInvoice,
                     modePaiement: mode || undefined,
                   });
-                  if (mode && isPaiementVersBanque(mode)) {
-                    setPaymentBanque((prev) => prev || ANSAR_BANQUES[0]);
-                  } else {
-                    setPaymentBanque('');
-                  }
                 }}
+                entreprises={tierFournisseursFiches}
               />
-
-              {isPaiementVersBanque(selectedInvoice.modePaiement) && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/20 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Landmark className="h-4 w-4 shrink-0 text-amber-600" />
-                    Banque (traçabilité)
-                  </div>
-                  <AnsarBankAccountSelect
-                    id="paymentBankAccount"
-                    label="Banque *"
-                    value={paymentBanque}
-                    onChange={setPaymentBanque}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {paymentModeHint(
-                      formatPaymentModeWithBanque(selectedInvoice.modePaiement, paymentBanque),
-                    )}
-                  </p>
-                </div>
-              )}
-
-              {isVirementIndirect(selectedInvoice.modePaiement) && (
-                <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 dark:bg-sky-950/20 p-3 text-sm text-sky-900 dark:text-sky-200">
-                  {paymentModeHint(selectedInvoice.modePaiement)}
-                </div>
-              )}
 
               {paymentAmount > 0 &&
                 paymentTreasuryDestination(selectedInvoice.modePaiement) === 'caisse' && (
@@ -3192,9 +3159,10 @@ export default function Invoices() {
                     paymentAmount <= 0 ||
                     paymentAmount >
                       Math.max(0, selectedInvoice.montantTTC - (selectedInvoice.montantPaye ?? 0)) + 0.01 ||
-                    (paymentAmount > 0 &&
-                      isPaiementVersBanque(selectedInvoice.modePaiement) &&
-                      !paymentBanque)
+                    Boolean(
+                      paymentAmount > 0 &&
+                        missingVersementDetailMessage(selectedInvoice.modePaiement),
+                    )
                   }
                 >
                   {isConfirmingPayment ? (

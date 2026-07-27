@@ -4,8 +4,8 @@ export const PAYMENT_MODE = {
   CHEQUE: 'Chèque',
   MTN: 'MTN Mobile Money',
   ORANGE: 'Orange Money',
-  VIREMENT_DIRECT: 'Virement direct',
-  VIREMENT_INDIRECT: 'Virement indirect',
+  VIREMENT_DIRECT: 'Versement direct',
+  VIREMENT_INDIRECT: 'Versement indirect',
 } as const;
 
 export type PaymentModeValue = (typeof PAYMENT_MODE)[keyof typeof PAYMENT_MODE];
@@ -17,7 +17,7 @@ export type PaymentModeFamily = 'especes' | 'cheque' | 'electronique' | 'viremen
 export type PaymentTreasuryDestination = 'caisse' | 'aucun';
 
 /**
- * Banques Ansar pour traçabilité d’un virement direct.
+ * Banques pour traçabilité (versement direct Ansar, ou banque de l’entreprise en indirect).
  * Liste fixe : aucun compte à créer dans le module Banque.
  */
 export const ANSAR_BANQUES = ['Afriland', 'CBC', 'UBA', 'CCA'] as const;
@@ -28,31 +28,32 @@ const BANQUE_SEP = ' · ';
 const LEGACY_TO_CANONICAL: Record<string, PaymentModeValue> = {
   Virement: PAYMENT_MODE.VIREMENT_DIRECT,
   'Virement bancaire': PAYMENT_MODE.VIREMENT_DIRECT,
+  'Virement direct': PAYMENT_MODE.VIREMENT_DIRECT,
+  'Virement indirect': PAYMENT_MODE.VIREMENT_INDIRECT,
+  'Versement bancaire': PAYMENT_MODE.VIREMENT_DIRECT,
   'Mobile Money': PAYMENT_MODE.MTN,
   'Mobile money': PAYMENT_MODE.MTN,
 };
 
-/** Extrait la banque traçabilité depuis un mode du type « Virement direct · Afriland ». */
-export function parseAnsarBanque(mode: string | undefined | null): AnsarBanque | undefined {
-  if (!mode?.trim()) return undefined;
-  const raw = mode.trim();
-  const sep = raw.lastIndexOf(BANQUE_SEP);
-  if (sep < 0) return undefined;
-  const banque = raw.slice(sep + BANQUE_SEP.length).trim();
-  return (ANSAR_BANQUES as readonly string[]).includes(banque)
-    ? (banque as AnsarBanque)
-    : undefined;
+const CANONICAL_BASES = Object.values(PAYMENT_MODE);
+
+function startsWithBase(raw: string, base: string): boolean {
+  return raw === base || raw.startsWith(`${base}${BANQUE_SEP}`);
 }
 
-/** Mode sans suffixe banque (pour famille / destination). */
+/** Mode sans suffixes entreprise / banque. */
 export function paymentModeBase(mode: string | undefined | null): string | undefined {
   if (!mode?.trim()) return undefined;
   const raw = mode.trim();
-  const sep = raw.lastIndexOf(BANQUE_SEP);
-  if (sep > 0 && parseAnsarBanque(raw)) {
-    return raw.slice(0, sep).trim();
+
+  for (const base of CANONICAL_BASES) {
+    if (startsWithBase(raw, base)) return base;
   }
-  return raw;
+  if (startsWithBase(raw, 'Virement indirect')) return PAYMENT_MODE.VIREMENT_INDIRECT;
+  if (startsWithBase(raw, 'Virement direct')) return PAYMENT_MODE.VIREMENT_DIRECT;
+  if (startsWithBase(raw, 'Virement')) return PAYMENT_MODE.VIREMENT_DIRECT;
+
+  return LEGACY_TO_CANONICAL[raw] ?? raw;
 }
 
 export function normalizePaymentMode(mode: string | undefined | null): string | undefined {
@@ -61,7 +62,47 @@ export function normalizePaymentMode(mode: string | undefined | null): string | 
   return LEGACY_TO_CANONICAL[base] ?? base;
 }
 
-/** Mode enregistré : « Virement direct · Afriland » si banque choisie. */
+/** Extrait la banque Ansar d’un versement direct « Versement direct · Afriland ». */
+export function parseAnsarBanque(mode: string | undefined | null): AnsarBanque | undefined {
+  const base = paymentModeBase(mode);
+  if (base !== PAYMENT_MODE.VIREMENT_DIRECT) return undefined;
+  const raw = mode?.trim() ?? '';
+  if (!startsWithBase(raw, base) && !startsWithBase(raw, 'Virement direct')) return undefined;
+  const prefix = startsWithBase(raw, base) ? base : 'Virement direct';
+  if (raw === prefix) return undefined;
+  const banque = raw.slice(prefix.length + BANQUE_SEP.length).trim();
+  return (ANSAR_BANQUES as readonly string[]).includes(banque)
+    ? (banque as AnsarBanque)
+    : undefined;
+}
+
+/** Détail versement indirect : entreprise puis banque. */
+export function parseIndirectVersement(
+  mode: string | undefined | null,
+): { entreprise: string; banque: string } | undefined {
+  const base = paymentModeBase(mode);
+  if (base !== PAYMENT_MODE.VIREMENT_INDIRECT) return undefined;
+  const raw = mode?.trim() ?? '';
+  const prefix = startsWithBase(raw, PAYMENT_MODE.VIREMENT_INDIRECT)
+    ? PAYMENT_MODE.VIREMENT_INDIRECT
+    : startsWithBase(raw, 'Virement indirect')
+      ? 'Virement indirect'
+      : null;
+  if (!prefix || raw === prefix) return undefined;
+  const rest = raw.slice(prefix.length + BANQUE_SEP.length);
+  const sep = rest.indexOf(BANQUE_SEP);
+  if (sep < 0) {
+    const entreprise = rest.trim();
+    if (!entreprise) return undefined;
+    return { entreprise, banque: '' };
+  }
+  const entreprise = rest.slice(0, sep).trim();
+  const banque = rest.slice(sep + BANQUE_SEP.length).trim();
+  if (!entreprise) return undefined;
+  return { entreprise, banque };
+}
+
+/** Mode enregistré : « Versement direct · Afriland ». */
 export function formatPaymentModeWithBanque(
   mode: string | undefined | null,
   banque: string | undefined | null,
@@ -74,6 +115,19 @@ export function formatPaymentModeWithBanque(
   return `${PAYMENT_MODE.VIREMENT_DIRECT}${BANQUE_SEP}${b}`;
 }
 
+/** Mode enregistré : « Versement indirect · Entreprise · Banque » (banque optionnelle en cours de saisie). */
+export function formatIndirectVersement(
+  entreprise: string | undefined | null,
+  banque: string | undefined | null,
+): string | undefined {
+  const e = entreprise?.trim();
+  const b = banque?.trim();
+  if (!e && !b) return PAYMENT_MODE.VIREMENT_INDIRECT;
+  if (e && !b) return `${PAYMENT_MODE.VIREMENT_INDIRECT}${BANQUE_SEP}${e}`;
+  if (!e) return PAYMENT_MODE.VIREMENT_INDIRECT;
+  return `${PAYMENT_MODE.VIREMENT_INDIRECT}${BANQUE_SEP}${e}${BANQUE_SEP}${b}`;
+}
+
 export function paymentModeFamily(mode: string | undefined | null): PaymentModeFamily | '' {
   const m = normalizePaymentMode(mode);
   if (!m) return '';
@@ -81,18 +135,17 @@ export function paymentModeFamily(mode: string | undefined | null): PaymentModeF
   if (m === PAYMENT_MODE.CHEQUE) return 'cheque';
   if (m === PAYMENT_MODE.MTN || m === PAYMENT_MODE.ORANGE) return 'electronique';
   if (m === PAYMENT_MODE.VIREMENT_DIRECT || m === PAYMENT_MODE.VIREMENT_INDIRECT) return 'virement';
-  if (m.toLowerCase().includes('virement')) return 'virement';
-  if (m.toLowerCase().includes('mobile') || m.toLowerCase().includes('mtn') || m.toLowerCase().includes('orange')) {
-    return 'electronique';
-  }
-  if (m === PAYMENT_MODE.ESPECES || m.toLowerCase().includes('espèce')) return 'especes';
-  if (m.toLowerCase().includes('chèque') || m.toLowerCase().includes('cheque')) return 'cheque';
+  const low = m.toLowerCase();
+  if (low.includes('virement') || low.includes('versement')) return 'virement';
+  if (low.includes('mobile') || low.includes('mtn') || low.includes('orange')) return 'electronique';
+  if (m === PAYMENT_MODE.ESPECES || low.includes('espèce')) return 'especes';
+  if (low.includes('chèque') || low.includes('cheque')) return 'cheque';
   return '';
 }
 
 /**
  * - caisse : espèces, chèque, MTN, Orange
- * - aucun : virement (direct ou indirect) : traçabilité seule, pas d’écriture auto caisse/banque
+ * - aucun : versement (direct ou indirect) : traçabilité seule
  */
 export function paymentTreasuryDestination(
   mode: string | undefined | null,
@@ -100,24 +153,32 @@ export function paymentTreasuryDestination(
   const m = normalizePaymentMode(mode);
   if (!m) return 'caisse';
   if (m === PAYMENT_MODE.VIREMENT_INDIRECT || m === PAYMENT_MODE.VIREMENT_DIRECT) return 'aucun';
-  if (m.toLowerCase().includes('virement')) return 'aucun';
+  const low = m.toLowerCase();
+  if (low.includes('virement') || low.includes('versement')) return 'aucun';
   return 'caisse';
 }
 
-/** Virement direct : choix d’une banque Ansar pour traçabilité. */
+/** Versement direct : banque Ansar pour traçabilité. */
 export function isPaiementVersBanque(mode: string | undefined | null): boolean {
   const m = normalizePaymentMode(mode);
   if (!m) return false;
   if (m === PAYMENT_MODE.VIREMENT_DIRECT) return true;
-  return m.toLowerCase().includes('virement') && !m.toLowerCase().includes('indirect');
+  const low = m.toLowerCase();
+  if (low.includes('indirect')) return false;
+  return low.includes('virement') || (low.includes('versement') && low.includes('direct'));
 }
 
-/** Versement via compte fournisseur, au nom d’Ansar. */
+/** Versement sur compte de l’entreprise (fournisseur), au nom d’Ansar. */
 export function isVirementIndirect(mode: string | undefined | null): boolean {
+  return isVersementIndirect(mode);
+}
+
+export function isVersementIndirect(mode: string | undefined | null): boolean {
   const m = normalizePaymentMode(mode);
   if (!m) return false;
   if (m === PAYMENT_MODE.VIREMENT_INDIRECT) return true;
-  return m.toLowerCase().includes('virement') && m.toLowerCase().includes('indirect');
+  const low = m.toLowerCase();
+  return low.includes('indirect') && (low.includes('virement') || low.includes('versement'));
 }
 
 export function isPaiementElectronique(mode: string | undefined | null): boolean {
@@ -147,8 +208,8 @@ export const PAYMENT_FAMILY_OPTIONS: { value: PaymentModeFamily; label: string; 
   },
   {
     value: 'virement',
-    label: 'Virement bancaire',
-    hint: 'Direct (banque Ansar pour traçabilité) ou indirect (compte fournisseur au nom d’Ansar)',
+    label: 'Versement bancaire',
+    hint: 'Direct (banque Ansar) ou indirect (compte de l’entreprise)',
   },
 ];
 
@@ -165,12 +226,12 @@ export const VIREMENT_KIND_OPTIONS: {
   {
     value: PAYMENT_MODE.VIREMENT_DIRECT,
     label: 'Direct',
-    hint: 'Indiquer la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité',
+    hint: 'Banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité',
   },
   {
     value: PAYMENT_MODE.VIREMENT_INDIRECT,
     label: 'Indirect',
-    hint: 'Versé sur le compte du fournisseur, au nom d’Ansar',
+    hint: 'Versement sur le compte bancaire de l’entreprise (au nom d’Ansar)',
   },
 ];
 
@@ -178,14 +239,30 @@ export function paymentModeHint(mode: string | undefined | null): string {
   if (isPaiementVersBanque(mode)) {
     const banque = parseAnsarBanque(mode);
     return banque
-      ? `Virement direct sur ${banque} (traçabilité). Aucun compte à créer dans Banque.`
-      : 'Choisis la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité. Aucun compte à créer.';
+      ? `Versement direct sur ${banque} (traçabilité).`
+      : 'Choisis la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité.';
   }
-  if (isVirementIndirect(mode)) {
-    return 'Virement indirect : le client verse sur le compte du fournisseur au nom d’Ansar.';
+  if (isVersementIndirect(mode)) {
+    const detail = parseIndirectVersement(mode);
+    return detail
+      ? `Versement indirect chez ${detail.entreprise} (${detail.banque}).`
+      : 'Choisis l’entreprise, puis la banque où le versement a été fait.';
   }
   if (isPaiementElectronique(mode)) {
     return 'Paiement électronique (MTN / Orange) enregistré en caisse.';
   }
   return 'Ce montant sera enregistré en caisse.';
+}
+
+/** Contrôle que les détails de traçabilité versement sont complets. */
+export function missingVersementDetailMessage(mode: string | undefined | null): string | undefined {
+  if (isPaiementVersBanque(mode) && !parseAnsarBanque(mode)) {
+    return 'Choisis la banque Ansar (Afriland, CBC, UBA ou CCA) pour le versement direct.';
+  }
+  if (isVersementIndirect(mode)) {
+    const detail = parseIndirectVersement(mode);
+    if (!detail?.entreprise) return 'Choisis l’entreprise pour le versement indirect.';
+    if (!detail.banque) return 'Choisis la banque de l’entreprise où le versement a été fait.';
+  }
+  return undefined;
 }

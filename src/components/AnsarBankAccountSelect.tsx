@@ -18,7 +18,7 @@ type Props = {
 };
 
 /**
- * Choix d’une banque Ansar (liste fixe) pour traçabilité d’un virement direct.
+ * Choix d’une banque Ansar (liste fixe) pour traçabilité d’un versement direct.
  * Pas de lien avec le module Banque : aucun compte à créer.
  */
 export function AnsarBankAccountSelect({
@@ -45,7 +45,7 @@ export function AnsarBankAccountSelect({
         </SelectContent>
       </Select>
       <p className="text-xs text-muted-foreground">
-        Traçabilité uniquement{required ? ' (obligatoire pour un virement direct)' : ''}.
+        Traçabilité uniquement{required ? ' (obligatoire pour un versement direct)' : ''}.
       </p>
     </div>
   );

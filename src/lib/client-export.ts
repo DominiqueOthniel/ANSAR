@@ -395,22 +395,6 @@ function buildClientDetailBlocks(
       })
     : [['—', 'Aucune facture', '', '', '', '', '', '', '', '']];
 
-  const caisseTx = stableSort(
-    caisseTxForExportClient(client, ctx),
-    (a, b) => frCollator.compare(b.date, a.date),
-  );
-  const versementRows: (string | number)[][] = caisseTx.length
-    ? caisseTx.map((t) => [
-        t.date,
-        t.type === 'entree' ? 'Versement' : 'Sortie',
-        Math.round(t.montant),
-        cell(t.description),
-        cell(t.categorie),
-        cell(t.reference),
-        cell(t.utilisateur),
-      ])
-    : [['—', 'Aucun versement', '', '', '', '', '']];
-
   return [
     {
       title: 'Fiche & encours',
@@ -470,19 +454,6 @@ function buildClientDetailBlocks(
         'Notes',
       ],
       rows: invoiceRows,
-    },
-    {
-      title: `Versements caisse (${caisseTx.length})`,
-      columns: [
-        'Date',
-        'Sens',
-        'Montant (FCFA)',
-        'Description',
-        'Catégorie',
-        'Référence',
-        'Saisi par',
-      ],
-      rows: versementRows,
     },
   ];
 }
@@ -589,29 +560,7 @@ export function exportClientsDetailedExcel(ctx: ClientsExportContext): void {
         ...b,
         title: `${soloClient.nom} — ${b.title}`,
       }))
-    : ctx.clients.flatMap((c) => [
-        buildClientLedgerBlock(c, ctx),
-        {
-          title: `${c.nom} — Versements caisse`,
-          columns: ['Date', 'Sens', 'Montant (FCFA)', 'Description', 'Catégorie', 'Référence'],
-          rows: (() => {
-            const txs = stableSort(
-              caisseTxForExportClient(c, ctx),
-              (a, b) => frCollator.compare(b.date, a.date),
-            );
-            return txs.length
-              ? txs.map((t) => [
-                  t.date,
-                  t.type === 'entree' ? 'Versement' : 'Sortie',
-                  Math.round(t.montant),
-                  cell(t.description),
-                  cell(t.categorie),
-                  cell(t.reference),
-                ])
-              : [['—', 'Aucun versement', '', '', '', '']];
-          })(),
-        },
-      ]);
+    : ctx.clients.map((c) => buildClientLedgerBlock(c, ctx));
   exportBlocksToExcel({
     title: soloClient ? `Compte client — ${soloClient.nom}` : 'Comptes clients',
     fileName: `${prefix}_comptes_${new Date().toISOString().split('T')[0]}.xlsx`,
