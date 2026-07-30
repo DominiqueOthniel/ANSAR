@@ -1745,13 +1745,7 @@ export default function Chargements() {
 
               {reassignClientId ? (
                 <>
-                  {ordersForReassign.length === 0 ? (
-                    <p className="text-sm text-muted-foreground rounded-md border p-3">
-                      Pas encore de commande « {reassignLoading.designation} » chez{' '}
-                      {getClientKeyLabel(reassignClientId)} : elle sera créée
-                      automatiquement à la réaffectation.
-                    </p>
-                  ) : ordersForReassign.length > 1 ? (
+                  {ordersForReassign.length > 1 ? (
                     <div className="space-y-2">
                       <Label>Commande existante à utiliser</Label>
                       <div className="border rounded-md max-h-[240px] overflow-y-auto divide-y">
@@ -1798,7 +1792,7 @@ export default function Chargements() {
                         })}
                       </div>
                     </div>
-                  ) : (
+                  ) : ordersForReassign.length === 1 ? (
                     <p className="text-sm text-muted-foreground rounded-md border p-3">
                       Commande existante utilisée : {ordersForReassign[0].designation}
                       {ordersForReassign[0].quantite != null
@@ -1810,7 +1804,7 @@ export default function Chargements() {
                         : ''}
                       .
                     </p>
-                  )}
+                  ) : null}
 
                   {reassignLoading.quantite != null && reassignLoading.quantite > 0 ? (
                     <div className="space-y-1">
