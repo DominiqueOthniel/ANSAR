@@ -23,11 +23,13 @@ import {
   type LoadingEntryMode,
 } from '@/lib/hub-transit';
 import {
+  buildOrderClientFields,
   formatClientAccountKindFr,
   formatClientDisplayName,
   formatClientOrderStatusFr,
   getClientAccountKey,
   getClientAccountKind,
+  sanitizeOptionalUuid,
   type ClientAccountKind,
 } from '@/lib/client-operations';
 import { Button } from '@/components/ui/button';
@@ -155,6 +157,8 @@ export default function Chargements() {
     updateSupplierLoading,
     deleteSupplierLoading,
     setSupplierLoadingAssignments,
+    createClientOrder,
+    updateClientOrder,
   } = useApp();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -645,13 +649,8 @@ export default function Chargements() {
         toast.error('Choisissez le nouveau client.');
         return;
       }
-      if (!reassignOrderId) {
-        toast.error('Choisissez la commande à rattacher.');
-        return;
-      }
-      const order = clientOrders.find((o) => o.id === reassignOrderId);
-      if (!order) {
-        toast.error('Commande introuvable.');
+      if (reassignClientId === WALK_IN_CLIENT_FILTER) {
+        toast.error('Choisissez un client précis, pas le groupe comptoir.');
         return;
       }
       const qty = reassignQty;
@@ -667,9 +666,63 @@ export default function Chargements() {
           return;
         }
       }
+
+      const previousAssignments = activeAssignmentsOf(reassignLoading);
+      const previousOrderIds = [
+        ...new Set(previousAssignments.map((a) => a.clientOrderId)),
+      ];
+
+      let orderId = reassignOrderId;
+      let order = orderId
+        ? clientOrders.find((o) => o.id === orderId)
+        : undefined;
+
+      if (!orderId) {
+        if (ordersForReassign.length === 1) {
+          order = ordersForReassign[0];
+          orderId = order.id;
+        } else if (ordersForReassign.length > 1) {
+          toast.error('Choisissez la commande à rattacher.');
+          return;
+        } else {
+          const isWalkIn = reassignClientId.startsWith('comptoir:');
+          try {
+            const clientFields = buildOrderClientFields(
+              isWalkIn,
+              isWalkIn ? undefined : reassignClientId,
+              getClientKeyLabel(reassignClientId),
+            );
+            const created = await createClientOrder({
+              ...clientFields,
+              articleId: sanitizeOptionalUuid(reassignLoading.articleId),
+              designation: reassignLoading.designation,
+              quantite: qty ?? reassignLoading.quantite,
+              unite: reassignLoading.unite,
+              statut: 'confirmee',
+              dateCommande: todayIso(),
+              notes: reassignLoading.numeroBon?.trim()
+                ? `Réaffectation bon ${reassignLoading.numeroBon.trim()}`
+                : 'Réaffectation bon fournisseur',
+            });
+            order = created;
+            orderId = created.id;
+          } catch (err) {
+            toast.error(
+              err instanceof Error ? err.message : 'Impossible de créer la commande.',
+            );
+            return;
+          }
+        }
+      }
+
+      if (!orderId || !order) {
+        toast.error('Commande introuvable.');
+        return;
+      }
+
       const payload: SupplierLoadingAssignmentPayload[] = [
         {
-          clientOrderId: reassignOrderId,
+          clientOrderId: orderId,
           quantiteAffectee: qty,
         },
       ];
@@ -683,8 +736,46 @@ export default function Chargements() {
         return;
       }
       await setSupplierLoadingAssignments(reassignLoading.id, payload);
+
+      const newClientName = getOrderClientName(order);
+      for (const prevId of previousOrderIds) {
+        if (prevId === orderId) continue;
+        const prevOrder = clientOrders.find((o) => o.id === prevId);
+        if (!prevOrder) continue;
+        if (prevOrder.statut === 'annulee' || prevOrder.statut === 'livree') continue;
+        const linkedElsewhere = supplierLoadings.some(
+          (l) =>
+            l.id !== reassignLoading.id &&
+            (l.assignments ?? []).some(
+              (a) => a.clientOrderId === prevId && a.orderStatus !== 'annulee',
+            ),
+        );
+        if (linkedElsewhere) continue;
+        const assignedOnThisBon = previousAssignments
+          .filter((a) => a.clientOrderId === prevId)
+          .reduce((s, a) => s + (a.quantiteAffectee ?? 0), 0);
+        if (
+          prevOrder.quantite != null &&
+          prevOrder.quantite > 0 &&
+          assignedOnThisBon > 0 &&
+          prevOrder.quantite > assignedOnThisBon + 1e-6
+        ) {
+          // Commande plus large que ce bon : on détache seulement, sans l’annuler.
+          continue;
+        }
+        const noteLine = `Bon réaffecté à ${newClientName} le ${todayIso()}`;
+        const notes = prevOrder.notes?.trim()
+          ? `${prevOrder.notes.trim()}\n${noteLine}`
+          : noteLine;
+        try {
+          await updateClientOrder(prevId, { statut: 'annulee', notes });
+        } catch {
+          // Le bon est déjà transféré ; l’annulation de l’ancienne commande est secondaire.
+        }
+      }
+
       toast.success(
-        `Bon réaffecté à ${getOrderClientName(order)}.`,
+        `Bon chez ${newClientName}. L’ancien client n’y a plus accès.`,
       );
       setReassignDialogOpen(false);
     });
@@ -1627,7 +1718,7 @@ export default function Chargements() {
                   <span className="font-medium">{currentReassignClientsLabel}</span>
                 </p>
                 <p className="text-xs text-muted-foreground pt-1">
-                  Seules les commandes du même article que ce bon sont proposées.
+                  Le client actuel perd ce bon. Seul le nouveau client le conserve.
                 </p>
               </div>
 
@@ -1642,13 +1733,6 @@ export default function Chargements() {
                   }}
                   placeholder="Choisir le nouveau client…"
                   searchPlaceholder="Rechercher un client…"
-                  topChoices={[
-                    {
-                      id: WALK_IN_CLIENT_FILTER,
-                      label: 'Clients comptoir',
-                      keywords: 'passager sans fiche comptoir',
-                    },
-                  ]}
                   orphanLabel={
                     reassignClientId &&
                     reassignClientId !== WALK_IN_CLIENT_FILTER &&
@@ -1661,15 +1745,15 @@ export default function Chargements() {
 
               {reassignClientId ? (
                 <>
-                  <div className="space-y-2">
-                    <Label>Commande à rattacher *</Label>
-                    {ordersForReassign.length === 0 ? (
-                      <p className="text-sm text-muted-foreground rounded-md border p-3">
-                        Aucune commande ouverte pour « {reassignLoading.designation} » chez{' '}
-                        {getClientKeyLabel(reassignClientId)}. Créez d’abord une commande
-                        correspondant à cet article.
-                      </p>
-                    ) : (
+                  {ordersForReassign.length === 0 ? (
+                    <p className="text-sm text-muted-foreground rounded-md border p-3">
+                      Pas encore de commande « {reassignLoading.designation} » chez{' '}
+                      {getClientKeyLabel(reassignClientId)} : elle sera créée
+                      automatiquement à la réaffectation.
+                    </p>
+                  ) : ordersForReassign.length > 1 ? (
+                    <div className="space-y-2">
+                      <Label>Commande existante à utiliser</Label>
                       <div className="border rounded-md max-h-[240px] overflow-y-auto divide-y">
                         {ordersForReassign.map((o) => {
                           const selected = reassignOrderId === o.id;
@@ -1713,26 +1797,36 @@ export default function Chargements() {
                           );
                         })}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground rounded-md border p-3">
+                      Commande existante utilisée : {ordersForReassign[0].designation}
+                      {ordersForReassign[0].quantite != null
+                        ? ` (${ordersForReassign[0].quantite}${
+                            ordersForReassign[0].unite
+                              ? ` ${ordersForReassign[0].unite}`
+                              : ''
+                          })`
+                        : ''}
+                      .
+                    </p>
+                  )}
 
-                  {reassignOrderId &&
-                    reassignLoading.quantite != null &&
-                    reassignLoading.quantite > 0 && (
-                      <div className="space-y-1">
-                        <Label>
-                          Quantité affectée (max {reassignLoading.quantite}
-                          {reassignLoading.unite ? ` ${reassignLoading.unite}` : ''})
-                        </Label>
-                        <NumberInput
-                          allowEmpty
-                          value={reassignQty}
-                          onChange={setReassignQty}
-                          min={0}
-                          max={reassignLoading.quantite}
-                        />
-                      </div>
-                    )}
+                  {reassignLoading.quantite != null && reassignLoading.quantite > 0 ? (
+                    <div className="space-y-1">
+                      <Label>
+                        Quantité affectée (max {reassignLoading.quantite}
+                        {reassignLoading.unite ? ` ${reassignLoading.unite}` : ''})
+                      </Label>
+                      <NumberInput
+                        allowEmpty
+                        value={reassignQty}
+                        onChange={setReassignQty}
+                        min={0}
+                        max={reassignLoading.quantite}
+                      />
+                    </div>
+                  ) : null}
                 </>
               ) : null}
 
@@ -1741,9 +1835,7 @@ export default function Chargements() {
                   Annuler
                 </Button>
                 <Button
-                  disabled={
-                    isSubmitting || !reassignClientId || !reassignOrderId
-                  }
+                  disabled={isSubmitting || !reassignClientId}
                   onClick={() => void saveReassign()}
                 >
                   {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
