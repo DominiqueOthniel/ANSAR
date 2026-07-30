@@ -1,5 +1,5 @@
 /** Page bons de chargement fournisseur. */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp, SupplierLoading } from '@/contexts/AppContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
@@ -180,7 +180,6 @@ export default function Chargements() {
   const [reassignClientId, setReassignClientId] = useState('');
   const [reassignOrderId, setReassignOrderId] = useState('');
   const [reassignQty, setReassignQty] = useState<number | undefined>(undefined);
-  const [reassignSearch, setReassignSearch] = useState('');
 
   const fournisseurs = useMemo(
     () =>
@@ -582,7 +581,6 @@ export default function Chargements() {
         ? l.quantite
         : active.reduce((s, a) => s + (a.quantiteAffectee ?? 0), 0) || undefined,
     );
-    setReassignSearch('');
     setReassignDialogOpen(true);
   };
 
@@ -598,24 +596,47 @@ export default function Chargements() {
     return names.length ? names.join(', ') : '—';
   }, [reassignLoading, clientsById]);
 
+  const normalizeBonDesignation = (s: string) =>
+    s.trim().toLowerCase().replace(/[\s.,]+/g, '');
+
+  const orderRelatedToReassignBon = (
+    order: (typeof clientOrders)[number],
+    bon: SupplierLoading,
+  ) => {
+    if (order.articleId && bon.articleId && order.articleId === bon.articleId) {
+      return true;
+    }
+    const od = normalizeBonDesignation(order.designation);
+    const bd = normalizeBonDesignation(bon.designation);
+    if (!od || !bd) return false;
+    return od === bd || od.includes(bd) || bd.includes(od);
+  };
+
   const ordersForReassign = useMemo(() => {
-    if (!reassignClientId) return [];
-    const q = reassignSearch.trim().toLowerCase();
+    if (!reassignClientId || !reassignLoading) return [];
     return stableSort(
       clientOrders.filter((o) => {
-        if (o.statut === 'annulee') return false;
+        if (o.statut === 'annulee' || o.statut === 'livree') return false;
         if (!orderMatchesAssignClientFilter(o, reassignClientId)) return false;
-        return true;
+        return orderRelatedToReassignBon(o, reassignLoading);
       }),
       (a, b) => frCollator.compare(b.dateCommande, a.dateCommande),
-    ).filter((o) => {
-      if (!q) return true;
-      return (
-        o.designation.toLowerCase().includes(q) ||
-        (o.reference ?? '').toLowerCase().includes(q)
-      );
-    });
-  }, [clientOrders, reassignClientId, reassignSearch]);
+    );
+  }, [clientOrders, reassignClientId, reassignLoading]);
+
+  useEffect(() => {
+    if (!reassignDialogOpen || !reassignLoading || !reassignClientId) return;
+    if (ordersForReassign.length !== 1) return;
+    const only = ordersForReassign[0];
+    setReassignOrderId(only.id);
+    if (reassignLoading.quantite != null && reassignLoading.quantite > 0) {
+      const next =
+        only.quantite != null && only.quantite > 0
+          ? Math.min(only.quantite, reassignLoading.quantite)
+          : reassignLoading.quantite;
+      setReassignQty(next);
+    }
+  }, [reassignDialogOpen, reassignClientId, reassignLoading, ordersForReassign]);
 
   const saveReassign = () =>
     withGuard(async () => {
@@ -625,7 +646,7 @@ export default function Chargements() {
         return;
       }
       if (!reassignOrderId) {
-        toast.error('Choisissez la commande du nouveau client.');
+        toast.error('Choisissez la commande à rattacher.');
         return;
       }
       const order = clientOrders.find((o) => o.id === reassignOrderId);
@@ -1593,22 +1614,20 @@ export default function Chargements() {
             <div className="space-y-4">
               <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
                 <p>
+                  <span className="text-muted-foreground">Bon :</span>{' '}
+                  <span className="font-medium">{reassignLoading.designation}</span>
+                  {reassignLoading.quantite != null && reassignLoading.quantite > 0
+                    ? ` · ${reassignLoading.quantite}${
+                        reassignLoading.unite ? ` ${reassignLoading.unite}` : ''
+                      }`
+                    : ''}
+                </p>
+                <p>
                   <span className="text-muted-foreground">Client actuel :</span>{' '}
                   <span className="font-medium">{currentReassignClientsLabel}</span>
                 </p>
-                <p>
-                  <span className="text-muted-foreground">Fournisseur :</span>{' '}
-                  {reassignLoading.fournisseurNom ?? '—'}
-                </p>
-                {reassignLoading.quantite != null && reassignLoading.quantite > 0 ? (
-                  <p>
-                    <span className="text-muted-foreground">Quantité bon :</span>{' '}
-                    {reassignLoading.quantite} {reassignLoading.unite ?? ''}
-                  </p>
-                ) : null}
                 <p className="text-xs text-muted-foreground pt-1">
-                  La réaffectation remplace les affectations actuelles par la commande du
-                  nouveau client.
+                  Seules les commandes du même article que ce bon sont proposées.
                 </p>
               </div>
 
@@ -1642,23 +1661,24 @@ export default function Chargements() {
 
               {reassignClientId ? (
                 <>
-                  <Input
-                    placeholder="Filtrer les commandes…"
-                    value={reassignSearch}
-                    onChange={(e) => setReassignSearch(e.target.value)}
-                  />
                   <div className="space-y-2">
-                    <Label>Commande du nouveau client *</Label>
+                    <Label>Commande à rattacher *</Label>
                     {ordersForReassign.length === 0 ? (
                       <p className="text-sm text-muted-foreground rounded-md border p-3">
-                        Aucune commande active pour{' '}
+                        Aucune commande ouverte pour « {reassignLoading.designation} » chez{' '}
                         {getClientKeyLabel(reassignClientId)}. Créez d’abord une commande
-                        côté Clients.
+                        correspondant à cet article.
                       </p>
                     ) : (
                       <div className="border rounded-md max-h-[240px] overflow-y-auto divide-y">
                         {ordersForReassign.map((o) => {
                           const selected = reassignOrderId === o.id;
+                          const dateLabel = (() => {
+                            const t = Date.parse(o.dateCommande);
+                            return Number.isNaN(t)
+                              ? o.dateCommande
+                              : new Date(t).toLocaleDateString('fr-FR');
+                          })();
                           return (
                             <button
                               key={o.id}
@@ -1682,10 +1702,11 @@ export default function Chargements() {
                             >
                               <p className="font-medium text-sm">{o.designation}</p>
                               <p className="text-xs text-muted-foreground">
-                                {formatClientOrderStatusFr(o.statut)} · {o.dateCommande}
-                                {o.reference ? ` · ${o.reference}` : ''}
+                                {dateLabel}
                                 {o.quantite != null
-                                  ? ` · ${o.quantite}${o.unite ? ` ${o.unite}` : ''}`
+                                  ? ` · commande ${o.quantite}${
+                                      o.unite ? ` ${o.unite}` : ''
+                                    }`
                                   : ''}
                               </p>
                             </button>

@@ -9,10 +9,6 @@ import type {
 import { sumEncoursClientPourPlafond, type CreditLike } from '@/lib/client-credit-plafond';
 import { getClientInitialBalanceMontant } from '@/lib/client-initial-balance';
 import {
-  formatClientDeliveryStatusFr,
-  formatClientOrderStatusFr,
-} from '@/lib/client-operations';
-import {
   formatClientSegmentFr,
   formatClientSexeFr,
   getClientAgeYears,
@@ -23,16 +19,11 @@ import {
   type ExportDetailBlock,
   type ExportTotal,
 } from '@/lib/export-utils';
-import { findSupplierLoadingForOrder } from '@/lib/supplier-loadings';
 import { parseDateMs, stableSort } from '@/lib/list-sort';
 import type { CaisseTransaction } from '@/lib/caisse-local';
 
 function formatFcfaPlain(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
-}
-
-function invoiceStatutLabel(s: Invoice['statut']): string {
-  return s === 'payee' ? 'Payée' : 'En attente';
 }
 
 function invoicesForClient(
@@ -349,71 +340,6 @@ function buildClientDetailBlocks(
     ['Notes internes', cell(client.notes)],
   ];
 
-  const orderRows: (string | number)[][] = orders.length
-    ? orders.map((o) => {
-        const linked = findSupplierLoadingForOrder(ctx.supplierLoadings, o.id);
-        const inv = o.invoiceId
-          ? ctx.invoices.find((i) => i.id === o.invoiceId)
-          : ctx.invoices.find((i) => i.clientOrderId === o.id);
-        return [
-          cell(o.reference),
-          o.designation,
-          cell(o.destination),
-          o.dateCommande,
-          formatClientOrderStatusFr(o.statut),
-          o.quantite != null ? o.quantite : '—',
-          o.unite ?? '—',
-          o.prixUnitaire != null ? Math.round(o.prixUnitaire) : '—',
-          o.montant != null ? Math.round(o.montant) : '—',
-          linked
-            ? `${linked.numeroBon?.trim() || linked.designation} (${linked.dateChargement})`
-            : '—',
-          inv ? inv.numero : '—',
-          cell(o.notes),
-        ];
-      })
-    : [['—', 'Aucune commande', '', '', '', '', '', '', '', '', '', '']];
-
-  const deliveryRows: (string | number)[][] = deliveries.length
-    ? deliveries.map((d) => {
-        const order = orders.find((o) => o.id === d.clientOrderId);
-        const inv = d.invoiceId
-          ? ctx.invoices.find((i) => i.id === d.invoiceId)
-          : ctx.invoices.find((i) => i.clientDeliveryId === d.id);
-        return [
-          order?.reference ?? order?.designation ?? d.orderDesignation ?? '—',
-          d.lieuLivraison,
-          formatClientDeliveryStatusFr(d.statut),
-          cell(d.datePrevue),
-          cell(d.dateLivraison),
-          d.montantTransport != null ? Math.round(d.montantTransport) : '—',
-          d.transportFactureParFournisseur
-            ? `Oui${d.transportFournisseurNom ? ` (${d.transportFournisseurNom})` : ''}`
-            : 'Non',
-          inv ? inv.numero : '—',
-          cell(d.notes),
-        ];
-      })
-    : [['—', 'Aucune livraison', '', '', '', '', '', '', '']];
-
-  const invoiceRows: (string | number)[][] = clientInvoices.length
-    ? clientInvoices.map((inv) => {
-        const reste = Math.max(0, inv.montantTTC - (inv.montantPaye ?? 0));
-        return [
-          inv.numero,
-          invoiceStatutLabel(inv.statut),
-          inv.dateCreation,
-          cell(inv.datePaiement),
-          Math.round(inv.montantHT),
-          Math.round(inv.montantTTC),
-          Math.round(inv.montantPaye ?? 0),
-          Math.round(reste),
-          cell(inv.factureClientLibelle),
-          cell(inv.notes),
-        ];
-      })
-    : [['—', 'Aucune facture', '', '', '', '', '', '', '', '']];
-
   return [
     {
       title: 'Fiche & encours',
@@ -424,55 +350,6 @@ function buildClientDetailBlocks(
       title: 'Compte client',
       columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'N°CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
       rows: buildClientLedgerRows(client, orders, deliveries, clientInvoices, ctx),
-    },
-    {
-      title: `Commandes (${orders.length})`,
-      columns: [
-        'Réf.',
-        'Désignation',
-        'Destination',
-        'Date',
-        'Statut',
-        'Qté',
-        'Unité',
-        'P.U. (FCFA)',
-        'Montant (FCFA)',
-        'Bon chargement',
-        'Facture',
-        'Notes',
-      ],
-      rows: orderRows,
-    },
-    {
-      title: `Livraisons (${deliveries.length})`,
-      columns: [
-        'Commande',
-        'Lieu',
-        'Statut',
-        'Date prévue',
-        'Date livrée',
-        'Transport (FCFA)',
-        'Sous-traité',
-        'Facture',
-        'Notes',
-      ],
-      rows: deliveryRows,
-    },
-    {
-      title: `Factures (${clientInvoices.length})`,
-      columns: [
-        'N°',
-        'Statut',
-        'Création',
-        'Paiement',
-        'HT (FCFA)',
-        'TTC (FCFA)',
-        'Payé (FCFA)',
-        'Reste (FCFA)',
-        'Libellé',
-        'Notes',
-      ],
-      rows: invoiceRows,
     },
   ];
 }
