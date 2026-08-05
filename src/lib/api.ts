@@ -668,3 +668,51 @@ export const creditsApi = {
       body: JSON.stringify(data),
     }),
 };
+
+export type AppUserRole = 'admin' | 'gestionnaire' | 'comptable';
+
+export interface AppUserSummary {
+  login: string;
+  role: AppUserRole;
+  mustChangePassword?: boolean;
+}
+
+export const usersApi = {
+  list: () => request<AppUserSummary[]>('/users'),
+  login: (login: string, password: string) =>
+    request<AppUserSummary>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ login, password }),
+    }),
+  create: (data: { login: string; password: string; role: AppUserRole }) =>
+    request<AppUserSummary>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateRole: (login: string, role: AppUserRole) =>
+    request<AppUserSummary>(`/users/${encodeURIComponent(login)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  delete: (login: string) =>
+    request<void>(`/users/${encodeURIComponent(login)}`, { method: 'DELETE' }),
+  changeOwnPassword: (currentPassword: string, newPassword: string) =>
+    request<AppUserSummary>('/users/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  adminResetPassword: (login: string, newPassword: string) =>
+    request<AppUserSummary>(`/users/${encodeURIComponent(login)}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    }),
+  importLocal: (
+    users: {
+      login: string;
+      passwordHash: string;
+      role: AppUserRole;
+      mustChangePassword?: boolean;
+    }[],
+  ) =>
+    request<{ imported: number }>('/users/import-local', {
+      method: 'POST',
+      body: JSON.stringify({ users }),
+    }),
+};

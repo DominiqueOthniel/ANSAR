@@ -13,6 +13,7 @@ const credits = require('./routes/credits.cjs');
 const clientOps = require('./routes/client-ops.cjs');
 const loadings = require('./routes/loadings.cjs');
 const admin = require('./routes/admin.cjs');
+const users = require('./routes/users.cjs');
 const R = require('./routes/resources.cjs');
 
 const UUID =
@@ -52,10 +53,41 @@ async function handleLocal(method, path, event, origin) {
           'supplier-loadings',
           'audit-logs',
           'admin',
+          'users',
         ],
       },
       origin,
     );
+  }
+
+  // --- auth / users (comptes partagés Supabase) ---
+  if (path === '/api/auth/login' && method === 'POST') {
+    return json(200, await users.login(body()), origin);
+  }
+  if (path === '/api/users') {
+    if (method === 'GET') return json(200, await users.listUsers(), origin);
+    if (method === 'POST') return json(201, await users.createUser(body(), actor), origin);
+  }
+  if (path === '/api/users/import-local' && method === 'POST') {
+    return json(200, await users.importLocalUsers(body(), actor), origin);
+  }
+  if (path === '/api/users/me/password' && method === 'POST') {
+    return json(200, await users.changeOwnPassword(body(), actor), origin);
+  }
+  let m = path.match(/^\/api\/users\/([^/]+)\/password$/);
+  if (m && method === 'POST') {
+    return json(200, await users.adminResetPassword(decodeURIComponent(m[1]), body(), actor), origin);
+  }
+  m = path.match(/^\/api\/users\/([^/]+)$/);
+  if (m) {
+    const loginId = decodeURIComponent(m[1]);
+    if (method === 'PATCH') {
+      return json(200, await users.updateUserRole(loginId, body(), actor), origin);
+    }
+    if (method === 'DELETE') {
+      await users.deleteUser(loginId, actor);
+      return noContent(origin);
+    }
   }
 
   // --- trucks ---
@@ -63,7 +95,7 @@ async function handleLocal(method, path, event, origin) {
     if (method === 'GET') return json(200, await trucks.listTrucks(), origin);
     if (method === 'POST') return json(201, await trucks.createTruck(body()), origin);
   }
-  let m = path.match(/^\/api\/trucks\/([^/]+)$/);
+  m = path.match(/^\/api\/trucks\/([^/]+)$/);
   if (m && UUID.test(m[1])) {
     const id = m[1];
     if (method === 'GET') {

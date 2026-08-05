@@ -20,6 +20,8 @@
 | `FRONTEND_URL` | `https://ton-site.netlify.app` |
 | `VITE_API_URL` | `same` (ou vide) → le front appelle `/api` sur le même domaine |
 
+Les **utilisateurs** (admin, gestionnaire, etc.) sont en base (`app_users`), plus en localStorage. La table est créée automatiquement au premier appel API ; migration optionnelle : `backend/sql-migrations/app-users.sql`.
+
 Optionnel : `ADDITIONAL_CORS_ORIGINS` si besoin.
 
 Puis **Clear cache and deploy**.
