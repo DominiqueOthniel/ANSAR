@@ -9,6 +9,7 @@ import {
   TripStopType,
   TripStopStatut,
   type ThirdParty,
+  type SupplierLoading,
 } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,7 +28,6 @@ import { canDeleteTrip, calculateTripStats, formatTripStatusFr, getTripRemaining
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import PageHeader from '@/components/PageHeader';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { TripMissionContextPanel } from '@/components/trips/TripMissionContextPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
@@ -45,6 +45,8 @@ import {
   newTripClientParticipant,
   remapParticipantsForDuplicate,
   formatTripClientsSummary,
+  participantLineMontant,
+  sumParticipantsQuantite,
 } from '@/lib/trip-client-participants';
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
 import { formatTripCode } from '@/lib/trip-display';
@@ -53,6 +55,10 @@ import {
   getTripMissionActivity,
   truckMissionLabel,
 } from '@/lib/trip-mission-context';
+import {
+  formatLoadingBonOption,
+  listLoadingsForTripSelection,
+} from '@/lib/truck-operations';
 
 /** Affichage itinéraire quand la destination résumé est vide. */
 function itineraireResume(origine: string, destination: string | undefined): string {
@@ -178,12 +184,13 @@ export default function Trips() {
     updateTrip,
     deleteTrip,
     createExpense,
+    updateSupplierLoading,
     createMerchandiseQuality,
     updateMerchandiseQuality,
     deleteMerchandiseQuality,
   } = useApp();
   const navigate = useNavigate();
-  const { canManageFleet, canManageAccounting } = useAuth();
+  const { canManageFleet, canManageAccounting, isAdmin } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   /** Si défini, le formulaire du dialogue est en mode édition pour ce trajet. */
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
@@ -270,6 +277,7 @@ export default function Trips() {
   const [formData, setFormData] = useState({
     tracteurId: '',
     remorqueuseId: '',
+    supplierLoadingId: '',
     origine: '',
     destination: '',
     origineLat: undefined as number | undefined,
@@ -350,6 +358,7 @@ export default function Trips() {
     setFormData({
       tracteurId: '',
       remorqueuseId: '',
+      supplierLoadingId: '',
       origine: '',
       destination: '',
       origineLat: undefined,
@@ -377,9 +386,26 @@ export default function Trips() {
   };
 
   const addClientParticipantRow = () => {
+    const bon = formData.supplierLoadingId
+      ? supplierLoadings.find((l) => l.id === formData.supplierLoadingId)
+      : undefined;
+    const used = sumParticipantsQuantite(formData.clientParticipants);
+    const remaining =
+      bon?.quantite != null && bon.quantite > 0
+        ? Math.max(0, bon.quantite - used)
+        : undefined;
+    if (bon?.quantite != null && bon.quantite > 0 && remaining != null && remaining <= 1e-9) {
+      toast.error('Le bon est déjà entièrement redistribué.');
+      return;
+    }
     setFormData((prev) => ({
       ...prev,
-      clientParticipants: [...prev.clientParticipants, newTripClientParticipant()],
+      clientParticipants: [
+        ...prev.clientParticipants,
+        newTripClientParticipant({
+          quantite: remaining != null && remaining > 0 ? remaining : undefined,
+        }),
+      ],
     }));
   };
 
@@ -404,6 +430,7 @@ export default function Trips() {
     setFormData({
       tracteurId: trip.tracteurId ?? '',
       remorqueuseId: trip.remorqueuseId ?? '',
+      supplierLoadingId: trip.supplierLoadingId ?? '',
       origine: trip.origine,
       destination: trip.destination,
       origineLat: trip.origineLat,
@@ -449,6 +476,7 @@ export default function Trips() {
     setFormData({
       tracteurId: trip.tracteurId ?? '',
       remorqueuseId: trip.remorqueuseId ?? '',
+      supplierLoadingId: trip.supplierLoadingId ?? '',
       origine: trip.origine,
       destination: trip.destination,
       origineLat: trip.origineLat,
@@ -502,7 +530,7 @@ export default function Trips() {
     await withGuard(async () => {
       try {
         const stopsPayload = buildStopsForPersist(
-          formData.stops,
+          [],
           formData.origine,
           formData.destination.trim(),
           formData.origineLat,
@@ -512,50 +540,92 @@ export default function Trips() {
         );
 
         const participantsLint = formData.clientParticipants.filter((p) => p.libelle.trim());
-        if (participantsLint.length >= 2 && !formData.payeurParticipantId.trim()) {
-          toast.error(
-            'Avec plusieurs clients sur le trajet, sélectionnez le « payeur au règlement ».',
-          );
+        const selectedBon = formData.supplierLoadingId
+          ? supplierLoadings.find((l) => l.id === formData.supplierLoadingId)
+          : undefined;
+        if (formData.supplierLoadingId && participantsLint.length === 0) {
+          toast.error('Ajoutez au moins un client pour redistribuer le bon.');
           return;
         }
-        const sumsParts = participantsLint.filter(
-          (p) => p.montantAttribue != null && !Number.isNaN(Number(p.montantAttribue)),
-        );
-        if (
-          sumsParts.length > 0 &&
-          sumsParts.length === participantsLint.length &&
-          formData.recette > 0
-        ) {
-          const sum = sumsParts.reduce((s, p) => s + Number(p.montantAttribue), 0);
-          if (sum > formData.recette + 0.01) {
+        if (selectedBon?.quantite != null && selectedBon.quantite > 0) {
+          const qSum = sumParticipantsQuantite(participantsLint);
+          if (qSum > selectedBon.quantite + 1e-6) {
             toast.error(
-              `La somme des parts clients (${sum.toLocaleString('fr-FR')} FCFA) dépasse la recette (${formData.recette.toLocaleString('fr-FR')} FCFA).`,
+              `Quantité clients (${qSum}) dépasse le bon (${selectedBon.quantite}${
+                selectedBon.unite ? ` ${selectedBon.unite}` : ''
+              }).`,
+            );
+            return;
+          }
+          if (qSum + 1e-6 < selectedBon.quantite) {
+            const reste = selectedBon.quantite - qSum;
+            toast.error(
+              `Le bon doit être entièrement redistribué. Reste ${reste}${
+                selectedBon.unite ? ` ${selectedBon.unite}` : ''
+              } à affecter.`,
             );
             return;
           }
         }
+        for (const p of participantsLint) {
+          if (p.quantite == null || p.quantite <= 0) {
+            toast.error(`Indiquez la quantité pour « ${p.libelle.trim()} ».`);
+            return;
+          }
+          if (isAdmin && (p.prixUnitaire == null || p.prixUnitaire <= 0)) {
+            toast.error(
+              `Le prix unitaire est obligatoire pour « ${p.libelle.trim()} » (compte administrateur).`,
+            );
+            return;
+          }
+        }
+        if (participantsLint.length >= 2 && !formData.payeurParticipantId.trim()) {
+          toast.error('Avec plusieurs clients, sélectionnez le payeur au règlement.');
+          return;
+        }
+        const sumsParts = participantsLint
+          .map((p) => ({ p, m: participantLineMontant(p) }))
+          .filter((x) => x.m != null);
+        const recetteAuto = sumsParts.reduce((s, x) => s + Number(x.m), 0);
+        const recetteEffective = recetteAuto > 0 ? recetteAuto : formData.recette;
         const cpPayload =
           participantsLint.length > 0
-            ? participantsLint.map((p) => ({
-                id: p.id,
-                tierId: p.tierId || undefined,
-                libelle: p.libelle.trim(),
-                montantAttribue:
-                  p.montantAttribue != null && Number(p.montantAttribue) > 0
-                    ? Number(p.montantAttribue)
-                    : undefined,
-              }))
+            ? participantsLint.map((p) => {
+                const montant = participantLineMontant(p);
+                return {
+                  id: p.id,
+                  tierId: p.tierId || undefined,
+                  libelle: p.libelle.trim(),
+                  montantAttribue: montant != null && montant > 0 ? montant : undefined,
+                  prixUnitaire:
+                    p.prixUnitaire != null && p.prixUnitaire > 0 ? p.prixUnitaire : undefined,
+                  quantite: p.quantite != null && p.quantite > 0 ? p.quantite : undefined,
+                  lieuLivraison: p.lieuLivraison?.trim() || undefined,
+                  sousReferenceBon: p.sousReferenceBon?.trim() || undefined,
+                };
+              })
             : [];
         const payeurPayload =
           participantsLint.length >= 2
-            ? formData.payeurParticipantId.trim() || undefined
+            ? formData.payeurParticipantId.trim() || participantsLint[0].id
             : participantsLint.length === 1
               ? participantsLint[0].id
               : undefined;
+        const qtySum = sumParticipantsQuantite(participantsLint);
+        const firstLieu = participantsLint.find((p) => p.lieuLivraison?.trim())?.lieuLivraison;
+        const clientLabel =
+          participantsLint[0]?.libelle.trim() || formData.client || undefined;
+        const marchandiseLabel =
+          selectedBon?.designation || formData.marchandise || undefined;
+        const referenceAtc =
+          formData.referenceAtc?.trim() ||
+          participantsLint.find((p) => p.sousReferenceBon?.trim())?.sousReferenceBon?.trim() ||
+          selectedBon?.numeroBon?.trim() ||
+          undefined;
 
         if (editingTripId) {
           const sumT = sumMontantTTCForTripInvoices(editingTripId, invoices);
-          if (formData.recette + 0.01 < sumT) {
+          if (recetteEffective + 0.01 < sumT) {
             toast.error(
               `Recette minimale ${sumT.toLocaleString('fr-FR')} FCFA (déjà facturé en TTC sur ce trajet).`,
             );
@@ -571,24 +641,32 @@ export default function Trips() {
             chauffeurId: formData.chauffeurId,
             dateDepart: formData.dateDepart,
             dateArrivee: formData.dateArrivee || undefined,
-            recette: formData.recette,
+            recette: recetteEffective,
             prefinancement: formData.prefinancement > 0 ? formData.prefinancement : undefined,
             tracteurId: formData.tracteurId || undefined,
             remorqueuseId: formData.remorqueuseId || undefined,
-            client: formData.client || undefined,
-            marchandise: formData.marchandise || undefined,
+            supplierLoadingId: formData.supplierLoadingId || null,
+            client: clientLabel,
+            marchandise: marchandiseLabel,
             description: formData.description || undefined,
-            referenceAtc: formData.referenceAtc?.trim() || undefined,
-            destinataire: formData.destinataire?.trim() || undefined,
-            quantiteChargee:
-              formData.quantiteChargee != null && formData.quantiteChargee > 0
-                ? formData.quantiteChargee
-                : undefined,
+            referenceAtc,
+            destinataire: firstLieu?.trim() || formData.destinataire?.trim() || undefined,
+            quantiteChargee: qtySum > 0 ? qtySum : undefined,
             retourBordereaux: formData.retourBordereaux?.trim() || undefined,
             stops: stopsPayload,
             clientParticipants: cpPayload,
             payeurParticipantId: payeurPayload,
           });
+          if (formData.supplierLoadingId) {
+            const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
+            if (camionId) {
+              try {
+                await updateSupplierLoading(formData.supplierLoadingId, { camionId });
+              } catch (linkErr) {
+                console.error('link bon mission', linkErr);
+              }
+            }
+          }
           toast.success('Trajet mis à jour');
           setIsDialogOpen(false);
           resetForm();
@@ -605,26 +683,33 @@ export default function Trips() {
           chauffeurId: formData.chauffeurId,
           dateDepart: formData.dateDepart,
           dateArrivee: formData.dateArrivee || undefined,
-          recette: formData.recette,
+          recette: recetteEffective,
           prefinancement: formData.prefinancement > 0 ? formData.prefinancement : undefined,
           tracteurId: formData.tracteurId || undefined,
           remorqueuseId: formData.remorqueuseId || undefined,
-          client: formData.client || undefined,
-          marchandise: formData.marchandise || undefined,
+          supplierLoadingId: formData.supplierLoadingId || null,
+          client: clientLabel,
+          marchandise: marchandiseLabel,
           description: formData.description || undefined,
-          referenceAtc: formData.referenceAtc?.trim() || undefined,
-          destinataire: formData.destinataire?.trim() || undefined,
-          quantiteChargee:
-            formData.quantiteChargee != null && formData.quantiteChargee > 0
-              ? formData.quantiteChargee
-              : undefined,
+          referenceAtc,
+          destinataire: firstLieu?.trim() || formData.destinataire?.trim() || undefined,
+          quantiteChargee: qtySum > 0 ? qtySum : undefined,
           retourBordereaux: formData.retourBordereaux?.trim() || undefined,
           statut: 'planifie',
           stops: stopsPayload,
           clientParticipants: cpPayload.length ? cpPayload : undefined,
           payeurParticipantId: payeurPayload,
         });
-        if (formData.prefinancement > 0) {
+        if (formData.supplierLoadingId) {
+          const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
+          if (camionId) {
+            try {
+              await updateSupplierLoading(formData.supplierLoadingId, { camionId });
+            } catch (linkErr) {
+              console.error('link bon mission', linkErr);
+            }
+          }
+        }        if (formData.prefinancement > 0) {
           try {
             await createExpense({
               camionId: formData.tracteurId || formData.remorqueuseId || undefined,
@@ -928,22 +1013,119 @@ export default function Trips() {
     [trips, trucks, filterOrigin, filterDestination, filterStatus, filterTruck, filterDriver, searchTerm],
   );
 
-  const formMissionActivity = useMemo(() => {
-    const truckId = formData.tracteurId || formData.remorqueuseId;
-    const base = getTripMissionActivity(truckId, supplierLoadings, clientDeliveries);
-    return filterActivityNearDate(base, formData.dateDepart, 21);
-  }, [
-    formData.tracteurId,
-    formData.remorqueuseId,
-    formData.dateDepart,
-    supplierLoadings,
-    clientDeliveries,
-  ]);
+  const bonsForForm = useMemo(
+    () =>
+      listLoadingsForTripSelection({
+        loadings: supplierLoadings,
+        trucks,
+        tracteurId: formData.tracteurId || undefined,
+        remorqueuseId: formData.remorqueuseId || undefined,
+        chauffeurId: formData.chauffeurId || undefined,
+      }),
+    [
+      supplierLoadings,
+      trucks,
+      formData.tracteurId,
+      formData.remorqueuseId,
+      formData.chauffeurId,
+    ],
+  );
 
-  const formTruckLabel = useMemo(() => {
-    const id = formData.tracteurId || formData.remorqueuseId;
-    return truckMissionLabel(trucks.find((t) => t.id === id));
-  }, [formData.tracteurId, formData.remorqueuseId, trucks]);
+  const applyBonToForm = (bon: SupplierLoading | null) => {
+    if (!bon) {
+      setFormData((prev) => ({ ...prev, supplierLoadingId: '' }));
+      return;
+    }
+    const clientNames = [
+      ...new Set(
+        (bon.assignments ?? [])
+          .filter((a) => a.orderStatus !== 'annulee')
+          .map((a) => a.clientNom?.trim())
+          .filter(Boolean) as string[],
+      ),
+    ];
+    const truckFromBon = bon.camionId
+      ? trucks.find((t) => t.id === bon.camionId)
+      : undefined;
+    setFormData((prev) => {
+      let tracteurId = prev.tracteurId;
+      let remorqueuseId = prev.remorqueuseId;
+      if (truckFromBon && !tracteurId && !remorqueuseId) {
+        if (truckFromBon.type === 'tracteur') tracteurId = truckFromBon.id;
+        else if (truckFromBon.type === 'remorqueuse') remorqueuseId = truckFromBon.id;
+      }
+      return {
+        ...prev,
+        supplierLoadingId: bon.id,
+        tracteurId,
+        remorqueuseId,
+        chauffeurId:
+          prev.chauffeurId ||
+          truckFromBon?.chauffeurId ||
+          prev.chauffeurId,
+        marchandise: bon.designation || prev.marchandise,
+        client: clientNames[0] || prev.client,
+        quantiteChargee:
+          bon.quantite != null && bon.quantite > 0 ? bon.quantite : prev.quantiteChargee,
+        origine:
+          prev.origine.trim() ||
+          bon.lieu?.trim() ||
+          bon.hubArrivee?.trim() ||
+          prev.origine,
+        referenceAtc: prev.referenceAtc.trim() || bon.numeroBon?.trim() || prev.referenceAtc,
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (!formData.supplierLoadingId) return;
+    if (!bonsForForm.some((b) => b.id === formData.supplierLoadingId)) {
+      setFormData((prev) => ({ ...prev, supplierLoadingId: '' }));
+    }
+  }, [bonsForForm, formData.supplierLoadingId]);
+
+  const selectedBonForForm = useMemo(
+    () =>
+      formData.supplierLoadingId
+        ? supplierLoadings.find((l) => l.id === formData.supplierLoadingId)
+        : undefined,
+    [formData.supplierLoadingId, supplierLoadings],
+  );
+
+  const bonQtyRemaining = useMemo(() => {
+    if (selectedBonForForm?.quantite == null || selectedBonForForm.quantite <= 0) return null;
+    return Math.max(
+      0,
+      selectedBonForForm.quantite - sumParticipantsQuantite(formData.clientParticipants),
+    );
+  }, [selectedBonForForm, formData.clientParticipants]);
+
+  const patchParticipant = (
+    index: number,
+    patch: Partial<TripClientParticipant>,
+  ) => {
+    setFormData((prev) => {
+      const clientParticipants = prev.clientParticipants.map((x, i) => {
+        if (i !== index) return x;
+        const next = { ...x, ...patch };
+        const montant = participantLineMontant(next);
+        return {
+          ...next,
+          montantAttribue: montant != null && montant > 0 ? montant : undefined,
+        };
+      });
+      const recetteAuto = clientParticipants
+        .map((p) => participantLineMontant(p))
+        .filter((m): m is number => m != null)
+        .reduce((s, m) => s + m, 0);
+      return {
+        ...prev,
+        clientParticipants,
+        recette: recetteAuto > 0 ? recetteAuto : prev.recette,
+        client: clientParticipants.find((p) => p.libelle.trim())?.libelle.trim() || prev.client,
+      };
+    });
+  };
 
   const driverLabel = (id: string) => {
     const driver = drivers.find(d => d.id === id);
@@ -1352,17 +1534,10 @@ export default function Trips() {
               <DialogHeader>
                 <DialogTitle>{editingTripId ? 'Modifier la mission' : 'Nouvelle mission flotte'}</DialogTitle>
                 <DialogDescription>
-                  Mission camion + chauffeur + recette / dépenses. Les bons et livraisons clients
-                  restent dans Chargements et Clients.
+                  Camion, bon, chauffeur, itinéraire et recette.
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
-              {(formData.tracteurId || formData.remorqueuseId) && (
-                <TripMissionContextPanel
-                  activity={formMissionActivity}
-                  truckLabel={formTruckLabel}
-                />
-              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="tracteur">
@@ -1375,13 +1550,26 @@ export default function Trips() {
                     const tracteurId = value === 'none' ? '' : value;
                     const selectedTruck = trucks.find(t => t.id === tracteurId);
                     const chauffeurAttitreId = selectedTruck?.chauffeurId || '';
-                    
+                    const nextChauffeur = chauffeurAttitreId || formData.chauffeurId;
+                    const nextBons = listLoadingsForTripSelection({
+                      loadings: supplierLoadings,
+                      trucks,
+                      tracteurId: tracteurId || undefined,
+                      remorqueuseId: formData.remorqueuseId || undefined,
+                      chauffeurId: nextChauffeur || undefined,
+                    });
                     setFormData({ 
                       ...formData, 
                       tracteurId,
-                      chauffeurId: chauffeurAttitreId || formData.chauffeurId 
+                      chauffeurId: nextChauffeur,
+                      supplierLoadingId:
+                        nextBons.length === 1
+                          ? nextBons[0].id
+                          : nextBons.some((b) => b.id === formData.supplierLoadingId)
+                            ? formData.supplierLoadingId
+                            : '',
                     });
-                    
+                    if (nextBons.length === 1) applyBonToForm(nextBons[0]);
                     if (chauffeurAttitreId) {
                       const chauffeur = drivers.find(d => d.id === chauffeurAttitreId);
                       if (chauffeur) {
@@ -1423,7 +1611,30 @@ export default function Trips() {
                       ({remorqueuses.length} disponible{remorqueuses.length > 1 ? 's' : ''})
                     </span>
                   </Label>
-                  <Select value={formData.remorqueuseId || 'none'} onValueChange={(value) => setFormData({ ...formData, remorqueuseId: value === 'none' ? '' : value })}>
+                  <Select
+                    value={formData.remorqueuseId || 'none'}
+                    onValueChange={(value) => {
+                      const remorqueuseId = value === 'none' ? '' : value;
+                      const nextBons = listLoadingsForTripSelection({
+                        loadings: supplierLoadings,
+                        trucks,
+                        tracteurId: formData.tracteurId || undefined,
+                        remorqueuseId: remorqueuseId || undefined,
+                        chauffeurId: formData.chauffeurId || undefined,
+                      });
+                      setFormData({
+                        ...formData,
+                        remorqueuseId,
+                        supplierLoadingId:
+                          nextBons.length === 1
+                            ? nextBons[0].id
+                            : nextBons.some((b) => b.id === formData.supplierLoadingId)
+                              ? formData.supplierLoadingId
+                              : '',
+                      });
+                      if (nextBons.length === 1) applyBonToForm(nextBons[0]);
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
@@ -1441,6 +1652,56 @@ export default function Trips() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div>
+                <Label>
+                  Bon
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({bonsForForm.length} lié{bonsForForm.length > 1 ? 's' : ''} au camion / chauffeur)
+                  </span>
+                </Label>
+                <Select
+                  value={formData.supplierLoadingId || 'none'}
+                  onValueChange={(value) => {
+                    if (value === 'none') {
+                      applyBonToForm(null);
+                      return;
+                    }
+                    const bon = bonsForForm.find((b) => b.id === value) ??
+                      supplierLoadings.find((b) => b.id === value);
+                    applyBonToForm(bon ?? null);
+                  }}
+                  disabled={
+                    !formData.tracteurId &&
+                    !formData.remorqueuseId &&
+                    !formData.chauffeurId
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        formData.tracteurId || formData.remorqueuseId || formData.chauffeurId
+                          ? 'Choisir un bon…'
+                          : 'Choisir d’abord un camion ou un chauffeur'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Aucun</SelectItem>
+                    {bonsForForm.length === 0 ? (
+                      <div className="p-2 text-xs text-muted-foreground text-center">
+                        Aucun bon rattaché à ce camion ou chauffeur
+                      </div>
+                    ) : (
+                      bonsForForm.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          {formatLoadingBonOption(l)}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1466,9 +1727,9 @@ export default function Trips() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="destination">Destination (résumé)</Label>
+                  <Label htmlFor="destination">Destination</Label>
                   <p className="text-xs text-muted-foreground mb-1">
-                    Optionnel : zone ou « À préciser » ; le détail peut aller dans les arrêts ci-dessous.
+                    Optionnel : zone ou « À préciser ».
                   </p>
                   <div className="flex gap-2">
                   <Input
@@ -1490,164 +1751,6 @@ export default function Trips() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-dashed bg-muted/20 p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">Arrêts — chargements fournisseurs, puis livraisons</p>
-                    <p className="text-xs text-muted-foreground">
-                      Chaque arrêt « chargement » est un ramassage chez un fournisseur (lieu réel ; rapprochez du nom
-                      enregistré sous{' '}
-                      <Link to="/tiers" className="text-primary underline-offset-2 hover:underline">
-                        Tiers
-                      </Link>{' '}
-                      pour vous retrouver). Enchaînez les sites dans l’ordre du camion, puis les livraisons clients.
-                      Sans ligne détaillée, un chargement à l’origine et une livraison au résumé destination sont
-                      enregistrés automatiquement.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={syncFormStopsFromOrigineDest}>
-                      Reprendre origine / destination
-                    </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={addFormStop}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Arrêt
-                    </Button>
-                  </div>
-                </div>
-                {formData.stops.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun arrêt détaillé — utilisation du résumé seul à l’enregistrement.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {formData.stops.map((stop, index) => (
-                      <div
-                        key={stop.id}
-                        className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end rounded-md border bg-background p-3"
-                      >
-                        <div className="md:col-span-2">
-                          <Label className="text-xs">Type</Label>
-                          <Select
-                            value={stop.type}
-                            onValueChange={(v) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                stops: prev.stops.map((s, i) =>
-                                  i === index ? { ...s, type: v as TripStopType } : s,
-                                ),
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="chargement">{labelTripStopType('chargement')}</SelectItem>
-                              <SelectItem value="livraison">{labelTripStopType('livraison')}</SelectItem>
-                              <SelectItem value="autre">{labelTripStopType('autre')}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="md:col-span-5">
-                          <Label className="text-xs">Lieu</Label>
-                          <Input
-                            value={stop.lieu}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                stops: prev.stops.map((s, i) =>
-                                  i === index ? { ...s, lieu: e.target.value } : s,
-                                ),
-                              }))
-                            }
-                            placeholder={
-                              stop.type === 'chargement'
-                                ? 'Ex. carrière X, dépôt ciment, usine…'
-                                : stop.type === 'livraison'
-                                  ? 'Ex. chantier, client, magasin…'
-                                  : 'Lieu de passage'
-                            }
-                          />
-                        </div>
-                        <div className="md:col-span-3">
-                          <Label className="text-xs">
-                            {stop.type === 'chargement'
-                              ? 'Fournisseur / BL (optionnel)'
-                              : stop.type === 'livraison'
-                                ? 'Client / BL livraison (optionnel)'
-                                : 'Référence (optionnel)'}
-                          </Label>
-                          <datalist id={`trip-form-stop-ref-${stop.id}`}>
-                            {tierSuggestionsForStopType(
-                              stop.type,
-                              tiersClientsFiches,
-                              fournisseursFiches,
-                            ).map((tp) => (
-                              <option
-                                key={tp.id}
-                                value={tp.nom}
-                                label={tp.telephone ? String(tp.telephone) : undefined}
-                              />
-                            ))}
-                          </datalist>
-                          <Input
-                            list={`trip-form-stop-ref-${stop.id}`}
-                            autoComplete="off"
-                            value={stop.clientRef ?? ''}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                stops: prev.stops.map((s, i) =>
-                                  i === index ? { ...s, clientRef: e.target.value || undefined } : s,
-                                ),
-                              }))
-                            }
-                            placeholder={
-                              stop.type === 'chargement'
-                                ? 'Liste ou saisie : fournisseur, BL…'
-                                : 'Liste ou saisie : client, BL…'
-                            }
-                          />
-                        </div>
-                        <div className="md:col-span-2 flex gap-1 justify-end">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-9 w-9 shrink-0"
-                            disabled={index === 0}
-                            onClick={() => moveFormStop(index, -1)}
-                            title="Monter"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-9 w-9 shrink-0"
-                            disabled={index >= formData.stops.length - 1}
-                            onClick={() => moveFormStop(index, 1)}
-                            title="Descendre"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 shrink-0 text-destructive"
-                            onClick={() => removeFormStop(index)}
-                            title="Supprimer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {/* Afficher la distance issue de la carte (itinéraire routier) */}
               {formData.origine.trim() && formData.destination.trim() && formData.origine.trim() !== formData.destination.trim() && (
                 <div className="bg-muted/50 p-3 rounded-lg border">
@@ -1667,8 +1770,31 @@ export default function Trips() {
                     ({availableDrivers.length} disponible{availableDrivers.length > 1 ? 's' : ''})
                   </span>
                 </Label>
-                <Select value={formData.chauffeurId} onValueChange={(value) => setFormData({ ...formData, chauffeurId: value })} required>
-                  <SelectTrigger>
+                <Select
+                  value={formData.chauffeurId}
+                  onValueChange={(value) => {
+                    const nextBons = listLoadingsForTripSelection({
+                      loadings: supplierLoadings,
+                      trucks,
+                      tracteurId: formData.tracteurId || undefined,
+                      remorqueuseId: formData.remorqueuseId || undefined,
+                      chauffeurId: value || undefined,
+                    });
+                    setFormData({
+                      ...formData,
+                      chauffeurId: value,
+                      supplierLoadingId:
+                        nextBons.length === 1
+                          ? nextBons[0].id
+                          : nextBons.some((b) => b.id === formData.supplierLoadingId)
+                            ? formData.supplierLoadingId
+                            : '',
+                    });
+                    if (nextBons.length === 1) applyBonToForm(nextBons[0]);
+                  }}
+                  required
+                >
+                    <SelectTrigger>
                     <SelectValue placeholder="Sélectionner un chauffeur" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1700,296 +1826,212 @@ export default function Trips() {
                   />
                 </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="client-tier-picker">Client / structure (optionnel)</Label>
-                  <ThirdPartyPicker
-                    id="client-tier-picker"
-                    className="mt-1"
-                    options={tiersClientsFiches}
-                    value={clientStructureTierId}
-                    onValueChange={(tierId) => {
-                      const nom = tierId ? tiersClientsFiches.find((c) => c.id === tierId)?.nom ?? '' : '';
-                      setFormData((prev) => ({ ...prev, client: nom }));
-                    }}
-                    placeholder="Rechercher un client (fiche Tiers)…"
-                    searchPlaceholder="Nom, téléphone…"
-                    topChoices={[{ id: '', label: 'Aucun client', keywords: 'aucun effacer vider' }]}
-                    orphanLabel={
-                      (formData.client ?? '').trim() && !clientStructureTierId
-                        ? (formData.client ?? '').trim()
-                        : undefined
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Compte ou donneur d’ordre côté « gros » ou habituellement facturé ; le destinataire de livraison peut
-                    être différent (champ dédié ci-dessous). Fiches :{' '}
-                    <Link to="/clients" className="text-primary font-medium underline-offset-2 hover:underline">
-                      Clients
-                    </Link>
-                    .
-                  </p>
-                </div>
-
-                <div>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <Label htmlFor="marchandise" className="shrink-0">
-                        Marchandise / qualité (optionnel)
-                      </Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto py-1 text-xs text-muted-foreground"
-                        onClick={() => {
-                          setMerchandiseCatalogOpen(true);
-                          setEditingMerchandiseId(null);
-                          setMerchEditDraft('');
-                        }}
-                      >
-                        Gérer le catalogue…
-                      </Button>
+              {formData.supplierLoadingId ? (
+                <div className="rounded-lg border bg-muted/10 p-4 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Redistribution du bon</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedBonForForm
+                          ? `${selectedBonForForm.numeroBon?.trim() || selectedBonForForm.designation}${
+                              selectedBonForForm.quantite != null
+                                ? ` · ${selectedBonForForm.quantite}${
+                                    selectedBonForForm.unite
+                                      ? ` ${selectedBonForForm.unite}`
+                                      : ''
+                                  }`
+                                : ''
+                            }`
+                          : 'Bon sélectionné'}
+                        {bonQtyRemaining != null
+                          ? bonQtyRemaining <= 1e-9
+                            ? ' · bon complet'
+                            : ` · reste ${bonQtyRemaining}${
+                                selectedBonForForm?.unite
+                                  ? ` ${selectedBonForForm.unite}`
+                                  : ''
+                              } (à épuiser pour enregistrer)`
+                          : ''}
+                      </p>
                     </div>
-                    <datalist id="trip-marchandise-catalog-datalist">
-                      {sortedMerchandiseCatalog.map((m) => (
-                        <option key={m.id} value={m.libelle} />
-                      ))}
-                    </datalist>
-                    <Input
-                      id="marchandise"
-                      list="trip-marchandise-catalog-datalist"
-                      value={formData.marchandise}
-                      onChange={(e) => setFormData({ ...formData, marchandise: e.target.value })}
-                      placeholder="Saisie libre ou choix dans votre catalogue"
-                      autoComplete="off"
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={!canMemorizeMarchandise}
-                        onClick={() => void handleMemorizeMarchandise()}
-                      >
-                        <ListPlus className="h-3.5 w-3.5 mr-1 shrink-0" />
-                        Mémoriser dans le catalogue
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Enregistrez vos désignations habituelles pour les retrouver dans la liste ; le trajet accepte
-                      toujours une saisie libre.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">Clients sur le trajet (parts / facturation)</p>
-                    <p className="text-xs text-muted-foreground max-w-3xl">
-                      Une ligne par client ou structure qui partage la mission : libellé (obligatoire pour compter la
-                      ligne), fiche Tiers type client si vous en avez une (
-                      <Link to="/tiers" className="text-primary underline-offset-2 hover:underline">
-                        Tiers
-                      </Link>
-                      ), part de recette optionnelle. À partir de deux lignes renseignées, choisissez le payeur au
-                      règlement (défaut factures / encaissements multi-clients). Sans ligne ici, seul le champ «
-                      Client / structure » ci-dessus s’applique.
-                    </p>
-                  </div>
-                  <Button type="button" variant="secondary" size="sm" onClick={addClientParticipantRow}>
-                    <Plus className="h-4 w-4 mr-1 shrink-0" />
-                    Ajouter un client
-                  </Button>
-                </div>
-                {formData.clientParticipants.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">
-                    Aucune ligne multi-client — le menu « Client / structure » suffit pour un seul compte.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {formData.clientParticipants.map((p, index) => (
-                      <div
-                        key={p.id}
-                        className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end rounded-md border bg-background p-3"
-                      >
-                        <div className="md:col-span-4">
-                          <Label className="text-xs">Libellé *</Label>
-                          <Input
-                            value={p.libelle}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setFormData((prev) => ({
-                                ...prev,
-                                clientParticipants: prev.clientParticipants.map((x, i) =>
-                                  i === index ? { ...x, libelle: v } : x,
-                                ),
-                              }));
-                            }}
-                            placeholder="Raison sociale ou nom affiché"
-                            className="mt-1"
-                          />
-                        </div>
-                        <div className="md:col-span-4">
-                          <Label className="text-xs">Fiche client (Tiers)</Label>
-                          <ThirdPartyPicker
-                            className="mt-1"
-                            triggerSize="sm"
-                            options={tiersClientsFiches}
-                            value={p.tierId ?? ''}
-                            onValueChange={(tierId) => {
-                              const id = tierId || undefined;
-                              const nom = id ? tiersClientsFiches.find((c) => c.id === id)?.nom : undefined;
-                              setFormData((prev) => ({
-                                ...prev,
-                                clientParticipants: prev.clientParticipants.map((x, i) => {
-                                  if (i !== index) return x;
-                                  const lib = (x.libelle ?? '').trim();
-                                  return {
-                                    ...x,
-                                    tierId: id,
-                                    libelle: lib || nom || '',
-                                  };
-                                }),
-                              }));
-                            }}
-                            placeholder="Rechercher une fiche…"
-                            searchPlaceholder="Nom client, téléphone…"
-                            topChoices={[{ id: '', label: 'Sans fiche', keywords: 'sans fiche' }]}
-                          />
-                        </div>
-                        <div className="md:col-span-3">
-                          <Label className="text-xs">Part recette (FCFA, optionnel)</Label>
-                          <NumberInput
-                            className="mt-1"
-                            min={0}
-                            value={p.montantAttribue ?? 0}
-                            onChange={(value) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                clientParticipants: prev.clientParticipants.map((x, i) =>
-                                  i === index
-                                    ? {
-                                        ...x,
-                                        montantAttribue:
-                                          value != null && value > 0 ? value : undefined,
-                                      }
-                                    : x,
-                                ),
-                              }))
-                            }
-                            placeholder="0"
-                          />
-                        </div>
-                        <div className="md:col-span-1 flex justify-end pb-0.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 text-destructive shrink-0"
-                            onClick={() => removeClientParticipantRow(p.id)}
-                            title="Retirer cette ligne"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {formData.clientParticipants.filter((x) => x.libelle.trim()).length >= 2 && (
-                  <div className="space-y-2 pt-2 border-t border-border/60">
-                    <Label className="text-sm">Payeur au règlement *</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Client désigné pour le règlement par défaut et les factures lorsque plusieurs lignes sont
-                      actives.
-                    </p>
-                    <RadioGroup
-                      value={formData.payeurParticipantId}
-                      onValueChange={(v) => setFormData((prev) => ({ ...prev, payeurParticipantId: v }))}
-                      className="flex flex-col gap-2"
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={addClientParticipantRow}
+                      disabled={bonQtyRemaining != null && bonQtyRemaining <= 1e-9}
                     >
-                      {formData.clientParticipants
-                        .filter((x) => x.libelle.trim())
-                        .map((x) => (
-                          <div key={x.id} className="flex items-center gap-2">
-                            <RadioGroupItem value={x.id} id={`payeur-${x.id}`} />
-                            <Label htmlFor={`payeur-${x.id}`} className="font-normal cursor-pointer text-sm">
-                              {x.libelle.trim()}
-                              {x.tierId ? (
-                                <span className="text-muted-foreground text-xs ml-1">
-                                  (
-                                  {tiersClientsFiches.find((c) => c.id === x.tierId)?.nom ??
-                                    'fiche Tiers'}
-                                  )
-                                </span>
-                              ) : null}
-                            </Label>
-                          </div>
-                        ))}
-                    </RadioGroup>
+                      <Plus className="h-4 w-4 mr-1 shrink-0" />
+                      Ajouter un client
+                    </Button>
                   </div>
-                )}
-              </div>
 
-              <div className="rounded-lg border border-dashed border-primary/25 bg-muted/15 p-4 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Suivi livraison — référence commande, destinataire, quantité, retour bordereaux
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="referenceAtc">Réf. ATC / commande (optionnel)</Label>
-                    <Input
-                      id="referenceAtc"
-                      value={formData.referenceAtc}
-                      onChange={(e) => setFormData({ ...formData, referenceAtc: e.target.value })}
-                      placeholder="Ex. 9002, 2071…"
-                      maxLength={64}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="destinataire">Destinataire de livraison (optionnel)</Label>
-                    <Input
-                      id="destinataire"
-                      value={formData.destinataire}
-                      onChange={(e) => setFormData({ ...formData, destinataire: e.target.value })}
-                      placeholder="Point de livraison ou client final si différent du compte ci-dessus"
-                      maxLength={255}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="quantiteChargee">Quantité chargée / livrée (optionnel)</Label>
-                    <Input
-                      id="quantiteChargee"
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={formData.quantiteChargee ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setFormData({
-                          ...formData,
-                          quantiteChargee:
-                            raw === '' ? undefined : Math.max(0, Number.parseFloat(raw) || 0),
-                        });
-                      }}
-                      placeholder="Sacs, tonnes… (nombre)"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="retourBordereaux">Retour bordereaux (optionnel)</Label>
-                    <Input
-                      id="retourBordereaux"
-                      value={formData.retourBordereaux}
-                      onChange={(e) => setFormData({ ...formData, retourBordereaux: e.target.value })}
-                      placeholder="Ex. ok, en attente…"
-                      maxLength={32}
-                    />
-                  </div>
+                  {formData.clientParticipants.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Redistribuez toute la quantité du bon aux clients avant d’enregistrer la mission.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {formData.clientParticipants.map((p, index) => {
+                        const montant = participantLineMontant(p);
+                        return (
+                          <div
+                            key={p.id}
+                            className="rounded-md border bg-background p-3 space-y-3"
+                          >
+                            <div className="flex flex-wrap items-end gap-2 justify-between">
+                              <div className="flex-1 min-w-[200px]">
+                                <Label className="text-xs">Client *</Label>
+                                <ThirdPartyPicker
+                                  className="mt-1"
+                                  triggerSize="sm"
+                                  options={tiersClientsFiches}
+                                  value={p.tierId ?? ''}
+                                  onValueChange={(tierId) => {
+                                    const id = tierId || undefined;
+                                    const nom = id
+                                      ? tiersClientsFiches.find((c) => c.id === id)?.nom
+                                      : undefined;
+                                    patchParticipant(index, {
+                                      tierId: id,
+                                      libelle: nom || p.libelle,
+                                    });
+                                  }}
+                                  placeholder="Choisir un client…"
+                                  searchPlaceholder="Nom, téléphone…"
+                                  orphanLabel={
+                                    p.libelle.trim() && !p.tierId ? p.libelle.trim() : undefined
+                                  }
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 text-destructive shrink-0"
+                                onClick={() => removeClientParticipantRow(p.id)}
+                                title="Retirer"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {(p.tierId || p.libelle.trim()) && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <Label className="text-xs">
+                                    Prix unitaire (FCFA)
+                                    {isAdmin ? ' *' : ' (optionnel)'}
+                                  </Label>
+                                  <NumberInput
+                                    className="mt-1"
+                                    min={0}
+                                    value={p.prixUnitaire ?? 0}
+                                    onChange={(value) =>
+                                      patchParticipant(index, {
+                                        prixUnitaire: value > 0 ? value : undefined,
+                                      })
+                                    }
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">
+                                    Quantité
+                                    {selectedBonForForm?.unite
+                                      ? ` (${selectedBonForForm.unite})`
+                                      : ''}
+                                  </Label>
+                                  <NumberInput
+                                    className="mt-1"
+                                    min={0}
+                                    value={p.quantite ?? 0}
+                                    onChange={(value) =>
+                                      patchParticipant(index, {
+                                        quantite: value > 0 ? value : undefined,
+                                      })
+                                    }
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Montant total (FCFA)</Label>
+                                  <Input
+                                    className="mt-1"
+                                    readOnly
+                                    value={
+                                      montant != null
+                                        ? Math.round(montant).toLocaleString('fr-FR')
+                                        : '—'
+                                    }
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Sous-référence bon</Label>
+                                  <Input
+                                    className="mt-1"
+                                    value={p.sousReferenceBon ?? ''}
+                                    onChange={(e) =>
+                                      patchParticipant(index, {
+                                        sousReferenceBon: e.target.value || undefined,
+                                      })
+                                    }
+                                    placeholder="Réf. client / BL…"
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <Label className="text-xs">Lieu de livraison</Label>
+                                  <Input
+                                    className="mt-1"
+                                    value={p.lieuLivraison ?? ''}
+                                    onChange={(e) =>
+                                      patchParticipant(index, {
+                                        lieuLivraison: e.target.value || undefined,
+                                      })
+                                    }
+                                    placeholder="Chantier, magasin, adresse…"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {formData.clientParticipants.filter((x) => x.libelle.trim()).length >= 2 && (
+                    <div className="space-y-2 pt-2 border-t">
+                      <Label className="text-sm">Payeur au règlement</Label>
+                      <RadioGroup
+                        value={formData.payeurParticipantId}
+                        onValueChange={(v) =>
+                          setFormData((prev) => ({ ...prev, payeurParticipantId: v }))
+                        }
+                        className="flex flex-col gap-2"
+                      >
+                        {formData.clientParticipants
+                          .filter((x) => x.libelle.trim())
+                          .map((x) => (
+                            <div key={x.id} className="flex items-center gap-2">
+                              <RadioGroupItem value={x.id} id={`payeur-${x.id}`} />
+                              <Label
+                                htmlFor={`payeur-${x.id}`}
+                                className="font-normal cursor-pointer text-sm"
+                              >
+                                {x.libelle.trim()}
+                              </Label>
+                            </div>
+                          ))}
+                      </RadioGroup>
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <p className="text-sm text-muted-foreground rounded-md border border-dashed p-3">
+                  Choisissez un bon ci-dessus pour le redistribuer à un ou plusieurs clients.
+                </p>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -2000,8 +2042,11 @@ export default function Trips() {
                     value={formData.recette}
                     onChange={(value) => setFormData({ ...formData, recette: value })}
                     required
-                    placeholder="Montant de la recette"
+                    placeholder="Somme des montants clients"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Calculée automatiquement depuis les lignes clients.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="prefinancement">Préfinancement (FCFA) (optionnel)</Label>
@@ -2012,7 +2057,6 @@ export default function Trips() {
                     onChange={(value) => setFormData({ ...formData, prefinancement: value || 0 })}
                     placeholder="Montant de préfinancement"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Avance versée avant le trajet</p>
                 </div>
               </div>
 
@@ -2027,7 +2071,16 @@ export default function Trips() {
                 />
               </div>
 
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={
+                    isSubmitting ||
+                    (Boolean(formData.supplierLoadingId) &&
+                      bonQtyRemaining != null &&
+                      bonQtyRemaining > 1e-9)
+                  }
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

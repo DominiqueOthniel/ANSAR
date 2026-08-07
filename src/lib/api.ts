@@ -158,6 +158,8 @@ export interface TripPayload {
   stops?: TripStopPayload[];
   clientParticipants?: TripClientParticipant[];
   payeurParticipantId?: string;
+  /** Bon de chargement (supplier_loadings) lié à la mission. */
+  supplierLoadingId?: string | null;
 }
 
 export interface ExpensePayload {

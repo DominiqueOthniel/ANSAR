@@ -3,7 +3,13 @@ export interface TripClientParticipant {
   id: string;
   tierId?: string;
   libelle: string;
+  /** Montant total ligne (FCFA), souvent prixUnitaire × quantite. */
   montantAttribue?: number;
+  prixUnitaire?: number;
+  quantite?: number;
+  lieuLivraison?: string;
+  /** Sous-référence bon pour ce client. */
+  sousReferenceBon?: string;
 }
 
 export function newTripClientParticipant(
@@ -18,7 +24,25 @@ export function newTripClientParticipant(
     libelle: partial?.libelle ?? '',
     tierId: partial?.tierId,
     montantAttribue: partial?.montantAttribue,
+    prixUnitaire: partial?.prixUnitaire,
+    quantite: partial?.quantite,
+    lieuLivraison: partial?.lieuLivraison,
+    sousReferenceBon: partial?.sousReferenceBon,
   };
+}
+
+export function participantLineMontant(p: TripClientParticipant): number | undefined {
+  if (p.prixUnitaire != null && p.quantite != null && p.prixUnitaire >= 0 && p.quantite >= 0) {
+    return Math.round(p.prixUnitaire * p.quantite);
+  }
+  if (p.montantAttribue != null && !Number.isNaN(Number(p.montantAttribue))) {
+    return Number(p.montantAttribue);
+  }
+  return undefined;
+}
+
+export function sumParticipantsQuantite(parts: TripClientParticipant[]): number {
+  return parts.reduce((s, p) => s + (p.quantite != null && p.quantite > 0 ? p.quantite : 0), 0);
 }
 
 export function remapParticipantsForDuplicate(

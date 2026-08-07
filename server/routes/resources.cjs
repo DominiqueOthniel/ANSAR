@@ -91,7 +91,7 @@ async function listDriversFull() {
   return list;
 }
 
-const trips = createTableApi({
+const tripsBase = createTableApi({
   table: 'trips',
   moduleName: 'trips',
   orderBy: '"dateDepart" DESC',
@@ -113,6 +113,44 @@ const trips = createTableApi({
     await ensureTripInvoiceOnCompletion(after, actor);
   },
 });
+
+let tripsSchemaReady = false;
+async function ensureTripsSchema() {
+  if (tripsSchemaReady) return;
+  await query(
+    `ALTER TABLE trips ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID`,
+  );
+  tripsSchemaReady = true;
+}
+
+const trips = {
+  list: async (...args) => {
+    await ensureTripsSchema();
+    return tripsBase.list(...args);
+  },
+  get: async (id) => {
+    await ensureTripsSchema();
+    return tripsBase.get(id);
+  },
+  create: async (body, actor) => {
+    await ensureTripsSchema();
+    const data = { ...body };
+    if (data.supplierLoadingId === '' || data.supplierLoadingId == null) {
+      data.supplierLoadingId = null;
+    }
+    return tripsBase.create(data, actor);
+  },
+  update: async (id, body, actor) => {
+    await ensureTripsSchema();
+    const data = { ...body };
+    if (data.supplierLoadingId === '') data.supplierLoadingId = null;
+    return tripsBase.update(id, data, actor);
+  },
+  remove: async (id, actor) => {
+    await ensureTripsSchema();
+    return tripsBase.remove(id, actor);
+  },
+};
 
 async function nextTripInvoiceNumero() {
   const year = new Date().getFullYear();

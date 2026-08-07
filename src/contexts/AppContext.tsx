@@ -94,6 +94,8 @@ export interface Trip {
   clientParticipants?: TripClientParticipant[];
   /** `id` d’une entrée de `clientParticipants` : payeur au règlement / défaut facture. */
   payeurParticipantId?: string;
+  /** Bon de chargement rattaché à la mission (optionnel). */
+  supplierLoadingId?: string;
 }
 
 export interface ParcelExpeditionLot {
@@ -457,7 +459,34 @@ function normalizeTripClientParticipants(raw: unknown): TripClientParticipant[] 
       const m = parseNum(r.montantAttribue);
       montantAttribue = !Number.isNaN(m) && m >= 0 ? m : undefined;
     }
-    out.push({ id, tierId, libelle, montantAttribue });
+    let prixUnitaire: number | undefined;
+    if (r.prixUnitaire !== undefined && r.prixUnitaire !== null && String(r.prixUnitaire) !== '') {
+      const pu = parseNum(r.prixUnitaire);
+      prixUnitaire = !Number.isNaN(pu) && pu >= 0 ? pu : undefined;
+    }
+    let quantite: number | undefined;
+    if (r.quantite !== undefined && r.quantite !== null && String(r.quantite) !== '') {
+      const q = parseNum(r.quantite);
+      quantite = !Number.isNaN(q) && q >= 0 ? q : undefined;
+    }
+    const lieuLivraison =
+      r.lieuLivraison != null && String(r.lieuLivraison).trim() !== ''
+        ? String(r.lieuLivraison).trim()
+        : undefined;
+    const sousReferenceBon =
+      r.sousReferenceBon != null && String(r.sousReferenceBon).trim() !== ''
+        ? String(r.sousReferenceBon).trim()
+        : undefined;
+    out.push({
+      id,
+      tierId,
+      libelle,
+      montantAttribue,
+      prixUnitaire,
+      quantite,
+      lieuLivraison,
+      sousReferenceBon,
+    });
     i += 1;
   }
   return out.length > 0 ? out : undefined;
@@ -499,6 +528,7 @@ function normalizeTrip(r: Record<string, unknown>): Trip {
     stops: normalizeTripStops(r.stops),
     clientParticipants,
     payeurParticipantId,
+    supplierLoadingId: r.supplierLoadingId ? String(r.supplierLoadingId) : undefined,
   };
 }
 

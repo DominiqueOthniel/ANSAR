@@ -75,3 +75,35 @@ export function summarizeLoadingAssignments(assignments?: SupplierLoadingAssignm
     .map((a) => a.orderReference || a.orderDesignation || a.clientNom || a.clientOrderId.slice(0, 8))
     .join(', ');
 }
+
+/** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés). */
+export function listLoadingsForTripSelection(params: {
+  loadings: SupplierLoading[];
+  trucks: { id: string; chauffeurId?: string }[];
+  tracteurId?: string;
+  remorqueuseId?: string;
+  chauffeurId?: string;
+}): SupplierLoading[] {
+  const truckIds = new Set<string>();
+  if (params.tracteurId) truckIds.add(params.tracteurId);
+  if (params.remorqueuseId) truckIds.add(params.remorqueuseId);
+  if (params.chauffeurId) {
+    for (const t of params.trucks) {
+      if (t.chauffeurId === params.chauffeurId) truckIds.add(t.id);
+    }
+  }
+  if (truckIds.size === 0) return [];
+  return params.loadings.filter(
+    (l) => l.statut !== 'annule' && !!l.camionId && truckIds.has(l.camionId),
+  );
+}
+
+export function formatLoadingBonOption(l: SupplierLoading): string {
+  const bon = l.numeroBon?.trim() || l.designation;
+  const qty =
+    l.quantite != null
+      ? ` · ${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
+      : '';
+  const fournisseur = l.fournisseurNom?.trim() ? ` · ${l.fournisseurNom.trim()}` : '';
+  return `${bon}${fournisseur}${qty}`;
+}
