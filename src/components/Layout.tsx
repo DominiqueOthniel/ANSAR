@@ -142,7 +142,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const currentPage = navItems.find(item => item.href === location.pathname)?.name || 'Dashboard';
+  const pageTitlesExtra: Record<string, string> = {
+    '/utilisateurs': 'Utilisateurs',
+  };
+  const currentPage =
+    navItems.find((item) => item.href === location.pathname)?.name ||
+    pageTitlesExtra[location.pathname] ||
+    'Dashboard';
 
   const roleLabel = user?.role ? formatRoleLabel(user.role) : '';
 

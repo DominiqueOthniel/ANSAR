@@ -92,6 +92,8 @@ interface AuthContextType {
   logout: () => void;
   users: UserSummary[];
   refreshUsers: () => Promise<void>;
+  /** False tant que la première liste utilisateurs n’a pas été récupérée. */
+  usersReady: boolean;
   createUser: (login: string, password: string, role: UserRole) => Promise<void>;
   updateUserRole: (targetLogin: string, role: UserRole) => Promise<void>;
   deleteUser: (targetLogin: string) => Promise<void>;
@@ -110,20 +112,25 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => readSession());
   const [users, setUsers] = useState<UserSummary[]>([]);
+  const [usersReady, setUsersReady] = useState(false);
   const migratedRef = useRef(false);
 
   const refreshUsers = useCallback(async () => {
-    const list = await usersApi.list();
-    setUsers(
-      list
-        .slice()
-        .sort((a, b) => a.login.localeCompare(b.login, 'fr'))
-        .map((u) => ({
-          login: u.login,
-          role: u.role,
-          mustChangePassword: Boolean(u.mustChangePassword),
-        })),
-    );
+    try {
+      const list = await usersApi.list();
+      setUsers(
+        list
+          .slice()
+          .sort((a, b) => a.login.localeCompare(b.login, 'fr'))
+          .map((u) => ({
+            login: u.login,
+            role: u.role,
+            mustChangePassword: Boolean(u.mustChangePassword),
+          })),
+      );
+    } finally {
+      setUsersReady(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -277,6 +284,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         logout,
         users,
+        usersReady,
         refreshUsers,
         createUser,
         updateUserRole,

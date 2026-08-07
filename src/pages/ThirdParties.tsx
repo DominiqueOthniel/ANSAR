@@ -131,6 +131,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     deleteThirdParty,
     refreshClientOrders,
     refreshClientDeliveries,
+    isLoading,
   } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1700,17 +1701,24 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sortedThirdParties.length === 0 && !showWalkInClientCard ? (
           <div className="col-span-full text-center py-12">
-            <p className="text-muted-foreground">
-              {searchTerm ||
-              (!isClientsScope && filterType !== 'all') ||
-              (isClientsScope && anyClientFilterActive)
-                ? isClientsScope
-                  ? 'Aucun client ne correspond aux filtres ou à la recherche'
-                  : 'Aucun tier ne correspond à votre recherche'
-                : isClientsScope
-                  ? 'Aucun client enregistré'
-                  : 'Aucun tier enregistré'}
-            </p>
+            {isLoading ? (
+              <p className="text-muted-foreground inline-flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Chargement des fiches…
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                {searchTerm ||
+                (!isClientsScope && filterType !== 'all') ||
+                (isClientsScope && anyClientFilterActive)
+                  ? isClientsScope
+                    ? 'Aucun client ne correspond aux filtres ou à la recherche'
+                    : 'Aucun tier ne correspond à votre recherche'
+                  : isClientsScope
+                    ? 'Aucun client enregistré'
+                    : 'Aucun tier enregistré'}
+              </p>
+            )}
           </div>
         ) : (
           <>

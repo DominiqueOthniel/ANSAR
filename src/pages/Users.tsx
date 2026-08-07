@@ -36,7 +36,7 @@ import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { ROLE_META, ROLE_OPTIONS, formatRoleLabel } from '@/lib/auth-users';
 
 export default function Users() {
-  const { user, users, createUser, updateUserRole, deleteUser, adminResetUserPassword } = useAuth();
+  const { user, users, usersReady, createUser, updateUserRole, deleteUser, adminResetUserPassword } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -234,7 +234,7 @@ export default function Users() {
             <CardContent>
               <p className="text-3xl font-bold">{grouped[role].length}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                compte{grouped[role].length !== 1 ? 's' : ''}
+                {grouped[role].length === 1 ? 'compte' : 'comptes'}
               </p>
             </CardContent>
           </Card>
@@ -255,7 +255,16 @@ export default function Users() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.length === 0 ? (
+              {!usersReady ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Chargement des comptes…
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
                     Aucun utilisateur.

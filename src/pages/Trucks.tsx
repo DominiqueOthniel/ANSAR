@@ -247,6 +247,7 @@ export default function Trucks() {
     refreshSupplierLoadings,
     refreshClientDeliveries,
     refreshClientOrders,
+    isLoading,
   } = useApp();
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1241,7 +1242,14 @@ export default function Trucks() {
               {sortedTrucks.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                    Aucun camion ne correspond aux critères de filtrage sélectionnés
+                    {isLoading ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Chargement de la flotte…
+                      </span>
+                    ) : (
+                      'Aucun camion ne correspond aux critères de filtrage sélectionnés'
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
