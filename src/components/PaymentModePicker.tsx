@@ -10,6 +10,7 @@ import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import type { ThirdParty } from '@/contexts/AppContext';
 import {
   ANSAR_BANQUES,
+  ANSAR_BANQUES_LABEL,
   ELECTRONIC_PAYMENT_OPTIONS,
   PAYMENT_FAMILY_OPTIONS,
   PAYMENT_MODE,
@@ -197,7 +198,7 @@ export function PaymentModePicker({
                 onValueChange={setDirectBanque}
               >
                 <SelectTrigger id={`${id}-banque-ansar`} className="mt-1">
-                  <SelectValue placeholder="Afriland, CBC, UBA ou CCA" />
+                  <SelectValue placeholder={ANSAR_BANQUES_LABEL} />
                 </SelectTrigger>
                 <SelectContent>
                   {ANSAR_BANQUES.map((b) => (

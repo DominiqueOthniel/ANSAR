@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ANSAR_BANQUES } from '@/lib/payment-modes';
+import { ANSAR_BANQUES, ANSAR_BANQUES_LABEL } from '@/lib/payment-modes';
 
 type Props = {
   id?: string;
@@ -34,7 +34,7 @@ export function AnsarBankAccountSelect({
       <Label htmlFor={id}>{label}</Label>
       <Select value={value || undefined} onValueChange={onChange}>
         <SelectTrigger id={id}>
-          <SelectValue placeholder="Choisir : Afriland, CBC, UBA ou CCA" />
+          <SelectValue placeholder={`Choisir : ${ANSAR_BANQUES_LABEL}`} />
         </SelectTrigger>
         <SelectContent>
           {ANSAR_BANQUES.map((b) => (

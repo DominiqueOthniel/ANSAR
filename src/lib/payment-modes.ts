@@ -20,8 +20,10 @@ export type PaymentTreasuryDestination = 'caisse' | 'aucun';
  * Banques pour traçabilité (versement direct Ansar, ou banque de l’entreprise en indirect).
  * Liste fixe : aucun compte à créer dans le module Banque.
  */
-export const ANSAR_BANQUES = ['Afriland', 'CBC', 'UBA', 'CCA'] as const;
+export const ANSAR_BANQUES = ['Afriland', 'CBC', 'UBA', 'CCA', 'Access Bank', 'BGFI'] as const;
 export type AnsarBanque = (typeof ANSAR_BANQUES)[number];
+
+export const ANSAR_BANQUES_LABEL = `${ANSAR_BANQUES.slice(0, -1).join(', ')} ou ${ANSAR_BANQUES[ANSAR_BANQUES.length - 1]}`;
 
 const BANQUE_SEP = ' · ';
 
@@ -226,7 +228,7 @@ export const VIREMENT_KIND_OPTIONS: {
   {
     value: PAYMENT_MODE.VIREMENT_DIRECT,
     label: 'Direct',
-    hint: 'Banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité',
+    hint: `Banque Ansar (${ANSAR_BANQUES_LABEL}) pour la traçabilité`,
   },
   {
     value: PAYMENT_MODE.VIREMENT_INDIRECT,
@@ -240,7 +242,7 @@ export function paymentModeHint(mode: string | undefined | null): string {
     const banque = parseAnsarBanque(mode);
     return banque
       ? `Versement direct sur ${banque} (traçabilité).`
-      : 'Choisis la banque Ansar (Afriland, CBC, UBA, CCA) pour la traçabilité.';
+      : `Choisis la banque Ansar (${ANSAR_BANQUES_LABEL}) pour la traçabilité.`;
   }
   if (isVersementIndirect(mode)) {
     const detail = parseIndirectVersement(mode);
@@ -257,7 +259,7 @@ export function paymentModeHint(mode: string | undefined | null): string {
 /** Contrôle que les détails de traçabilité versement sont complets. */
 export function missingVersementDetailMessage(mode: string | undefined | null): string | undefined {
   if (isPaiementVersBanque(mode) && !parseAnsarBanque(mode)) {
-    return 'Choisis la banque Ansar (Afriland, CBC, UBA ou CCA) pour le versement direct.';
+    return `Choisis la banque Ansar (${ANSAR_BANQUES_LABEL}) pour le versement direct.`;
   }
   if (isVersementIndirect(mode)) {
     const detail = parseIndirectVersement(mode);
