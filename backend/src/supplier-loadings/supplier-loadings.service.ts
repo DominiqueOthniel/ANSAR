@@ -236,6 +236,11 @@ export class SupplierLoadingsService {
     }
 
     let list = await qb.getMany();
+    for (const row of list) {
+      for (const a of row.assignments ?? []) {
+        delete (a as { loading?: SupplierLoading }).loading;
+      }
+    }
 
     if (params?.unassignedOnly) {
       list = list.filter((l) => {

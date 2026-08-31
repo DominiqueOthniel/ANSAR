@@ -1356,7 +1356,9 @@ export default function Chargements() {
                 {sortedLoadings.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
-                      Aucun bon de chargement.
+                      {supplierLoadings.length === 0
+                        ? 'Aucun bon de chargement.'
+                        : 'Aucun bon ne correspond aux filtres.'}
                     </TableCell>
                   </TableRow>
                 ) : (

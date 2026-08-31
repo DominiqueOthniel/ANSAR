@@ -25,18 +25,38 @@ function mapAssign(row) {
   return j;
 }
 
-async function loadAssignments(loadingId) {
-  const { rows } = await query(
-    `SELECT a.*, o.designation AS "orderDesignation", o.reference AS "orderReference",
+async function loadAssignmentsForIds(loadingIds) {
+  const ids = (loadingIds || []).filter(Boolean);
+  if (!ids.length) return [];
+  const sql = `SELECT a.*, o.designation AS "orderDesignation", o.reference AS "orderReference",
             o.statut AS "orderStatus", o."clientId" AS "clientId",
             COALESCE(tp.nom, o."clientNom") AS "clientNom"
      FROM supplier_loading_assignments a
      LEFT JOIN client_orders o ON o.id = a."clientOrderId"
      LEFT JOIN third_parties tp ON tp.id = o."clientId"
-     WHERE a."loadingId" = $1`,
-    [loadingId],
-  );
-  return rows.map(mapAssign);
+     WHERE a."loadingId" = ANY($1::uuid[])`;
+  try {
+    const { rows } = await query(sql, [ids]);
+    return rows.map(mapAssign);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/clientNom/i.test(msg)) throw err;
+    const { rows } = await query(
+      `SELECT a.*, o.designation AS "orderDesignation", o.reference AS "orderReference",
+              o.statut AS "orderStatus", o."clientId" AS "clientId",
+              tp.nom AS "clientNom"
+       FROM supplier_loading_assignments a
+       LEFT JOIN client_orders o ON o.id = a."clientOrderId"
+       LEFT JOIN third_parties tp ON tp.id = o."clientId"
+       WHERE a."loadingId" = ANY($1::uuid[])`,
+      [ids],
+    );
+    return rows.map(mapAssign);
+  }
+}
+
+async function loadAssignments(loadingId) {
+  return loadAssignmentsForIds([loadingId]);
 }
 
 async function computeStatut(loading, assignments) {
@@ -83,27 +103,37 @@ async function getLoading(id) {
 }
 
 async function listLoadings(params = {}) {
-  let sql = `SELECT * FROM supplier_loadings WHERE 1=1`;
   const args = [];
+  let sql = `SELECT l.*, tp.nom AS "fournisseurNom"
+     FROM supplier_loadings l
+     LEFT JOIN third_parties tp ON tp.id = l."fournisseurId"
+     WHERE 1=1`;
   if (params.fournisseurId) {
     args.push(params.fournisseurId);
-    sql += ` AND "fournisseurId" = $${args.length}`;
+    sql += ` AND l."fournisseurId" = $${args.length}`;
   }
   if (params.statut) {
     args.push(params.statut);
-    sql += ` AND statut = $${args.length}`;
+    sql += ` AND l.statut = $${args.length}`;
   }
-  sql += ` ORDER BY "dateChargement" DESC`;
+  sql += ` ORDER BY l."dateChargement" DESC`;
   const { rows } = await query(sql, args);
+  const assignments = await loadAssignmentsForIds(rows.map((r) => r.id));
+  const byLoading = new Map();
+  for (const a of assignments) {
+    const lid = a.loadingId;
+    if (!lid) continue;
+    if (!byLoading.has(lid)) byLoading.set(lid, []);
+    byLoading.get(lid).push(a);
+  }
+  const unassignedOnly = params.unassignedOnly === 'true' || params.unassignedOnly === true;
+  const auHubOnly = params.auHubOnly === 'true' || params.auHubOnly === true;
+  const hubFilter = String(params.hubArrivee || '').trim().toLowerCase();
   const out = [];
   for (const r of rows) {
     const L = mapLoading(r);
-    const { rows: f } = await query(`SELECT nom FROM third_parties WHERE id = $1`, [
-      L.fournisseurId,
-    ]);
-    L.fournisseurNom = f[0]?.nom;
-    L.assignments = await loadAssignments(L.id);
-    if (params.unassignedOnly === 'true' || params.unassignedOnly === true) {
+    L.assignments = byLoading.get(L.id) || [];
+    if (unassignedOnly) {
       const active = L.assignments.filter((a) => a.orderStatus !== 'annulee');
       const totalQty = L.quantite;
       if (totalQty == null || totalQty <= 0) {
@@ -116,6 +146,14 @@ async function listLoadings(params = {}) {
         if (assigned >= totalQty - 1e-6) continue;
       }
     }
+    if (auHubOnly) {
+      const atHub =
+        L.statut === 'au_hub' ||
+        L.statut === 'en_dispatch' ||
+        (L.statut === 'en_transit' && Boolean(L.hubArrivee));
+      if (!atHub) continue;
+    }
+    if (hubFilter && !(L.hubArrivee || '').toLowerCase().includes(hubFilter)) continue;
     out.push(L);
   }
   return out;

@@ -784,7 +784,12 @@ function normalizeSupplierLoading(r: Record<string, unknown>): SupplierLoading {
   return {
     id: loadingId,
     fournisseurId: String(r.fournisseurId),
-    fournisseurNom: fournisseur?.nom != null ? String(fournisseur.nom) : undefined,
+    fournisseurNom:
+      fournisseur?.nom != null
+        ? String(fournisseur.nom)
+        : r.fournisseurNom != null
+          ? String(r.fournisseurNom)
+          : undefined,
     numeroBon: r.numeroBon ? String(r.numeroBon) : undefined,
     articleId: r.articleId ? String(r.articleId) : undefined,
     designation: String(r.designation ?? ''),
@@ -1177,13 +1182,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setSupplierLoadings(normalized);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (/\b404\b/i.test(msg) || /cannot\s+get/i.test(msg)) {
-        console.warn('[supplier-loadings] Route absente — liste vide.');
-        setSupplierLoadings([]);
-        return;
-      }
       console.error('refreshSupplierLoadings', e);
-      setApiError(e instanceof Error ? e.message : 'Erreur API');
+      if (/\b404\b/i.test(msg) || /cannot\s+get/i.test(msg) || /route introuvable/i.test(msg)) {
+        console.warn('[supplier-loadings] Route API absente ou en erreur.');
+      }
+      setApiError(msg || 'Impossible de charger les bons de chargement');
     }
   };
 
