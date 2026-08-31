@@ -62,7 +62,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin, RefreshCw, Container, Package, CheckCircle, Clock, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
@@ -280,6 +280,20 @@ export default function Chargements() {
     }
     return list;
   }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly, auHubOnly, filterClientKind]);
+
+  const loadingKpis = useMemo(() => {
+    const actifs = supplierLoadings.filter((l) => l.statut !== 'annule');
+    return {
+      total: actifs.length,
+      enAttente: supplierLoadings.filter((l) => l.statut === 'en_attente_affectation').length,
+      partiel: supplierLoadings.filter((l) => l.statut === 'partiellement_affecte').length,
+      affectes: supplierLoadings.filter(
+        (l) => l.statut === 'affecte' || l.statut === 'solde',
+      ).length,
+      hub: supplierLoadings.filter((l) => isLoadingAtHub(l.statut)).length,
+      annules: supplierLoadings.filter((l) => l.statut === 'annule').length,
+    };
+  }, [supplierLoadings]);
 
   const openCreate = () => {
     setEditing(null);
@@ -887,6 +901,47 @@ export default function Chargements() {
     <div className="space-y-6">
       <PageHeader
         title="Chargements"
+        icon={Container}
+        gradient="from-lime-500/20 via-green-500/10 to-transparent"
+        iconColor="from-lime-600 via-green-600 to-emerald-700"
+        stats={[
+          {
+            label: 'Total bons',
+            value: loadingKpis.total,
+            icon: <Package className="h-4 w-4" />,
+            color: 'text-foreground',
+          },
+          {
+            label: 'En attente',
+            value: loadingKpis.enAttente,
+            icon: <Clock className="h-4 w-4" />,
+            color: 'text-amber-600 dark:text-amber-400',
+          },
+          {
+            label: 'Partiellement affectés',
+            value: loadingKpis.partiel,
+            icon: <Layers className="h-4 w-4" />,
+            color: 'text-blue-600 dark:text-blue-400',
+          },
+          {
+            label: 'Affectés / soldés',
+            value: loadingKpis.affectes,
+            icon: <CheckCircle className="h-4 w-4" />,
+            color: 'text-green-600 dark:text-green-400',
+          },
+          {
+            label: 'Hub / CAMRAIL',
+            value: loadingKpis.hub,
+            icon: <Train className="h-4 w-4" />,
+            color: 'text-teal-600 dark:text-teal-400',
+          },
+          {
+            label: 'Annulés',
+            value: loadingKpis.annules,
+            icon: <Ban className="h-4 w-4" />,
+            color: loadingKpis.annules > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground',
+          },
+        ]}
         actions={
           <div className="flex flex-wrap gap-2">
             <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
