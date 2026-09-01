@@ -19,6 +19,7 @@ import {
   formatIndirectVersement,
   formatPaymentModeWithBanque,
   isVersementIndirect,
+  isElectronicPaymentMode,
   normalizePaymentMode,
   parseAnsarBanque,
   parseIndirectVersement,
@@ -134,14 +135,14 @@ export function PaymentModePicker({
           <Label htmlFor={`${id}-operator`}>Opérateur</Label>
           <Select
             value={
-              canonical === PAYMENT_MODE.ORANGE || canonical === PAYMENT_MODE.MTN
+              isElectronicPaymentMode(canonical)
                 ? canonical
-                : PAYMENT_MODE.MTN
+                : ELECTRONIC_PAYMENT_OPTIONS[0].value
             }
             onValueChange={onChange}
           >
             <SelectTrigger id={`${id}-operator`} className="mt-1">
-              <SelectValue placeholder="MTN ou Orange" />
+              <SelectValue placeholder="Choisir le canal" />
             </SelectTrigger>
             <SelectContent>
               {ELECTRONIC_PAYMENT_OPTIONS.map((o) => (
