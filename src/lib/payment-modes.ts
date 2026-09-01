@@ -4,6 +4,10 @@ export const PAYMENT_MODE = {
   CHEQUE: 'Chèque',
   MTN: 'MTN Mobile Money',
   ORANGE: 'Orange Money',
+  SUB_ACCOUNT: 'Sub Account',
+  SPECTRUM: 'Spectrum',
+  TOP_MOBIL: 'Top Mobil',
+  MTN_SHOP: 'MTN Shop',
   VIREMENT_DIRECT: 'Versement direct',
   VIREMENT_INDIRECT: 'Versement indirect',
 } as const;
@@ -135,7 +139,7 @@ export function paymentModeFamily(mode: string | undefined | null): PaymentModeF
   if (!m) return '';
   if (m === PAYMENT_MODE.ESPECES) return 'especes';
   if (m === PAYMENT_MODE.CHEQUE) return 'cheque';
-  if (m === PAYMENT_MODE.MTN || m === PAYMENT_MODE.ORANGE) return 'electronique';
+  if (isElectronicPaymentMode(m)) return 'electronique';
   if (m === PAYMENT_MODE.VIREMENT_DIRECT || m === PAYMENT_MODE.VIREMENT_INDIRECT) return 'virement';
   const low = m.toLowerCase();
   if (low.includes('virement') || low.includes('versement')) return 'virement';
@@ -206,7 +210,7 @@ export const PAYMENT_FAMILY_OPTIONS: { value: PaymentModeFamily; label: string; 
   {
     value: 'electronique',
     label: 'Paiement électronique',
-    hint: 'MTN Mobile Money ou Orange Money',
+    hint: 'MTN, Orange, Sub Account, Spectrum, Top Mobil, MTN Shop',
   },
   {
     value: 'virement',
@@ -218,7 +222,20 @@ export const PAYMENT_FAMILY_OPTIONS: { value: PaymentModeFamily; label: string; 
 export const ELECTRONIC_PAYMENT_OPTIONS: { value: PaymentModeValue; label: string }[] = [
   { value: PAYMENT_MODE.MTN, label: 'MTN Mobile Money' },
   { value: PAYMENT_MODE.ORANGE, label: 'Orange Money' },
+  { value: PAYMENT_MODE.SUB_ACCOUNT, label: 'Sub Account' },
+  { value: PAYMENT_MODE.SPECTRUM, label: 'Spectrum' },
+  { value: PAYMENT_MODE.TOP_MOBIL, label: 'Top Mobil' },
+  { value: PAYMENT_MODE.MTN_SHOP, label: 'MTN Shop' },
 ];
+
+const ELECTRONIC_PAYMENT_VALUES = new Set(
+  ELECTRONIC_PAYMENT_OPTIONS.map((o) => o.value),
+);
+
+export function isElectronicPaymentMode(mode: string | undefined | null): boolean {
+  const m = normalizePaymentMode(mode);
+  return !!m && ELECTRONIC_PAYMENT_VALUES.has(m as PaymentModeValue);
+}
 
 export const VIREMENT_KIND_OPTIONS: {
   value: PaymentModeValue;
@@ -251,7 +268,7 @@ export function paymentModeHint(mode: string | undefined | null): string {
       : 'Choisis l’entreprise, puis la banque où le versement a été fait.';
   }
   if (isPaiementElectronique(mode)) {
-    return 'Paiement électronique (MTN / Orange) enregistré en caisse.';
+    return 'Paiement électronique enregistré en caisse.';
   }
   return 'Ce montant sera enregistré en caisse.';
 }
