@@ -13,6 +13,8 @@ import {
   sumLoadingAssignedQty,
   getLoadingRemainderQty,
   validateLoadingAssignmentRows,
+  loadingAllowsTransportTruck,
+  loadingTransportTruckRequired,
 } from '@/lib/supplier-loadings';
 import {
   HUB_PRESETS,
@@ -319,6 +321,13 @@ export default function Chargements() {
     [articles, form.fournisseurId],
   );
 
+  const showTransportTruck = useMemo(
+    () => loadingAllowsTransportTruck(form.modeEntree, form.fournisseurId, fournisseurs),
+    [form.modeEntree, form.fournisseurId, fournisseurs],
+  );
+
+  const transportTruckRequired = loadingTransportTruckRequired(form.modeEntree);
+
   const supplierSiteOptions = useMemo(() => {
     if (!form.fournisseurId) return [];
     const sites = new Set<string>();
@@ -414,13 +423,12 @@ export default function Chargements() {
         toast.error("Date d'émission du bon requise.");
         return;
       }
-      if (form.modeEntree === 'camion_ansar' && !form.camionId) {
+      if (transportTruckRequired && !form.camionId) {
         toast.error('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
         return;
       }
 
       const isCamrail = form.modeEntree === 'rail';
-      const isCamionAnsar = form.modeEntree === 'camion_ansar' || form.modeEntree === 'camion';
       const hub = isCamrail ? form.hubArrivee.trim() || undefined : undefined;
       const payload = {
         fournisseurId: form.fournisseurId,
@@ -433,7 +441,7 @@ export default function Chargements() {
         dateChargement: form.dateChargement,
         dateLivraison: form.dateLivraison || undefined,
         modeEntree: form.modeEntree,
-        camionId: isCamionAnsar ? form.camionId || undefined : undefined,
+        camionId: showTransportTruck ? form.camionId || undefined : undefined,
         hubArrivee: hub,
         dateArriveeHub: isCamrail ? form.dateArriveeHub.trim() || undefined : undefined,
         lieu: form.lieu.trim() || hub || undefined,
@@ -978,12 +986,18 @@ export default function Chargements() {
                     options={fournisseurs}
                     value={form.fournisseurId}
                     onValueChange={(id) =>
-                      setForm((f) =>
-                        syncBonValue(
-                          { ...f, fournisseurId: id, articleId: '', montantBonTouched: false },
-                          {},
-                        ),
-                      )
+                      setForm((f) => {
+                        const next = {
+                          ...f,
+                          fournisseurId: id,
+                          articleId: '',
+                          montantBonTouched: false,
+                        };
+                        if (!loadingAllowsTransportTruck(f.modeEntree, id, fournisseurs)) {
+                          next.camionId = '';
+                        }
+                        return syncBonValue(next, {});
+                      })
                     }
                     placeholder="Choisir un fournisseur…"
                   />
@@ -1102,8 +1116,9 @@ export default function Chargements() {
                       setForm((f) => ({
                         ...f,
                         modeEntree: mode,
-                        camionId:
-                          mode === 'camion_ansar' || mode === 'camion' ? f.camionId : '',
+                        camionId: loadingAllowsTransportTruck(mode, f.fournisseurId, fournisseurs)
+                          ? f.camionId
+                          : '',
                         hubArrivee: mode === 'rail' ? f.hubArrivee.trim() || hub : '',
                         dateArriveeHub: mode === 'rail' ? f.dateArriveeHub : '',
                         lieu: mode === 'rail' ? f.hubArrivee.trim() || hub : f.lieu,
@@ -1128,15 +1143,25 @@ export default function Chargements() {
                     </SelectContent>
                   </Select>
                 </div>
-                {(form.modeEntree === 'camion_ansar' || form.modeEntree === 'camion') && (
+                {showTransportTruck && (
                   <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/30">
-                    <Label>Camion direct SIA-ANSAR *</Label>
+                    <Label>
+                      {transportTruckRequired
+                        ? 'Camion direct SIA-ANSAR *'
+                        : 'Camion de transport (CIMAF)'}
+                    </Label>
                     <Select
                       value={form.camionId || ''}
                       onValueChange={(camionId) => setForm((f) => ({ ...f, camionId }))}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Choisir un camion disponible" />
+                        <SelectValue
+                          placeholder={
+                            transportTruckRequired
+                              ? 'Choisir un camion disponible'
+                              : 'Choisir un camion (optionnel)'
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {activeTrucks.length === 0 ? (
@@ -1153,7 +1178,9 @@ export default function Chargements() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      À utiliser quand SIA-ANSAR enlève directement la marchandise chez le fournisseur.
+                      {transportTruckRequired
+                        ? 'À utiliser quand SIA-ANSAR enlève directement la marchandise chez le fournisseur.'
+                        : 'Optionnel : camion SIA-ANSAR affecté au transport de ce bon CIMAF.'}
                     </p>
                   </div>
                 )}

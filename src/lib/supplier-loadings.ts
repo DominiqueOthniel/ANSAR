@@ -95,6 +95,37 @@ export function isLoadingAtHub(statut: SupplierLoadingStatus): boolean {
   return statut === 'au_hub' || statut === 'en_dispatch' || statut === 'en_transit';
 }
 
+/** Fournisseur CIMAF (nom contenant « CIMAF », insensible à la casse). */
+export function isCimafSupplierName(nom: string | undefined | null): boolean {
+  return /\bcimaf\b/i.test(String(nom ?? '').trim());
+}
+
+export function isCimafSupplierById(
+  fournisseurId: string | undefined,
+  suppliers: readonly { id: string; nom: string }[],
+): boolean {
+  if (!fournisseurId) return false;
+  const tp = suppliers.find((s) => s.id === fournisseurId);
+  return isCimafSupplierName(tp?.nom);
+}
+
+/** Bon simple CIMAF ou camion direct Ansar : on peut renseigner le camion de transport. */
+export function loadingAllowsTransportTruck(
+  modeEntree: LoadingEntryMode | string | undefined,
+  fournisseurId: string | undefined,
+  suppliers: readonly { id: string; nom: string }[],
+): boolean {
+  const mode = modeEntree ?? 'bon_simple';
+  if (mode === 'camion_ansar' || mode === 'camion') return true;
+  if (mode === 'bon_simple') return isCimafSupplierById(fournisseurId, suppliers);
+  return false;
+}
+
+export function loadingTransportTruckRequired(modeEntree: LoadingEntryMode | string | undefined): boolean {
+  const mode = modeEntree ?? 'bon_simple';
+  return mode === 'camion_ansar' || mode === 'camion';
+}
+
 /** Bon utilisable pour rattacher une nouvelle commande client. */
 export function canLinkClientOrderToLoading(statut: SupplierLoadingStatus): boolean {
   return (

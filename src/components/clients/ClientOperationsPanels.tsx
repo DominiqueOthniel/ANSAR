@@ -58,6 +58,8 @@ import {
   getActiveLoadingAssignments,
   isSupplierLoadingAvailableForOrder,
   validateLoadingAssignmentRows,
+  loadingAllowsTransportTruck,
+  loadingTransportTruckRequired,
 } from '@/lib/supplier-loadings';
 import {
   DELIVERY_EXIT_MODE_OPTIONS,
@@ -225,6 +227,18 @@ export function ClientOperationsPanels({
     [articles, loadingForm.fournisseurId],
   );
 
+  const showLoadingTransportTruck = useMemo(
+    () =>
+      loadingAllowsTransportTruck(
+        loadingForm.modeEntree,
+        loadingForm.fournisseurId,
+        fournisseurs,
+      ),
+    [loadingForm.modeEntree, loadingForm.fournisseurId, fournisseurs],
+  );
+
+  const loadingTransportTruckIsRequired = loadingTransportTruckRequired(loadingForm.modeEntree);
+
   const loadingSiteOptions = useMemo(() => {
     if (!loadingForm.fournisseurId) return [];
     const sites = new Set<string>();
@@ -349,7 +363,7 @@ export function ClientOperationsPanels({
       toast.error('Désignation du bon obligatoire.');
       return;
     }
-    if (loadingForm.modeEntree === 'camion_ansar' && !loadingForm.camionId) {
+    if (loadingTransportTruckIsRequired && !loadingForm.camionId) {
       toast.error('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
       return;
     }
@@ -357,8 +371,6 @@ export function ClientOperationsPanels({
     await withGuard(async () => {
       try {
         const isCamrail = loadingForm.modeEntree === 'rail';
-        const isCamionAnsar =
-          loadingForm.modeEntree === 'camion_ansar' || loadingForm.modeEntree === 'camion';
         const created = await createSupplierLoading({
           fournisseurId: loadingForm.fournisseurId,
           numeroBon: loadingForm.numeroBon.trim() || undefined,
@@ -370,7 +382,7 @@ export function ClientOperationsPanels({
           dateChargement: loadingForm.dateChargement,
           dateLivraison: loadingForm.dateLivraison || undefined,
           modeEntree: loadingForm.modeEntree,
-          camionId: isCamionAnsar ? loadingForm.camionId || undefined : undefined,
+          camionId: showLoadingTransportTruck ? loadingForm.camionId || undefined : undefined,
           hubArrivee: isCamrail ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0] : undefined,
           lieu: isCamrail
             ? loadingForm.hubArrivee.trim() || HUB_PRESETS[0]
@@ -1417,18 +1429,21 @@ export function ClientOperationsPanels({
                 options={fournisseurs}
                 value={loadingForm.fournisseurId}
                 onValueChange={(fournisseurId) =>
-                  setLoadingForm((p) =>
-                    syncLoadingBonValue(
-                      {
-                        ...p,
-                        fournisseurId,
-                        articleId: '',
-                        prixUnitaireFournisseur: undefined,
-                        montantBonTouched: false,
-                      },
-                      {},
-                    ),
-                  )
+                  setLoadingForm((p) => {
+                    const next = {
+                      ...p,
+                      fournisseurId,
+                      articleId: '',
+                      prixUnitaireFournisseur: undefined,
+                      montantBonTouched: false,
+                    };
+                    if (
+                      !loadingAllowsTransportTruck(p.modeEntree, fournisseurId, fournisseurs)
+                    ) {
+                      next.camionId = '';
+                    }
+                    return syncLoadingBonValue(next, {});
+                  })
                 }
                 placeholder="Choisir un fournisseur"
               />
@@ -1445,14 +1460,17 @@ export function ClientOperationsPanels({
               <Label>Mode d&apos;entrée</Label>
               <Select
                 value={loadingForm.modeEntree}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  const mode = v as LoadingEntryMode;
                   setLoadingForm((p) => ({
                     ...p,
-                    modeEntree: v as LoadingEntryMode,
-                    camionId: v === 'camion_ansar' ? p.camionId : '',
-                    hubArrivee: v === 'rail' ? p.hubArrivee || HUB_PRESETS[0] : HUB_PRESETS[0],
-                  }))
-                }
+                    modeEntree: mode,
+                    camionId: loadingAllowsTransportTruck(mode, p.fournisseurId, fournisseurs)
+                      ? p.camionId
+                      : '',
+                    hubArrivee: mode === 'rail' ? p.hubArrivee || HUB_PRESETS[0] : HUB_PRESETS[0],
+                  }));
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1466,15 +1484,25 @@ export function ClientOperationsPanels({
                 </SelectContent>
               </Select>
             </div>
-            {loadingForm.modeEntree === 'camion_ansar' && (
+            {showLoadingTransportTruck && (
               <div>
-                <Label>Camion SIA-ANSAR *</Label>
+                <Label>
+                  {loadingTransportTruckIsRequired
+                    ? 'Camion SIA-ANSAR *'
+                    : 'Camion de transport (CIMAF)'}
+                </Label>
                 <Select
                   value={loadingForm.camionId}
                   onValueChange={(camionId) => setLoadingForm((p) => ({ ...p, camionId }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Choisir un camion" />
+                    <SelectValue
+                      placeholder={
+                        loadingTransportTruckIsRequired
+                          ? 'Choisir un camion'
+                          : 'Choisir un camion (optionnel)'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {activeTrucks.length === 0 ? (

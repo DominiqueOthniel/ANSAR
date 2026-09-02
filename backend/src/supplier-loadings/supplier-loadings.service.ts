@@ -65,6 +65,39 @@ export class SupplierLoadingsService {
     );
   }
 
+  private isCimafFournisseur(tp: Pick<ThirdParty, 'nom'> | null | undefined): boolean {
+    return /\bcimaf\b/i.test((tp?.nom ?? '').trim());
+  }
+
+  private allowsTransportTruck(
+    mode: SupplierLoadingEntryMode,
+    tp: Pick<ThirdParty, 'nom'> | null | undefined,
+  ): boolean {
+    if (mode === 'camion_ansar' || mode === 'camion') return true;
+    if (mode === 'bon_simple') return this.isCimafFournisseur(tp);
+    return false;
+  }
+
+  private async validateCamionId(camionId: string): Promise<void> {
+    const truck = await this.truckRepo.findOne({ where: { id: camionId } });
+    if (!truck) throw new BadRequestException('Camion SIA-ANSAR introuvable.');
+    if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
+  }
+
+  private async resolveCamionId(
+    mode: SupplierLoadingEntryMode,
+    tp: Pick<ThirdParty, 'nom'> | null | undefined,
+    camionIdInput: string | undefined | null,
+  ): Promise<string | undefined> {
+    if (!this.allowsTransportTruck(mode, tp)) return undefined;
+    const camionId = camionIdInput?.trim() || undefined;
+    if (mode === 'camion_ansar' && !camionId) {
+      throw new BadRequestException('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
+    }
+    if (camionId) await this.validateCamionId(camionId);
+    return camionId;
+  }
+
   private resolveInitialStatut(dto: CreateSupplierLoadingDto): SupplierLoadingStatus {
     if (dto.statut === 'brouillon') return 'brouillon';
     if (
@@ -158,8 +191,6 @@ export class SupplierLoadingsService {
   }
 
   async create(dto: CreateSupplierLoadingDto, actor?: AuditActor): Promise<SupplierLoading> {
-    await this.assertFournisseur(dto.fournisseurId);
-
     let designation = dto.designation.trim();
     let unite = dto.unite?.trim();
 
@@ -172,17 +203,9 @@ export class SupplierLoadingsService {
 
     if (!designation) throw new BadRequestException('Désignation requise.');
 
+    const tp = await this.assertFournisseur(dto.fournisseurId);
     const modeEntree: SupplierLoadingEntryMode = dto.modeEntree ?? 'bon_simple';
-    const camionId =
-      modeEntree === 'camion_ansar' || modeEntree === 'camion' ? dto.camionId : undefined;
-    if (modeEntree === 'camion_ansar' && !camionId) {
-      throw new BadRequestException('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
-    }
-    if ((modeEntree === 'camion_ansar' || modeEntree === 'camion') && camionId) {
-      const truck = await this.truckRepo.findOne({ where: { id: camionId } });
-      if (!truck) throw new BadRequestException('Camion SIA-ANSAR introuvable.');
-      if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
-    }
+    const camionId = await this.resolveCamionId(modeEntree, tp, dto.camionId);
     const hubArrivee = dto.hubArrivee?.trim() || undefined;
     const statut = this.resolveInitialStatut(dto);
 
@@ -316,21 +339,12 @@ export class SupplierLoadingsService {
     if (dto.dateChargement != null) loading.dateChargement = dto.dateChargement;
     if (dto.dateLivraison !== undefined) loading.dateLivraison = dto.dateLivraison?.trim() || undefined;
     if (dto.modeEntree != null) loading.modeEntree = dto.modeEntree;
-    if (dto.camionId !== undefined || dto.modeEntree != null) {
-      const nextMode = dto.modeEntree ?? loading.modeEntree;
-      const nextCamionId =
-        nextMode === 'camion_ansar' || nextMode === 'camion'
-          ? dto.camionId ?? loading.camionId
-          : undefined;
-      if (nextMode === 'camion_ansar' && !nextCamionId) {
-        throw new BadRequestException('Choisissez le camion SIA-ANSAR utilisé pour ce bon.');
-      }
-      if (nextCamionId) {
-        const truck = await this.truckRepo.findOne({ where: { id: nextCamionId } });
-        if (!truck) throw new BadRequestException('Camion SIA-ANSAR introuvable.');
-        if (truck.statut !== 'actif') throw new BadRequestException('Ce camion n’est pas actif.');
-      }
-      loading.camionId = nextCamionId;
+    if (dto.camionId !== undefined || dto.modeEntree != null || dto.fournisseurId != null) {
+      const nextMode = (dto.modeEntree ?? loading.modeEntree) as SupplierLoadingEntryMode;
+      const fournisseurId = dto.fournisseurId ?? loading.fournisseurId;
+      const tp = await this.thirdPartyRepo.findOne({ where: { id: fournisseurId } });
+      const camionInput = dto.camionId !== undefined ? dto.camionId : loading.camionId;
+      loading.camionId = await this.resolveCamionId(nextMode, tp, camionInput);
     }
     if (dto.hubArrivee !== undefined) loading.hubArrivee = dto.hubArrivee?.trim() || undefined;
     if (dto.dateArriveeHub !== undefined) {
