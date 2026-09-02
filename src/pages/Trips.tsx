@@ -109,6 +109,8 @@ const TRIP_STATUT_ORDER: Record<TripStatus, number> = {
 const TRIP_SORT_OPTIONS = [
   { value: 'date_depart_desc', label: 'Date départ (récent → ancien)' },
   { value: 'date_depart_asc', label: 'Date départ (ancien → récent)' },
+  { value: 'date_arrivee_desc', label: 'Date arrivée (récent → ancien)' },
+  { value: 'date_arrivee_asc', label: 'Date arrivée (ancien → récent)' },
   { value: 'recette_desc', label: 'Recette (plus haut → plus bas)' },
   { value: 'recette_asc', label: 'Recette (plus bas → plus haut)' },
   { value: 'itineraire_asc', label: 'Itinéraire A → Z' },
@@ -122,6 +124,13 @@ const TRIP_SORT_OPTIONS = [
 ] as const;
 
 type GeoPoint = { lat: number; lng: number };
+
+function compareTripArrivalDate(a: Trip, b: Trip, direction: 'asc' | 'desc'): number {
+  const missingRank = direction === 'asc' ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
+  const ka = a.dateArrivee?.trim() ? parseDateMs(a.dateArrivee) : missingRank;
+  const kb = b.dateArrivee?.trim() ? parseDateMs(b.dateArrivee) : missingRank;
+  return direction === 'asc' ? ka - kb : kb - ka;
+}
 
 function getCityCoords(cityName?: string): GeoPoint | null {
   if (!cityName) return null;
@@ -527,6 +536,14 @@ export default function Trips() {
       return;
     }
 
+    if (
+      formData.dateArrivee &&
+      parseDateMs(formData.dateArrivee) < parseDateMs(formData.dateDepart)
+    ) {
+      toast.error("La date d'arrivée ne peut pas être antérieure à la date de départ");
+      return;
+    }
+
     await withGuard(async () => {
       try {
         const stopsPayload = buildStopsForPersist(
@@ -774,7 +791,13 @@ export default function Trips() {
 
     const today = new Date().toISOString().split('T')[0];
     const trip = trips.find(t => t.id === tripId);
-    const payload = newStatus === 'termine' ? { statut: newStatus, dateArrivee: today } : { statut: newStatus };
+    const payload =
+      newStatus === 'termine'
+        ? {
+            statut: newStatus,
+            dateArrivee: trip?.dateArrivee?.trim() || today,
+          }
+        : { statut: newStatus };
 
     try {
       await updateTrip(tripId, payload);
@@ -1137,6 +1160,10 @@ export default function Trips() {
     switch (listSort) {
       case 'date_depart_asc':
         return stableSort(list, (a, b) => parseDateMs(a.dateDepart) - parseDateMs(b.dateDepart));
+      case 'date_arrivee_asc':
+        return stableSort(list, (a, b) => compareTripArrivalDate(a, b, 'asc'));
+      case 'date_arrivee_desc':
+        return stableSort(list, (a, b) => compareTripArrivalDate(a, b, 'desc'));
       case 'recette_desc':
         return stableSort(list, (a, b) => b.recette - a.recette);
       case 'recette_asc':
@@ -1815,15 +1842,30 @@ export default function Trips() {
                 </Select>
               </div>
 
-                <div>
-                <Label htmlFor="dateDepart">Date de départ *</Label>
-                  <Input
-                    id="dateDepart"
-                    type="date"
-                    value={formData.dateDepart}
-                    onChange={(e) => setFormData({ ...formData, dateDepart: e.target.value })}
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="dateDepart">Date de départ *</Label>
+                    <Input
+                      id="dateDepart"
+                      type="date"
+                      value={formData.dateDepart}
+                      onChange={(e) => setFormData({ ...formData, dateDepart: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dateArrivee">Date d&apos;arrivée (optionnel)</Label>
+                    <Input
+                      id="dateArrivee"
+                      type="date"
+                      value={formData.dateArrivee}
+                      min={formData.dateDepart || undefined}
+                      onChange={(e) => setFormData({ ...formData, dateArrivee: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Renseignée à la clôture du trajet ou saisie manuellement.
+                    </p>
+                  </div>
                 </div>
 
               {formData.supplierLoadingId ? (
@@ -2293,8 +2335,8 @@ export default function Trips() {
                 <TableHead className="min-w-[110px]">Activité liée</TableHead>
                 <TableHead className="min-w-[130px]">Chauffeur</TableHead>
                 <TableHead className="min-w-[120px]">Statut</TableHead>
-                <TableHead className="min-w-[90px]">Départ</TableHead>
-                <TableHead className="min-w-[90px]">Arrivée</TableHead>
+                <TableHead className="min-w-[100px]">Date départ</TableHead>
+                <TableHead className="min-w-[100px]">Date arrivée</TableHead>
                 <TableHead className="text-right min-w-[90px]">Distance</TableHead>
                 <TableHead className="text-right min-w-[110px]">Recette</TableHead>
                 <TableHead className="text-right min-w-[120px]">Préfinancement</TableHead>
@@ -2802,7 +2844,7 @@ export default function Trips() {
               <div className="space-y-4">
                 {/* Informations du trajet */}
                 <div className="bg-muted/50 rounded-lg p-4 border border-border">
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Itinéraire:</span>
                       <p className="font-semibold">
@@ -2813,6 +2855,20 @@ export default function Trips() {
                       <span className="text-muted-foreground">Statut:</span>
                       <p className={`font-semibold ${selectedTripForExpenses.statut === 'annule' ? 'text-red-600 dark:text-red-400' : ''}`}>
                         {formatTripStatusFr(selectedTripForExpenses.statut)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Départ:</span>
+                      <p className="font-semibold">
+                        {new Date(selectedTripForExpenses.dateDepart).toLocaleDateString('fr-FR')}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Arrivée:</span>
+                      <p className="font-semibold">
+                        {selectedTripForExpenses.dateArrivee
+                          ? new Date(selectedTripForExpenses.dateArrivee).toLocaleDateString('fr-FR')
+                          : 'À définir'}
                       </p>
                     </div>
                     <div>

@@ -20,6 +20,7 @@ import AuditLogs from "./pages/AuditLogs";
 import Articles from "./pages/Articles";
 import Chargements from "./pages/Chargements";
 import Fournisseurs from "./pages/Fournisseurs";
+import DepotGarouaBoulai from "./pages/DepotGarouaBoulai";
 import UsersPage from "./pages/Users";
 import NotFound from "./pages/NotFound";
 import { DocumentTitle } from "./components/DocumentTitle";
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
             <Route path="/camions" element={<ProtectedRoute><Layout><Trucks /></Layout></ProtectedRoute>} />
             <Route path="/trajets" element={<ProtectedRoute><Layout><Trips /></Layout></ProtectedRoute>} />
+            <Route path="/depot-garoua-boulai" element={<ProtectedRoute><Layout><DepotGarouaBoulai /></Layout></ProtectedRoute>} />
             <Route path="/depenses" element={<ProtectedRoute><Layout><Expenses /></Layout></ProtectedRoute>} />
             <Route path="/factures" element={<ProtectedRoute><Layout><Invoices /></Layout></ProtectedRoute>} />
               <Route path="/chauffeurs" element={<ProtectedRoute><Layout><Drivers /></Layout></ProtectedRoute>} />

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2, X } from 'lucide-react';
 import { useRef } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { toast } from 'sonner';
@@ -48,6 +48,9 @@ import {
   normalizePaymentMode,
   parseAnsarBanque,
   parseIndirectVersement,
+  PAYMENT_FAMILY_OPTIONS,
+  paymentModeFamily,
+  type PaymentModeFamily,
 } from '@/lib/payment-modes';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
@@ -57,9 +60,34 @@ const CAISSE_SORT_OPTIONS = [
   { value: 'date_asc', label: 'Date (ancien → récent)' },
   { value: 'montant_desc', label: 'Montant (plus haut → plus bas)' },
   { value: 'montant_asc', label: 'Montant (plus bas → plus haut)' },
+  { value: 'mode_asc', label: 'Mode A → Z' },
+  { value: 'mode_desc', label: 'Mode Z → A' },
   { value: 'type_entree_first', label: 'Type : entrées puis sorties' },
   { value: 'description_asc', label: 'Description A → Z' },
 ] as const;
+
+type CaisseModeFilter = 'all' | PaymentModeFamily | 'sans_mode';
+
+const CAISSE_TYPE_FILTER_LABELS: Record<string, string> = {
+  entree: 'Entrées',
+  sortie: 'Sorties',
+  financement: 'Financement (hors encaissement)',
+};
+
+function matchesCaissePaymentModeFilter(
+  t: Pick<CaisseTransaction, 'modePaiement'>,
+  filter: CaisseModeFilter,
+): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'sans_mode') return !t.modePaiement?.trim();
+  return paymentModeFamily(t.modePaiement) === filter;
+}
+
+function labelCaisseModeFilter(filter: CaisseModeFilter): string {
+  if (filter === 'all') return 'Tous les modes';
+  if (filter === 'sans_mode') return 'Mode non renseigné';
+  return PAYMENT_FAMILY_OPTIONS.find((o) => o.value === filter)?.label ?? filter;
+}
 
 export type { CaisseTransaction };
 
@@ -108,6 +136,7 @@ export default function Caisse() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<CaisseTransaction | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterModePaiement, setFilterModePaiement] = useState<CaisseModeFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [listSort, setListSort] = useState<string>('date_desc');
 
@@ -432,6 +461,7 @@ export default function Caisse() {
     if (filterType === 'financement') {
       if (!isFinancementEntree(t)) return false;
     } else if (filterType !== 'all' && t.type !== filterType) return false;
+    if (!matchesCaissePaymentModeFilter(t, filterModePaiement)) return false;
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       const clientNom = resolveCaisseClientNom(t, thirdParties).toLowerCase();
@@ -450,10 +480,34 @@ export default function Caisse() {
     return true;
   });
 
-  const caisseExportSortLine = useMemo(() => {
-    const label = CAISSE_SORT_OPTIONS.find((o) => o.value === listSort)?.label;
-    return label ? `Tri: ${label}` : undefined;
-  }, [listSort]);
+  const hasActiveFilters =
+    filterType !== 'all' || filterModePaiement !== 'all' || searchTerm.trim() !== '';
+
+  const filteredStats = useMemo(() => {
+    const entrees = filteredTransactions.filter((t) => t.type === 'entree');
+    const sorties = filteredTransactions.filter((t) => t.type === 'sortie');
+    return {
+      count: filteredTransactions.length,
+      totalEntrees: entrees.reduce((sum, t) => sum + t.montant, 0),
+      totalSorties: sorties.reduce((sum, t) => sum + t.montant, 0),
+    };
+  }, [filteredTransactions]);
+
+  const caisseExportFiltersDescription = useMemo(() => {
+    const parts: string[] = [];
+    if (filterType !== 'all') {
+      parts.push(`Type: ${CAISSE_TYPE_FILTER_LABELS[filterType] ?? filterType}`);
+    }
+    if (filterModePaiement !== 'all') {
+      parts.push(`Mode: ${labelCaisseModeFilter(filterModePaiement)}`);
+    }
+    if (searchTerm.trim()) {
+      parts.push(`Recherche: « ${searchTerm.trim()} »`);
+    }
+    const sortLabel = CAISSE_SORT_OPTIONS.find((o) => o.value === listSort)?.label;
+    if (sortLabel) parts.push(`Tri: ${sortLabel}`);
+    return parts.length ? parts.join(' · ') : undefined;
+  }, [filterType, filterModePaiement, searchTerm, listSort]);
 
   const sortedTransactions = useMemo(() => {
     const list = [...filteredTransactions];
@@ -472,6 +526,14 @@ export default function Caisse() {
         );
       case 'description_asc':
         return stableSort(list, (a, b) => frCollator.compare(a.description, b.description));
+      case 'mode_asc':
+        return stableSort(list, (a, b) =>
+          frCollator.compare(formatCaisseModePaiement(a), formatCaisseModePaiement(b)),
+        );
+      case 'mode_desc':
+        return stableSort(list, (a, b) =>
+          frCollator.compare(formatCaisseModePaiement(b), formatCaisseModePaiement(a)),
+        );
       case 'date_desc':
       default:
         return stableSort(list, (a, b) => parseDateMs(b.date) - parseDateMs(a.date));
@@ -503,11 +565,82 @@ export default function Caisse() {
     [soldeInitial, sortedTransactions, transactionBalances],
   );
 
+  const pdfExportTotals = useMemo(() => {
+    if (hasActiveFilters) {
+      return [
+        {
+          label: 'Mouvements (sélection filtrée)',
+          value: `${filteredStats.count} ligne(s)`,
+          style: 'neutral' as const,
+          icon: EMOJI.date,
+        },
+        {
+          label: 'Entrées (sélection)',
+          value: `+${filteredStats.totalEntrees.toLocaleString('fr-FR')} FCFA`,
+          style: 'positive' as const,
+          icon: EMOJI.entree,
+        },
+        {
+          label: 'Sorties (sélection)',
+          value: `−${filteredStats.totalSorties.toLocaleString('fr-FR')} FCFA`,
+          style: 'negative' as const,
+          icon: EMOJI.sortie,
+        },
+        {
+          label: 'Solde caisse (global)',
+          value: `${soldeActuel >= 0 ? '+' : '−'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
+          style: (soldeActuel >= 0 ? 'positive' : 'negative') as const,
+          icon: EMOJI.argent,
+        },
+      ];
+    }
+    return [
+      {
+        label: 'Solde caisse',
+        value: `${soldeActuel >= 0 ? '+' : '−'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
+        style: (soldeActuel >= 0 ? 'positive' : 'negative') as const,
+        icon: EMOJI.argent,
+      },
+      {
+        label: 'Entrées activité (hors financement)',
+        value: `+${totalEntreesActivite.toLocaleString('fr-FR')} FCFA`,
+        style: 'positive' as const,
+        icon: EMOJI.entree,
+      },
+      {
+        label: 'Financement reçu (hors encaissement)',
+        value: `+${totalEntreesFinancement.toLocaleString('fr-FR')} FCFA`,
+        style: 'neutral' as const,
+        icon: EMOJI.entree,
+      },
+      {
+        label: 'Total entrées caisse',
+        value: `+${totalEntrees.toLocaleString('fr-FR')} FCFA`,
+        style: 'positive' as const,
+        icon: EMOJI.entree,
+      },
+      {
+        label: 'Total sorties caisse',
+        value: `−${totalSorties.toLocaleString('fr-FR')} FCFA`,
+        style: 'negative' as const,
+        icon: EMOJI.sortie,
+      },
+    ];
+  }, [
+    hasActiveFilters,
+    filteredStats,
+    soldeActuel,
+    totalEntreesActivite,
+    totalEntreesFinancement,
+    totalEntrees,
+    totalSorties,
+  ]);
+
   const handleExportExcel = () => {
     exportToExcel({
       title: 'Mouvements de Caisse',
       fileName: `caisse_${new Date().toISOString().split('T')[0]}.xlsx`,
-      filtersDescription: caisseExportSortLine,
+      filtersDescription: caisseExportFiltersDescription,
       columns: [
         { header: 'Date', value: (t) => new Date(t.date).toLocaleDateString('fr-FR') },
         { header: 'Type', value: (t) => t.type === 'entree' ? 'Entrée' : 'Sortie' },
@@ -532,44 +665,13 @@ export default function Caisse() {
     exportToPrintablePDF({
       title: 'Mouvements de Caisse',
       fileName: `caisse_${new Date().toISOString().split('T')[0]}.pdf`,
-      filtersDescription: caisseExportSortLine,
+      filtersDescription: caisseExportFiltersDescription,
       headerColor: '#059669',
       headerTextColor: '#ffffff',
       evenRowColor: '#ecfdf5',
       oddRowColor: '#ffffff',
       accentColor: '#059669',
-      totals: [
-        {
-          label: 'Solde caisse',
-          value: `${soldeActuel >= 0 ? '+' : '-'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
-          style: soldeActuel >= 0 ? 'positive' : 'negative',
-          icon: EMOJI.argent,
-        },
-        {
-          label: 'Entrées activité (hors financement)',
-          value: `+${totalEntreesActivite.toLocaleString('fr-FR')} FCFA`,
-          style: 'positive',
-          icon: EMOJI.entree,
-        },
-        {
-          label: 'Financement reçu (hors encaissement)',
-          value: `+${totalEntreesFinancement.toLocaleString('fr-FR')} FCFA`,
-          style: 'neutral',
-          icon: EMOJI.entree,
-        },
-        {
-          label: 'Total entrées caisse',
-          value: `+${totalEntrees.toLocaleString('fr-FR')} FCFA`,
-          style: 'positive',
-          icon: EMOJI.entree,
-        },
-        {
-          label: 'Total sorties caisse',
-          value: `-${totalSorties.toLocaleString('fr-FR')} FCFA`,
-          style: 'negative',
-          icon: EMOJI.sortie,
-        },
-      ],
+      totals: pdfExportTotals,
       columns: [
         { header: 'Date', value: (t) => `${EMOJI.date} ${new Date(t.date).toLocaleDateString('fr-FR')}` },
         { header: 'Type', value: (t) => t.type === 'entree' ? `${EMOJI.entree} Entrée` : `${EMOJI.sortie} Sortie`, cellStyle: (t) => t.type === 'entree' ? 'positive' : 'negative' },
@@ -885,55 +987,145 @@ export default function Caisse() {
         </CardContent>
       </Card>
 
-      {/* Solde initial — trésorerie (gestionnaire / admin) */}
-      {canManageTreasury && (
-        <div className="flex items-center gap-3 px-1">
-          <span className="text-sm text-muted-foreground">Solde initial :</span>
-          <Input
-            type="number"
-            value={soldeInitial}
-            onChange={(e) => setSoldeInitial(parseFloat(e.target.value) || 0)}
-            onBlur={() => void saveSoldeInitial(soldeInitial)}
-            className="w-40 h-8 text-sm"
-          />
-          <span className="text-sm text-muted-foreground">FCFA</span>
-        </div>
-      )}
-
       {/* Liste des transactions */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle>Mouvements de caisse</CardTitle>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 min-w-0 sm:min-w-[160px]">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 w-full"
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <CardTitle className="shrink-0">Mouvements de caisse</CardTitle>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 w-full lg:max-w-4xl">
+                <div className="relative sm:col-span-2 xl:col-span-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Rechercher..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 h-10 w-full"
+                  />
+                </div>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Tous les types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les types</SelectItem>
+                    <SelectItem value="entree">Entrées</SelectItem>
+                    <SelectItem value="sortie">Sorties</SelectItem>
+                    <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filterModePaiement}
+                  onValueChange={(v) => setFilterModePaiement(v as CaisseModeFilter)}
+                >
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Tous les modes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les modes</SelectItem>
+                    <SelectItem value="sans_mode">Mode non renseigné</SelectItem>
+                    {PAYMENT_FAMILY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ListSortSelect
+                  id="sort-caisse"
+                  compact
+                  value={listSort}
+                  onChange={setListSort}
+                  options={[...CAISSE_SORT_OPTIONS]}
+                  className="w-full"
                 />
               </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-full sm:w-[160px]">
-                  <SelectValue placeholder="Tous les types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les types</SelectItem>
-                  <SelectItem value="entree">Entrées</SelectItem>
-                  <SelectItem value="sortie">Sorties</SelectItem>
-                  <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
-                </SelectContent>
-              </Select>
-              <ListSortSelect
-                id="sort-caisse"
-                value={listSort}
-                onChange={setListSort}
-                options={[...CAISSE_SORT_OPTIONS]}
-                className="w-full sm:min-w-[200px] sm:w-auto"
-              />
             </div>
+
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-2">
+                {searchTerm.trim() && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Recherche: {searchTerm.trim()}
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer la recherche"
+                      title="Retirer la recherche"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterType !== 'all' && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    {CAISSE_TYPE_FILTER_LABELS[filterType] ?? filterType}
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('all')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le filtre type"
+                      title="Retirer le filtre type"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterModePaiement !== 'all' && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    {labelCaisseModeFilter(filterModePaiement)}
+                    <button
+                      type="button"
+                      onClick={() => setFilterModePaiement('all')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le filtre mode"
+                      title="Retirer le filtre mode"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterType('all');
+                    setFilterModePaiement('all');
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                >
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            )}
+
+            {hasActiveFilters && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1">
+                <span>
+                  <span className="text-muted-foreground">Mouvements : </span>
+                  <span className="font-medium tabular-nums">{filteredStats.count}</span>
+                  {transactions.length !== filteredStats.count && (
+                    <span className="text-muted-foreground"> / {transactions.length}</span>
+                  )}
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Entrées : </span>
+                  <span className="font-medium text-green-700 dark:text-green-400 tabular-nums">
+                    +{filteredStats.totalEntrees.toLocaleString('fr-FR')} FCFA
+                  </span>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Sorties : </span>
+                  <span className="font-medium text-red-700 dark:text-red-400 tabular-nums">
+                    −{filteredStats.totalSorties.toLocaleString('fr-FR')} FCFA
+                  </span>
+                </span>
+                <span className="text-xs text-muted-foreground self-center">
+                  Les exports Excel / PDF reprennent cette sélection.
+                </span>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
@@ -969,7 +1161,11 @@ export default function Caisse() {
                   <TableRow>
                     <TableCell colSpan={canManageTreasury ? 11 : 10} className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Aucune transaction enregistrée</p>
+                      <p>
+                        {transactions.length === 0
+                          ? 'Aucune transaction enregistrée'
+                          : 'Aucun mouvement ne correspond aux filtres'}
+                      </p>
                     </TableCell>
                   </TableRow>
                 ) : (

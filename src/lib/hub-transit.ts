@@ -20,14 +20,18 @@ export type HubLoadingStatus =
   | 'en_dispatch'
   | 'solde';
 
-/** Gares / dépôts CAMRAIL au Cameroun (Chemins de fer du Cameroun). */
+/** Gares / dépôts CAMRAIL au Cameroun + dépôt safe house Garoua-Boulai. */
 export const HUB_PRESETS = [
   'CAMRAIL Douala',
   'CAMRAIL Yaoundé',
   'CAMRAIL Ngaoundéré',
   'CAMRAIL Edéa',
+  'Garoua-Boulai',
   'Autre hub',
 ] as const;
+
+/** Libellé canonique du dépôt ciment safe house. */
+export const DEPOT_GAROUA_BOULAI = 'Garoua-Boulai';
 
 export const LOADING_ENTRY_MODE_OPTIONS: { value: LoadingEntryMode; label: string }[] = [
   { value: 'bon_simple', label: 'Bon simple (client se débrouille)' },

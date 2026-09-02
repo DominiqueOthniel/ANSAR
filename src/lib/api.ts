@@ -390,6 +390,26 @@ export const parcelExpeditionsApi = {
   delete: (id: string) => request<void>(`/parcel-expeditions/${id}`, { method: 'DELETE' }),
 };
 
+export type DepotGarouaMovementPayload = {
+  date: string;
+  truckId?: string | null;
+  camionImmatriculation?: string | null;
+  type: 'entree' | 'retrait';
+  quantite: number;
+  notes?: string | null;
+  utilisateur?: string | null;
+};
+
+export const depotGarouaBoulaiApi = {
+  getAll: () => request<any[]>('/depot-garoua-boulai'),
+  getOne: (id: string) => request<any>(`/depot-garoua-boulai/${id}`),
+  create: (data: DepotGarouaMovementPayload) =>
+    request<any>('/depot-garoua-boulai', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<DepotGarouaMovementPayload>) =>
+    request<any>(`/depot-garoua-boulai/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/depot-garoua-boulai/${id}`, { method: 'DELETE' }),
+};
+
 // --- Expenses ---
 export const expensesApi = {
   getAll: () => request<any[]>('/expenses'),

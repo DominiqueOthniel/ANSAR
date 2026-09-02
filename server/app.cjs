@@ -12,6 +12,7 @@ const bank = require('./routes/bank.cjs');
 const credits = require('./routes/credits.cjs');
 const clientOps = require('./routes/client-ops.cjs');
 const loadings = require('./routes/loadings.cjs');
+const depotGaroua = require('./routes/depot-garoua-boulai.cjs');
 const admin = require('./routes/admin.cjs');
 const users = require('./routes/users.cjs');
 const R = require('./routes/resources.cjs');
@@ -51,6 +52,7 @@ async function handleLocal(method, path, event, origin) {
           'client-orders',
           'client-deliveries',
           'supplier-loadings',
+          'depot-garoua-boulai',
           'audit-logs',
           'admin',
           'users',
@@ -286,6 +288,26 @@ async function handleLocal(method, path, event, origin) {
     if (method === 'PATCH') return json(200, await R.parcels.update(id, body(), actor), origin);
     if (method === 'DELETE') {
       await R.parcels.remove(id, actor);
+      return noContent(origin);
+    }
+  }
+
+  // --- depot Garoua-Boulai (stock ciment) ---
+  if (path === '/api/depot-garoua-boulai') {
+    if (method === 'GET') return json(200, await depotGaroua.listMovements(), origin);
+    if (method === 'POST') return json(201, await depotGaroua.createMovement(body(), actor), origin);
+  }
+  m = path.match(/^\/api\/depot-garoua-boulai\/([^/]+)$/);
+  if (m && UUID.test(m[1])) {
+    const id = m[1];
+    if (method === 'GET') {
+      const row = await depotGaroua.getMovement(id);
+      if (!row) return json(404, { message: 'Mouvement introuvable' }, origin);
+      return json(200, row, origin);
+    }
+    if (method === 'PATCH') return json(200, await depotGaroua.updateMovement(id, body(), actor), origin);
+    if (method === 'DELETE') {
+      await depotGaroua.deleteMovement(id, actor);
       return noContent(origin);
     }
   }
