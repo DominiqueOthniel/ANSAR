@@ -49,7 +49,11 @@ import {
   parseAnsarBanque,
   parseIndirectVersement,
   PAYMENT_FAMILY_OPTIONS,
+  ELECTRONIC_PAYMENT_OPTIONS,
+  ANSAR_BANQUES,
   paymentModeFamily,
+  isPaiementVersBanque,
+  isVersementIndirect,
   type PaymentModeFamily,
 } from '@/lib/payment-modes';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
@@ -77,16 +81,61 @@ const CAISSE_TYPE_FILTER_LABELS: Record<string, string> = {
 function matchesCaissePaymentModeFilter(
   t: Pick<CaisseTransaction, 'modePaiement'>,
   filter: CaisseModeFilter,
+  detail: string,
 ): boolean {
   if (filter === 'all') return true;
   if (filter === 'sans_mode') return !t.modePaiement?.trim();
-  return paymentModeFamily(t.modePaiement) === filter;
+  if (paymentModeFamily(t.modePaiement) !== filter) return false;
+  return matchesCaissePaymentModeDetail(t.modePaiement, filter, detail);
 }
 
-function labelCaisseModeFilter(filter: CaisseModeFilter): string {
+function matchesCaissePaymentModeDetail(
+  mode: string | undefined,
+  family: PaymentModeFamily,
+  detail: string,
+): boolean {
+  if (!detail || detail === 'all') return true;
+  const normalized = normalizePaymentMode(mode);
+  if (family === 'electronique') {
+    return normalized === detail;
+  }
+  if (family === 'virement') {
+    if (detail === 'direct') return isPaiementVersBanque(mode);
+    if (detail === 'indirect') return isVersementIndirect(mode);
+    if (detail.startsWith('direct:')) {
+      const banque = detail.slice('direct:'.length);
+      return parseAnsarBanque(mode) === banque;
+    }
+  }
+  return true;
+}
+
+function labelCaisseModeFilter(filter: CaisseModeFilter, detail: string): string {
   if (filter === 'all') return 'Tous les modes';
   if (filter === 'sans_mode') return 'Mode non renseigné';
-  return PAYMENT_FAMILY_OPTIONS.find((o) => o.value === filter)?.label ?? filter;
+  const base = PAYMENT_FAMILY_OPTIONS.find((o) => o.value === filter)?.label ?? filter;
+  const detailLabel = labelCaisseModeDetailFilter(filter, detail);
+  if (!detailLabel || detail === 'all') return base;
+  return `${base} · ${detailLabel}`;
+}
+
+function labelCaisseModeDetailFilter(family: CaisseModeFilter, detail: string): string {
+  if (!detail || detail === 'all') return '';
+  if (family === 'electronique') {
+    return ELECTRONIC_PAYMENT_OPTIONS.find((o) => o.value === detail)?.label ?? detail;
+  }
+  if (family === 'virement') {
+    if (detail === 'direct') return 'Versement direct (toutes banques)';
+    if (detail === 'indirect') return 'Versement indirect';
+    if (detail.startsWith('direct:')) {
+      return `Versement direct · ${detail.slice('direct:'.length)}`;
+    }
+  }
+  return detail;
+}
+
+function showCaisseModeDetailFilter(family: CaisseModeFilter): boolean {
+  return family === 'electronique' || family === 'virement';
 }
 
 export type { CaisseTransaction };
@@ -137,6 +186,7 @@ export default function Caisse() {
   const [editingTransaction, setEditingTransaction] = useState<CaisseTransaction | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [filterModePaiement, setFilterModePaiement] = useState<CaisseModeFilter>('all');
+  const [filterModePaiementDetail, setFilterModePaiementDetail] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [listSort, setListSort] = useState<string>('date_desc');
 
@@ -461,7 +511,7 @@ export default function Caisse() {
     if (filterType === 'financement') {
       if (!isFinancementEntree(t)) return false;
     } else if (filterType !== 'all' && t.type !== filterType) return false;
-    if (!matchesCaissePaymentModeFilter(t, filterModePaiement)) return false;
+    if (!matchesCaissePaymentModeFilter(t, filterModePaiement, filterModePaiementDetail)) return false;
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       const clientNom = resolveCaisseClientNom(t, thirdParties).toLowerCase();
@@ -481,7 +531,10 @@ export default function Caisse() {
   });
 
   const hasActiveFilters =
-    filterType !== 'all' || filterModePaiement !== 'all' || searchTerm.trim() !== '';
+    filterType !== 'all' ||
+    filterModePaiement !== 'all' ||
+    filterModePaiementDetail !== 'all' ||
+    searchTerm.trim() !== '';
 
   const filteredStats = useMemo(() => {
     const entrees = filteredTransactions.filter((t) => t.type === 'entree');
@@ -499,7 +552,7 @@ export default function Caisse() {
       parts.push(`Type: ${CAISSE_TYPE_FILTER_LABELS[filterType] ?? filterType}`);
     }
     if (filterModePaiement !== 'all') {
-      parts.push(`Mode: ${labelCaisseModeFilter(filterModePaiement)}`);
+      parts.push(`Mode: ${labelCaisseModeFilter(filterModePaiement, filterModePaiementDetail)}`);
     }
     if (searchTerm.trim()) {
       parts.push(`Recherche: « ${searchTerm.trim()} »`);
@@ -507,7 +560,7 @@ export default function Caisse() {
     const sortLabel = CAISSE_SORT_OPTIONS.find((o) => o.value === listSort)?.label;
     if (sortLabel) parts.push(`Tri: ${sortLabel}`);
     return parts.length ? parts.join(' · ') : undefined;
-  }, [filterType, filterModePaiement, searchTerm, listSort]);
+  }, [filterType, filterModePaiement, filterModePaiementDetail, searchTerm, listSort]);
 
   const sortedTransactions = useMemo(() => {
     const list = [...filteredTransactions];
@@ -993,52 +1046,92 @@ export default function Caisse() {
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <CardTitle className="shrink-0">Mouvements de caisse</CardTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 w-full lg:max-w-4xl">
-                <div className="relative sm:col-span-2 xl:col-span-1">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    placeholder="Rechercher..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8 h-10 w-full"
+              <div className="flex flex-col gap-2 w-full lg:max-w-5xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                  <div className="relative sm:col-span-2 xl:col-span-1">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Rechercher..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-8 h-10 w-full"
+                    />
+                  </div>
+                  <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Tous les types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les types</SelectItem>
+                      <SelectItem value="entree">Entrées</SelectItem>
+                      <SelectItem value="sortie">Sorties</SelectItem>
+                      <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={filterModePaiement}
+                    onValueChange={(v) => {
+                      setFilterModePaiement(v as CaisseModeFilter);
+                      setFilterModePaiementDetail('all');
+                    }}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Tous les modes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les modes</SelectItem>
+                      <SelectItem value="sans_mode">Mode non renseigné</SelectItem>
+                      {PAYMENT_FAMILY_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ListSortSelect
+                    id="sort-caisse"
+                    compact
+                    value={listSort}
+                    onChange={setListSort}
+                    options={[...CAISSE_SORT_OPTIONS]}
+                    className="w-full"
                   />
                 </div>
-                <Select value={filterType} onValueChange={setFilterType}>
-                  <SelectTrigger className="h-10 w-full">
-                    <SelectValue placeholder="Tous les types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tous les types</SelectItem>
-                    <SelectItem value="entree">Entrées</SelectItem>
-                    <SelectItem value="sortie">Sorties</SelectItem>
-                    <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={filterModePaiement}
-                  onValueChange={(v) => setFilterModePaiement(v as CaisseModeFilter)}
-                >
-                  <SelectTrigger className="h-10 w-full">
-                    <SelectValue placeholder="Tous les modes" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tous les modes</SelectItem>
-                    <SelectItem value="sans_mode">Mode non renseigné</SelectItem>
-                    {PAYMENT_FAMILY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <ListSortSelect
-                  id="sort-caisse"
-                  compact
-                  value={listSort}
-                  onChange={setListSort}
-                  options={[...CAISSE_SORT_OPTIONS]}
-                  className="w-full"
-                />
+                {showCaisseModeDetailFilter(filterModePaiement) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:max-w-md gap-2">
+                    <Select
+                      value={filterModePaiementDetail}
+                      onValueChange={setFilterModePaiementDetail}
+                    >
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Préciser le mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filterModePaiement === 'electronique' ? (
+                          <>
+                            <SelectItem value="all">Tous (MTN + Orange)</SelectItem>
+                            {ELECTRONIC_PAYMENT_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </>
+                        ) : (
+                          <>
+                            <SelectItem value="all">Tous les versements</SelectItem>
+                            <SelectItem value="direct">Versement direct (toutes banques)</SelectItem>
+                            {ANSAR_BANQUES.map((banque) => (
+                              <SelectItem key={banque} value={`direct:${banque}`}>
+                                Versement direct · {banque}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="indirect">Versement indirect</SelectItem>
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1074,10 +1167,13 @@ export default function Caisse() {
                 )}
                 {filterModePaiement !== 'all' && (
                   <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
-                    {labelCaisseModeFilter(filterModePaiement)}
+                    {labelCaisseModeFilter(filterModePaiement, filterModePaiementDetail)}
                     <button
                       type="button"
-                      onClick={() => setFilterModePaiement('all')}
+                      onClick={() => {
+                        setFilterModePaiement('all');
+                        setFilterModePaiementDetail('all');
+                      }}
                       className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
                       aria-label="Retirer le filtre mode"
                       title="Retirer le filtre mode"
@@ -1092,6 +1188,7 @@ export default function Caisse() {
                     setSearchTerm('');
                     setFilterType('all');
                     setFilterModePaiement('all');
+                    setFilterModePaiementDetail('all');
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
                 >
