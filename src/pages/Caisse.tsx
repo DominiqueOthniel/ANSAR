@@ -24,14 +24,9 @@ import {
   refreshBankFromApi,
   removeBankTransactionAsync,
 } from '@/lib/bank-local';
-import { useApp, type Invoice } from '@/contexts/AppContext';
+import { useApp } from '@/contexts/AppContext';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PaymentModePicker } from '@/components/PaymentModePicker';
-import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
-import {
-  resolvePaymentAtCreation,
-  type PaymentAtCreationMode,
-} from '@/lib/payment-at-creation';
 import { getTotalCreancesClients } from '@/lib/sync-utils';
 import {
   type CaisseTransaction,
@@ -48,8 +43,6 @@ import {
   computeCaisseSoldeActuel,
   InsufficientCaisseError,
   isCaisseDepenseTransaction,
-  expenseIdFromCaisseReference,
-  upsertSortieFromExpense,
 } from '@/lib/caisse-local';
 import {
   missingVersementDetailMessage,
@@ -83,11 +76,10 @@ type CaisseModeFilter = 'all' | PaymentModeFamily | 'sans_mode';
 const CAISSE_TYPE_FILTER_LABELS: Record<string, string> = {
   entree: 'Entrées',
   sortie: 'Sorties',
-  depense: 'Dépenses',
   financement: 'Financement (hors encaissement)',
 };
 
-const EXPENSE_CATEGORIES = [
+const SORTIE_CATEGORIES = [
   'Carburant',
   'Maintenance',
   'Péage',
@@ -96,14 +88,6 @@ const EXPENSE_CATEGORIES = [
   'Don',
   'Autre',
 ] as const;
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
-function nextExpenseInvoiceNumero(invoicesList: Invoice[]): string {
-  const year = new Date().getFullYear();
-  const count = invoicesList.filter((inv) => inv.numero.startsWith(`FAC-EXP-${year}`)).length + 1;
-  return `FAC-EXP-${year}-${String(count).padStart(3, '0')}`;
-}
 
 function matchesCaissePaymentModeFilter(
   t: Pick<CaisseTransaction, 'modePaiement'>,
@@ -202,16 +186,7 @@ function formatCaisseBanqueLabel(t: Pick<CaisseTransaction, 'modePaiement'>): st
 }
 
 export default function Caisse() {
-  const {
-    invoices,
-    thirdParties,
-    expenses,
-    trucks,
-    drivers,
-    createExpense,
-    deleteExpense,
-    createInvoice,
-  } = useApp();
+  const { invoices, thirdParties } = useApp();
   const { canManageTreasury, user } = useAuth();
   const restoreFileRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<CaisseTransaction[]>([]);
@@ -219,13 +194,11 @@ export default function Caisse() {
   const [soldeInitial, setSoldeInitial] = useState(0);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<CaisseTransaction | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [filterModePaiement, setFilterModePaiement] = useState<CaisseModeFilter>('all');
   const [filterModePaiementDetail, setFilterModePaiementDetail] = useState('all');
   const [filterCategorie, setFilterCategorie] = useState<string>('all');
-  const [filterCamion, setFilterCamion] = useState<string>('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [filterMontantMin, setFilterMontantMin] = useState('');
@@ -235,7 +208,6 @@ export default function Caisse() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const { isSubmitting, withGuard } = useSubmitGuard();
-  const { isSubmitting: isExpenseSubmitting, withGuard: withExpenseGuard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     type: 'entree' as 'entree' | 'sortie',
@@ -246,20 +218,7 @@ export default function Caisse() {
     exclutRevenu: false,
     clientTierId: '',
     modePaiement: '',
-  });
-
-  const [expenseForm, setExpenseForm] = useState({
-    camionId: '',
-    chauffeurId: '',
-    categorie: 'Carburant',
-    fournisseurId: '',
-    montant: 0,
-    date: todayIso(),
-    description: '',
-    modePaiement: '',
-    paiementMode: 'soldee' as PaymentAtCreationMode,
-    montantAvance: undefined as number | undefined,
-    datePaiement: todayIso(),
+    categorie: '',
   });
 
   const clients = useMemo(
@@ -272,21 +231,11 @@ export default function Caisse() {
     [thirdParties],
   );
 
-  const employesSiege = useMemo(
-    () => thirdParties.filter((tp) => tp.type === 'employe'),
-    [thirdParties],
-  );
-
-  const expenseById = useMemo(() => {
-    const map = new Map(expenses.map((e) => [e.id, e]));
-    return map;
-  }, [expenses]);
-
   const categorieOptions = useMemo(() => {
     const fromTx = transactions
       .map((t) => t.categorie?.trim())
       .filter((c): c is string => Boolean(c));
-    return Array.from(new Set([...EXPENSE_CATEGORIES, ...fromTx])).sort((a, b) =>
+    return Array.from(new Set([...SORTIE_CATEGORIES, ...fromTx])).sort((a, b) =>
       frCollator.compare(a, b),
     );
   }, [transactions]);
@@ -391,154 +340,9 @@ export default function Caisse() {
       exclutRevenu: false,
       clientTierId: '',
       modePaiement: '',
+      categorie: '',
     });
     setEditingTransaction(null);
-  };
-
-  const resetExpenseForm = () => {
-    setExpenseForm({
-      camionId: '',
-      chauffeurId: '',
-      categorie: 'Carburant',
-      fournisseurId: '',
-      montant: 0,
-      date: todayIso(),
-      description: '',
-      modePaiement: '',
-      paiementMode: 'soldee',
-      montantAvance: undefined,
-      datePaiement: todayIso(),
-    });
-  };
-
-  const handleExpenseSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const montant = Number(expenseForm.montant);
-    if (!Number.isFinite(montant) || montant <= 0) {
-      toast.error('Indique un montant valide.');
-      return;
-    }
-    if (!expenseForm.description.trim()) {
-      toast.error('Indique une description.');
-      return;
-    }
-    if (expenseForm.categorie === 'Salaire') {
-      const hasChauffeur = Boolean(expenseForm.chauffeurId);
-      const hasEmploye =
-        Boolean(expenseForm.fournisseurId) &&
-        employesSiege.some((tp) => tp.id === expenseForm.fournisseurId);
-      if (!hasChauffeur && !hasEmploye) {
-        toast.error(
-          'Pour un salaire, sélectionne un chauffeur ou un employé (personnel siège).',
-        );
-        return;
-      }
-    }
-    if (
-      expenseForm.paiementMode === 'avance' &&
-      (expenseForm.montantAvance == null || expenseForm.montantAvance <= 0)
-    ) {
-      toast.error('Indique le montant de l’acompte payé.');
-      return;
-    }
-
-    const mode = expenseForm.modePaiement.trim() || undefined;
-    const missingVersement = missingVersementDetailMessage(mode);
-    if (missingVersement) {
-      toast.error(missingVersement);
-      return;
-    }
-
-    let chauffeurPayload = expenseForm.chauffeurId || undefined;
-    let fournisseurPayload = expenseForm.fournisseurId || undefined;
-    if (expenseForm.categorie === 'Salaire') {
-      if (chauffeurPayload) fournisseurPayload = undefined;
-      else chauffeurPayload = undefined;
-    }
-
-    const payment = resolvePaymentAtCreation({
-      mode: expenseForm.paiementMode,
-      montantTotal: montant,
-      montantAvance: expenseForm.montantAvance,
-    });
-
-    try {
-      assertCaisseSortieAllowed(soldeInitial, transactions, montant);
-    } catch (err) {
-      toast.error(err instanceof InsufficientCaisseError ? err.message : 'Solde caisse insuffisant.');
-      return;
-    }
-
-    await withExpenseGuard(async () => {
-      try {
-        const created = await createExpense({
-          ...(expenseForm.camionId ? { camionId: expenseForm.camionId } : {}),
-          chauffeurId: chauffeurPayload,
-          categorie: expenseForm.categorie,
-          fournisseurId: fournisseurPayload,
-          montant,
-          date: expenseForm.date,
-          description: expenseForm.description.trim(),
-        });
-        try {
-          await upsertSortieFromExpense({
-            id: created.id,
-            montant: created.montant,
-            date: created.date,
-            description: created.description,
-            categorie: created.categorie,
-            modePaiement: mode,
-          });
-        } catch (cashErr) {
-          try {
-            await deleteExpense(created.id);
-          } catch (rollbackErr) {
-            console.error('Rollback dépense après refus caisse impossible:', rollbackErr);
-          }
-          throw cashErr;
-        }
-
-        setTransactions(getCaisseTransactions());
-        setSoldeInitial(getCaisseSoldeInitialSync());
-
-        try {
-          await createInvoice({
-            numero: nextExpenseInvoiceNumero(invoices),
-            expenseId: created.id,
-            statut: payment.statut,
-            montantHT: created.montant,
-            montantTTC: created.montant,
-            montantPaye: payment.montantPaye,
-            datePaiement:
-              payment.montantPaye > 0
-                ? expenseForm.datePaiement || expenseForm.date || todayIso()
-                : undefined,
-            dateCreation: todayIso(),
-          });
-          const payMsg =
-            payment.montantPaye > 0
-              ? payment.statut === 'payee'
-                ? ' — facture soldée'
-                : ` — acompte ${payment.montantPaye.toLocaleString('fr-FR')} FCFA`
-              : '';
-          toast.success(`Dépense enregistrée en caisse${payMsg}`);
-        } catch (invErr) {
-          console.error(invErr);
-          toast.error(
-            `Dépense enregistrée, mais la facture automatique a échoué : ${
-              invErr instanceof Error ? invErr.message : 'erreur'
-            }.`,
-          );
-        }
-
-        setIsExpenseDialogOpen(false);
-        resetExpenseForm();
-        refreshBankAccounts();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement');
-      }
-    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -547,6 +351,16 @@ export default function Caisse() {
     const montant = Number(formData.montant);
     if (!Number.isFinite(montant) || montant <= 0) {
       toast.error('Indique un montant valide.');
+      return;
+    }
+
+    if (formData.type === 'sortie' && !formData.categorie.trim()) {
+      toast.error('Sélectionne un type de dépense.');
+      return;
+    }
+
+    if (formData.type === 'sortie' && !formData.modePaiement.trim()) {
+      toast.error('Sélectionne un mode de paiement.');
       return;
     }
 
@@ -571,6 +385,9 @@ export default function Caisse() {
       }
     }
 
+    const categorie =
+      formData.type === 'sortie' ? formData.categorie.trim() || undefined : undefined;
+
     await withGuard(async () => {
     if (editingTransaction) {
       const prevLinked = editingTransaction.bankTransactionId;
@@ -585,10 +402,10 @@ export default function Caisse() {
         utilisateur: editingTransaction.utilisateur || user?.login || 'system',
         compteBanqueId: undefined,
         bankTransactionId: undefined,
-        categorie: editingTransaction.categorie,
+        categorie,
         reference: editingTransaction.reference,
         exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-        clientTierId: formData.clientTierId || undefined,
+        clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
         modePaiement: mode,
       };
 
@@ -613,8 +430,9 @@ export default function Caisse() {
       montant,
       utilisateur: user?.login || 'system',
       exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-      clientTierId: formData.clientTierId || undefined,
+      clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
       modePaiement: mode,
+      categorie,
     };
 
     try {
@@ -662,6 +480,7 @@ export default function Caisse() {
       exclutRevenu: t.type === 'entree' && Boolean(t.exclutRevenu),
       clientTierId: t.clientTierId || '',
       modePaiement: t.modePaiement || '',
+      categorie: t.categorie || (t.type === 'sortie' ? 'Carburant' : ''),
     });
     setIsDialogOpen(true);
   };
@@ -733,8 +552,6 @@ export default function Caisse() {
   const filteredTransactions = transactions.filter((t) => {
     if (filterType === 'financement') {
       if (!isFinancementEntree(t)) return false;
-    } else if (filterType === 'depense') {
-      if (!isCaisseDepenseTransaction(t)) return false;
     } else if (filterType !== 'all' && t.type !== filterType) {
       return false;
     }
@@ -745,16 +562,6 @@ export default function Caisse() {
 
     if (filterCategorie !== 'all') {
       if ((t.categorie || '').trim() !== filterCategorie) return false;
-    }
-
-    if (filterCamion !== 'all') {
-      const expenseId = expenseIdFromCaisseReference(t.reference);
-      const linked = expenseId ? expenseById.get(expenseId) : undefined;
-      if (filterCamion === 'none') {
-        if (!linked || linked.camionId) return false;
-      } else if (!linked || linked.camionId !== filterCamion) {
-        return false;
-      }
     }
 
     if (filterDateFrom) {
@@ -796,7 +603,6 @@ export default function Caisse() {
     filterModePaiement !== 'all' ||
     filterModePaiementDetail !== 'all' ||
     filterCategorie !== 'all' ||
-    filterCamion !== 'all' ||
     Boolean(filterDateFrom) ||
     Boolean(filterDateTo) ||
     Boolean(filterMontantMin.trim()) ||
@@ -809,7 +615,6 @@ export default function Caisse() {
     setFilterModePaiement('all');
     setFilterModePaiementDetail('all');
     setFilterCategorie('all');
-    setFilterCamion('all');
     setFilterDateFrom('');
     setFilterDateTo('');
     setFilterMontantMin('');
@@ -837,13 +642,6 @@ export default function Caisse() {
     if (filterCategorie !== 'all') {
       parts.push(`Catégorie: ${filterCategorie}`);
     }
-    if (filterCamion !== 'all') {
-      const truckLabel =
-        filterCamion === 'none'
-          ? 'Sans camion'
-          : trucks.find((t) => t.id === filterCamion)?.immatriculation || filterCamion;
-      parts.push(`Camion: ${truckLabel}`);
-    }
     if (filterDateFrom) parts.push(`Du ${filterDateFrom}`);
     if (filterDateTo) parts.push(`Au ${filterDateTo}`);
     if (filterMontantMin.trim()) parts.push(`Min ${filterMontantMin} FCFA`);
@@ -859,14 +657,12 @@ export default function Caisse() {
     filterModePaiement,
     filterModePaiementDetail,
     filterCategorie,
-    filterCamion,
     filterDateFrom,
     filterDateTo,
     filterMontantMin,
     filterMontantMax,
     searchTerm,
     listSort,
-    trucks,
   ]);
 
   const sortedTransactions = useMemo(() => {
@@ -1067,259 +863,7 @@ export default function Caisse() {
         actions={
           <div className="flex flex-col gap-2 w-full sm:w-auto">
             {canManageTreasury && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                <Dialog
-                  open={isExpenseDialogOpen}
-                  onOpenChange={(open) => {
-                    setIsExpenseDialogOpen(open);
-                    if (!open) resetExpenseForm();
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white">
-                      <Tag className="mr-2 h-4 w-4" />
-                      Nouvelle dépense
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Nouvelle dépense (caisse)</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleExpenseSubmit} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Catégorie *</Label>
-                          <Select
-                            value={expenseForm.categorie}
-                            onValueChange={(categorie) =>
-                              setExpenseForm((f) => ({
-                                ...f,
-                                categorie,
-                                chauffeurId: categorie === 'Salaire' ? f.chauffeurId : f.chauffeurId,
-                                fournisseurId:
-                                  categorie === 'Salaire' ? f.fournisseurId : f.fournisseurId,
-                              }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {EXPENSE_CATEGORIES.map((c) => (
-                                <SelectItem key={c} value={c}>
-                                  {c}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="expense-montant">Montant (FCFA) *</Label>
-                          <Input
-                            id="expense-montant"
-                            type="number"
-                            min="0"
-                            value={expenseForm.montant || ''}
-                            onChange={(e) =>
-                              setExpenseForm((f) => ({
-                                ...f,
-                                montant: parseFloat(e.target.value) || 0,
-                              }))
-                            }
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="expense-date">Date *</Label>
-                        <Input
-                          id="expense-date"
-                          type="date"
-                          value={expenseForm.date}
-                          onChange={(e) =>
-                            setExpenseForm((f) => ({ ...f, date: e.target.value }))
-                          }
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <Label htmlFor="expense-description">Description *</Label>
-                        <Input
-                          id="expense-description"
-                          value={expenseForm.description}
-                          onChange={(e) =>
-                            setExpenseForm((f) => ({ ...f, description: e.target.value }))
-                          }
-                          required
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Camion (optionnel)</Label>
-                          <Select
-                            value={expenseForm.camionId || 'none'}
-                            onValueChange={(value) => {
-                              if (value === 'none') {
-                                setExpenseForm((f) => ({ ...f, camionId: '', chauffeurId: '' }));
-                                return;
-                              }
-                              const truck = trucks.find((t) => t.id === value);
-                              setExpenseForm((f) => ({
-                                ...f,
-                                camionId: value,
-                                chauffeurId: truck?.chauffeurId || f.chauffeurId,
-                              }));
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Aucun camion" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Aucun camion</SelectItem>
-                              {trucks.map((t) => (
-                                <SelectItem key={t.id} value={t.id}>
-                                  {t.immatriculation} - {t.modele}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label>
-                            {expenseForm.categorie === 'Salaire'
-                              ? 'Chauffeur (salaire conducteur)'
-                              : 'Chauffeur (optionnel)'}
-                          </Label>
-                          <Select
-                            value={expenseForm.chauffeurId || 'none'}
-                            onValueChange={(value) => {
-                              const id = value === 'none' ? '' : value;
-                              setExpenseForm((f) => ({
-                                ...f,
-                                chauffeurId: id,
-                                fournisseurId: id ? '' : f.fournisseurId,
-                              }));
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Sélectionner" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Aucun</SelectItem>
-                              {drivers.map((d) => (
-                                <SelectItem key={d.id} value={d.id}>
-                                  {d.prenom} {d.nom}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {expenseForm.categorie === 'Salaire' ? (
-                        <div>
-                          <Label>Personnel siège (si pas chauffeur)</Label>
-                          <Select
-                            value={expenseForm.fournisseurId || 'none'}
-                            onValueChange={(value) => {
-                              const id = value === 'none' ? '' : value;
-                              setExpenseForm((f) => ({
-                                ...f,
-                                fournisseurId: id,
-                                chauffeurId: id ? '' : f.chauffeurId,
-                              }));
-                            }}
-                            disabled={Boolean(expenseForm.chauffeurId)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Employé siège" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Aucun</SelectItem>
-                              {employesSiege.map((tp) => (
-                                <SelectItem key={tp.id} value={tp.id}>
-                                  {tp.nom}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <div>
-                          <Label>Fournisseur (optionnel)</Label>
-                          <ThirdPartyPicker
-                            className="mt-1"
-                            options={fournisseurs}
-                            value={expenseForm.fournisseurId}
-                            onValueChange={(fournisseurId) =>
-                              setExpenseForm((f) => ({ ...f, fournisseurId }))
-                            }
-                            placeholder="Choisir un fournisseur…"
-                            topChoices={[{ id: '', label: 'Aucun fournisseur' }]}
-                          />
-                        </div>
-                      )}
-
-                      <PaymentModePicker
-                        id="caisse-expense-mode"
-                        label="Mode de paiement (caisse)"
-                        value={expenseForm.modePaiement}
-                        onChange={(modePaiement) =>
-                          setExpenseForm((f) => ({ ...f, modePaiement }))
-                        }
-                        entreprises={fournisseurs}
-                      />
-
-                      <PaymentAtCreationFields
-                        variant="fournisseur"
-                        label="Règlement facture fournisseur"
-                        montant={expenseForm.montant}
-                        mode={expenseForm.paiementMode}
-                        onModeChange={(paiementMode) =>
-                          setExpenseForm((f) => ({ ...f, paiementMode }))
-                        }
-                        montantAvance={expenseForm.montantAvance}
-                        onMontantAvanceChange={(montantAvance) =>
-                          setExpenseForm((f) => ({ ...f, montantAvance }))
-                        }
-                        datePaiement={expenseForm.datePaiement}
-                        onDatePaiementChange={(datePaiement) =>
-                          setExpenseForm((f) => ({ ...f, datePaiement }))
-                        }
-                      />
-
-                      <p className="text-xs text-muted-foreground">
-                        Crée une dépense, une sortie caisse liée, et une facture fournisseur
-                        (comme sur l’écran Dépenses).
-                      </p>
-
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setIsExpenseDialogOpen(false)}
-                          disabled={isExpenseSubmitting}
-                        >
-                          Annuler
-                        </Button>
-                        <Button type="submit" disabled={isExpenseSubmitting}>
-                          {isExpenseSubmitting ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Enregistrement...
-                            </>
-                          ) : (
-                            'Enregistrer la dépense'
-                          )}
-                        </Button>
-                      </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-
+              <div className="w-full">
                 <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
                   <DialogTrigger asChild>
                     <Button className="w-full">
@@ -1338,7 +882,16 @@ export default function Caisse() {
                         <Select
                           value={formData.type}
                           onValueChange={(v: 'entree' | 'sortie') => {
-                            setFormData({ ...formData, type: v, exclutRevenu: false });
+                            setFormData({
+                              ...formData,
+                              type: v,
+                              exclutRevenu: false,
+                              categorie:
+                                v === 'entree'
+                                  ? ''
+                                  : formData.categorie || 'Carburant',
+                              clientTierId: v === 'sortie' ? '' : formData.clientTierId,
+                            });
                           }}
                         >
                           <SelectTrigger>
@@ -1363,9 +916,36 @@ export default function Caisse() {
                       </div>
                     </div>
 
+                    {formData.type === 'sortie' && (
+                      <div>
+                        <Label>Type de dépense *</Label>
+                        <Select
+                          value={formData.categorie || undefined}
+                          onValueChange={(categorie) =>
+                            setFormData((f) => ({ ...f, categorie }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choisir une catégorie…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SORTIE_CATEGORIES.map((c) => (
+                              <SelectItem key={c} value={c}>
+                                {c}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
                     <PaymentModePicker
                       id="caisse-mode-paiement"
-                      label="Mode de paiement (optionnel)"
+                      label={
+                        formData.type === 'sortie'
+                          ? 'Mode de paiement *'
+                          : 'Mode de paiement (optionnel)'
+                      }
                       value={formData.modePaiement}
                       onChange={(mode) => setFormData((f) => ({ ...f, modePaiement: mode }))}
                       entreprises={fournisseurs}
@@ -1391,6 +971,7 @@ export default function Caisse() {
                       />
                     </div>
 
+                    {formData.type === 'entree' && (
                     <div>
                       <Label>Client (optionnel)</Label>
                       <ThirdPartyPicker
@@ -1407,6 +988,7 @@ export default function Caisse() {
                         Recommandé pour les versements clients. Distinct de l’utilisateur qui saisit.
                       </p>
                     </div>
+                    )}
 
                     {formData.type === 'entree' && (
                     <div className="rounded-lg border border-violet-200/80 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/25 p-3 space-y-2">
@@ -1631,7 +1213,6 @@ export default function Caisse() {
                       <SelectItem value="all">Tous les types</SelectItem>
                       <SelectItem value="entree">Entrées</SelectItem>
                       <SelectItem value="sortie">Sorties</SelectItem>
-                      <SelectItem value="depense">Dépenses</SelectItem>
                       <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1674,20 +1255,6 @@ export default function Caisse() {
                       {categorieOptions.map((c) => (
                         <SelectItem key={c} value={c}>
                           {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={filterCamion} onValueChange={setFilterCamion}>
-                    <SelectTrigger className="h-10 w-full">
-                      <SelectValue placeholder="Tous les camions" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Tous les camions (dépenses)</SelectItem>
-                      <SelectItem value="none">Dépenses sans camion</SelectItem>
-                      {trucks.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.immatriculation} - {t.modele}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1821,23 +1388,6 @@ export default function Caisse() {
                       className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
                       aria-label="Retirer le filtre catégorie"
                       title="Retirer le filtre catégorie"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-                {filterCamion !== 'all' && (
-                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
-                    Camion:{' '}
-                    {filterCamion === 'none'
-                      ? 'Sans camion'
-                      : trucks.find((t) => t.id === filterCamion)?.immatriculation || filterCamion}
-                    <button
-                      type="button"
-                      onClick={() => setFilterCamion('all')}
-                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
-                      aria-label="Retirer le filtre camion"
-                      title="Retirer le filtre camion"
                     >
                       <X className="h-3 w-3" />
                     </button>
