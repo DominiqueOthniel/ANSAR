@@ -263,12 +263,27 @@ export function isModeEncaissementCaisse(mode: string | undefined): boolean {
 
 const REF_DEPENSE_PREFIX = 'depense:';
 
+export function isCaisseDepenseTransaction(
+  t: Pick<CaisseTransaction, 'reference'>,
+): boolean {
+  return Boolean(t.reference?.startsWith(REF_DEPENSE_PREFIX));
+}
+
+export function expenseIdFromCaisseReference(
+  reference: string | undefined | null,
+): string | undefined {
+  if (!reference?.startsWith(REF_DEPENSE_PREFIX)) return undefined;
+  const id = reference.slice(REF_DEPENSE_PREFIX.length).trim();
+  return id || undefined;
+}
+
 export async function upsertSortieFromExpense(expense: {
   id: string;
   montant: number;
   date: string;
   description: string;
   categorie: string;
+  modePaiement?: string;
 }): Promise<void> {
   if (!Number.isFinite(expense.montant) || expense.montant <= 0) return;
   const ref = `${REF_DEPENSE_PREFIX}${expense.id}`;
@@ -286,6 +301,7 @@ export async function upsertSortieFromExpense(expense: {
     reference: ref,
     categorie: expense.categorie || 'Dépenses',
     utilisateur: 'Système',
+    modePaiement: expense.modePaiement?.trim() || existing?.modePaiement,
   };
   if (isRemoteCaisse()) {
     await caisseApi.upsertByReference(ref, payloadFromTx(tx));
