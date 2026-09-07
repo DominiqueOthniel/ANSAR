@@ -98,7 +98,7 @@ export function getCaisseSoldeInitialSync(): number {
 
 /**
  * Toutes les transactions caisse impactent le solde espèces.
- * La banque Ansar (Afriland / CBC / UBA / CCA / Access Bank / BGFI) est une simple traçabilité sur le mode.
+ * La banque Ansar (Afriland / CBC / UBA / CCA / Access Bank / BGFI / Crédit du Sahel) est une simple traçabilité sur le mode.
  */
 export function caisseAffectsCashSolde(_t: Pick<CaisseTransaction, 'type' | 'modePaiement'>): boolean {
   return true;

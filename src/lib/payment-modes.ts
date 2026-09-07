@@ -24,7 +24,15 @@ export type PaymentTreasuryDestination = 'caisse' | 'aucun';
  * Banques pour traçabilité (versement direct Ansar, ou banque de l’entreprise en indirect).
  * Liste fixe : aucun compte à créer dans le module Banque.
  */
-export const ANSAR_BANQUES = ['Afriland', 'CBC', 'UBA', 'CCA', 'Access Bank', 'BGFI'] as const;
+export const ANSAR_BANQUES = [
+  'Afriland',
+  'CBC',
+  'UBA',
+  'CCA',
+  'Access Bank',
+  'BGFI',
+  'Crédit du Sahel',
+] as const;
 export type AnsarBanque = (typeof ANSAR_BANQUES)[number];
 
 export const ANSAR_BANQUES_LABEL = `${ANSAR_BANQUES.slice(0, -1).join(', ')} ou ${ANSAR_BANQUES[ANSAR_BANQUES.length - 1]}`;
