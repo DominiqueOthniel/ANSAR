@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2, X, Tag } from 'lucide-react';
 import { useRef } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { toast } from 'sonner';
@@ -24,9 +24,14 @@ import {
   refreshBankFromApi,
   removeBankTransactionAsync,
 } from '@/lib/bank-local';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, type Invoice } from '@/contexts/AppContext';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PaymentModePicker } from '@/components/PaymentModePicker';
+import { PaymentAtCreationFields } from '@/components/PaymentAtCreationFields';
+import {
+  resolvePaymentAtCreation,
+  type PaymentAtCreationMode,
+} from '@/lib/payment-at-creation';
 import { getTotalCreancesClients } from '@/lib/sync-utils';
 import {
   type CaisseTransaction,
@@ -42,6 +47,9 @@ import {
   assertCaisseSortieAllowed,
   computeCaisseSoldeActuel,
   InsufficientCaisseError,
+  isCaisseDepenseTransaction,
+  expenseIdFromCaisseReference,
+  upsertSortieFromExpense,
 } from '@/lib/caisse-local';
 import {
   missingVersementDetailMessage,
@@ -75,8 +83,27 @@ type CaisseModeFilter = 'all' | PaymentModeFamily | 'sans_mode';
 const CAISSE_TYPE_FILTER_LABELS: Record<string, string> = {
   entree: 'Entrées',
   sortie: 'Sorties',
+  depense: 'Dépenses',
   financement: 'Financement (hors encaissement)',
 };
+
+const EXPENSE_CATEGORIES = [
+  'Carburant',
+  'Maintenance',
+  'Péage',
+  'Assurance',
+  'Salaire',
+  'Don',
+  'Autre',
+] as const;
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+function nextExpenseInvoiceNumero(invoicesList: Invoice[]): string {
+  const year = new Date().getFullYear();
+  const count = invoicesList.filter((inv) => inv.numero.startsWith(`FAC-EXP-${year}`)).length + 1;
+  return `FAC-EXP-${year}-${String(count).padStart(3, '0')}`;
+}
 
 function matchesCaissePaymentModeFilter(
   t: Pick<CaisseTransaction, 'modePaiement'>,
@@ -175,7 +202,16 @@ function formatCaisseBanqueLabel(t: Pick<CaisseTransaction, 'modePaiement'>): st
 }
 
 export default function Caisse() {
-  const { invoices, thirdParties } = useApp();
+  const {
+    invoices,
+    thirdParties,
+    expenses,
+    trucks,
+    drivers,
+    createExpense,
+    deleteExpense,
+    createInvoice,
+  } = useApp();
   const { canManageTreasury, user } = useAuth();
   const restoreFileRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<CaisseTransaction[]>([]);
@@ -183,15 +219,23 @@ export default function Caisse() {
   const [soldeInitial, setSoldeInitial] = useState(0);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<CaisseTransaction | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [filterModePaiement, setFilterModePaiement] = useState<CaisseModeFilter>('all');
   const [filterModePaiementDetail, setFilterModePaiementDetail] = useState('all');
+  const [filterCategorie, setFilterCategorie] = useState<string>('all');
+  const [filterCamion, setFilterCamion] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterMontantMin, setFilterMontantMin] = useState('');
+  const [filterMontantMax, setFilterMontantMax] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [listSort, setListSort] = useState<string>('date_desc');
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const { isSubmitting, withGuard } = useSubmitGuard();
+  const { isSubmitting: isExpenseSubmitting, withGuard: withExpenseGuard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     type: 'entree' as 'entree' | 'sortie',
@@ -204,6 +248,20 @@ export default function Caisse() {
     modePaiement: '',
   });
 
+  const [expenseForm, setExpenseForm] = useState({
+    camionId: '',
+    chauffeurId: '',
+    categorie: 'Carburant',
+    fournisseurId: '',
+    montant: 0,
+    date: todayIso(),
+    description: '',
+    modePaiement: '',
+    paiementMode: 'soldee' as PaymentAtCreationMode,
+    montantAvance: undefined as number | undefined,
+    datePaiement: todayIso(),
+  });
+
   const clients = useMemo(
     () => thirdParties.filter((tp) => tp.type === 'client'),
     [thirdParties],
@@ -213,6 +271,25 @@ export default function Caisse() {
     () => thirdParties.filter((tp) => tp.type === 'fournisseur'),
     [thirdParties],
   );
+
+  const employesSiege = useMemo(
+    () => thirdParties.filter((tp) => tp.type === 'employe'),
+    [thirdParties],
+  );
+
+  const expenseById = useMemo(() => {
+    const map = new Map(expenses.map((e) => [e.id, e]));
+    return map;
+  }, [expenses]);
+
+  const categorieOptions = useMemo(() => {
+    const fromTx = transactions
+      .map((t) => t.categorie?.trim())
+      .filter((c): c is string => Boolean(c));
+    return Array.from(new Set([...EXPENSE_CATEGORIES, ...fromTx])).sort((a, b) =>
+      frCollator.compare(a, b),
+    );
+  }, [transactions]);
 
   const refreshBankAccounts = () => {
     setBankAccounts(getBankAccounts());
@@ -316,6 +393,152 @@ export default function Caisse() {
       modePaiement: '',
     });
     setEditingTransaction(null);
+  };
+
+  const resetExpenseForm = () => {
+    setExpenseForm({
+      camionId: '',
+      chauffeurId: '',
+      categorie: 'Carburant',
+      fournisseurId: '',
+      montant: 0,
+      date: todayIso(),
+      description: '',
+      modePaiement: '',
+      paiementMode: 'soldee',
+      montantAvance: undefined,
+      datePaiement: todayIso(),
+    });
+  };
+
+  const handleExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const montant = Number(expenseForm.montant);
+    if (!Number.isFinite(montant) || montant <= 0) {
+      toast.error('Indique un montant valide.');
+      return;
+    }
+    if (!expenseForm.description.trim()) {
+      toast.error('Indique une description.');
+      return;
+    }
+    if (expenseForm.categorie === 'Salaire') {
+      const hasChauffeur = Boolean(expenseForm.chauffeurId);
+      const hasEmploye =
+        Boolean(expenseForm.fournisseurId) &&
+        employesSiege.some((tp) => tp.id === expenseForm.fournisseurId);
+      if (!hasChauffeur && !hasEmploye) {
+        toast.error(
+          'Pour un salaire, sélectionne un chauffeur ou un employé (personnel siège).',
+        );
+        return;
+      }
+    }
+    if (
+      expenseForm.paiementMode === 'avance' &&
+      (expenseForm.montantAvance == null || expenseForm.montantAvance <= 0)
+    ) {
+      toast.error('Indique le montant de l’acompte payé.');
+      return;
+    }
+
+    const mode = expenseForm.modePaiement.trim() || undefined;
+    const missingVersement = missingVersementDetailMessage(mode);
+    if (missingVersement) {
+      toast.error(missingVersement);
+      return;
+    }
+
+    let chauffeurPayload = expenseForm.chauffeurId || undefined;
+    let fournisseurPayload = expenseForm.fournisseurId || undefined;
+    if (expenseForm.categorie === 'Salaire') {
+      if (chauffeurPayload) fournisseurPayload = undefined;
+      else chauffeurPayload = undefined;
+    }
+
+    const payment = resolvePaymentAtCreation({
+      mode: expenseForm.paiementMode,
+      montantTotal: montant,
+      montantAvance: expenseForm.montantAvance,
+    });
+
+    try {
+      assertCaisseSortieAllowed(soldeInitial, transactions, montant);
+    } catch (err) {
+      toast.error(err instanceof InsufficientCaisseError ? err.message : 'Solde caisse insuffisant.');
+      return;
+    }
+
+    await withExpenseGuard(async () => {
+      try {
+        const created = await createExpense({
+          ...(expenseForm.camionId ? { camionId: expenseForm.camionId } : {}),
+          chauffeurId: chauffeurPayload,
+          categorie: expenseForm.categorie,
+          fournisseurId: fournisseurPayload,
+          montant,
+          date: expenseForm.date,
+          description: expenseForm.description.trim(),
+        });
+        try {
+          await upsertSortieFromExpense({
+            id: created.id,
+            montant: created.montant,
+            date: created.date,
+            description: created.description,
+            categorie: created.categorie,
+            modePaiement: mode,
+          });
+        } catch (cashErr) {
+          try {
+            await deleteExpense(created.id);
+          } catch (rollbackErr) {
+            console.error('Rollback dépense après refus caisse impossible:', rollbackErr);
+          }
+          throw cashErr;
+        }
+
+        setTransactions(getCaisseTransactions());
+        setSoldeInitial(getCaisseSoldeInitialSync());
+
+        try {
+          await createInvoice({
+            numero: nextExpenseInvoiceNumero(invoices),
+            expenseId: created.id,
+            statut: payment.statut,
+            montantHT: created.montant,
+            montantTTC: created.montant,
+            montantPaye: payment.montantPaye,
+            datePaiement:
+              payment.montantPaye > 0
+                ? expenseForm.datePaiement || expenseForm.date || todayIso()
+                : undefined,
+            dateCreation: todayIso(),
+          });
+          const payMsg =
+            payment.montantPaye > 0
+              ? payment.statut === 'payee'
+                ? ' — facture soldée'
+                : ` — acompte ${payment.montantPaye.toLocaleString('fr-FR')} FCFA`
+              : '';
+          toast.success(`Dépense enregistrée en caisse${payMsg}`);
+        } catch (invErr) {
+          console.error(invErr);
+          toast.error(
+            `Dépense enregistrée, mais la facture automatique a échoué : ${
+              invErr instanceof Error ? invErr.message : 'erreur'
+            }.`,
+          );
+        }
+
+        setIsExpenseDialogOpen(false);
+        resetExpenseForm();
+        refreshBankAccounts();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement');
+      }
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -510,18 +733,56 @@ export default function Caisse() {
   const filteredTransactions = transactions.filter((t) => {
     if (filterType === 'financement') {
       if (!isFinancementEntree(t)) return false;
-    } else if (filterType !== 'all' && t.type !== filterType) return false;
-    if (!matchesCaissePaymentModeFilter(t, filterModePaiement, filterModePaiementDetail)) return false;
+    } else if (filterType === 'depense') {
+      if (!isCaisseDepenseTransaction(t)) return false;
+    } else if (filterType !== 'all' && t.type !== filterType) {
+      return false;
+    }
+
+    if (!matchesCaissePaymentModeFilter(t, filterModePaiement, filterModePaiementDetail)) {
+      return false;
+    }
+
+    if (filterCategorie !== 'all') {
+      if ((t.categorie || '').trim() !== filterCategorie) return false;
+    }
+
+    if (filterCamion !== 'all') {
+      const expenseId = expenseIdFromCaisseReference(t.reference);
+      const linked = expenseId ? expenseById.get(expenseId) : undefined;
+      if (filterCamion === 'none') {
+        if (!linked || linked.camionId) return false;
+      } else if (!linked || linked.camionId !== filterCamion) {
+        return false;
+      }
+    }
+
+    if (filterDateFrom) {
+      const d = (t.date || '').split('T')[0];
+      if (!d || d < filterDateFrom) return false;
+    }
+    if (filterDateTo) {
+      const d = (t.date || '').split('T')[0];
+      if (!d || d > filterDateTo) return false;
+    }
+
+    const min = filterMontantMin.trim() ? parseFloat(filterMontantMin) : NaN;
+    if (Number.isFinite(min) && t.montant < min) return false;
+    const max = filterMontantMax.trim() ? parseFloat(filterMontantMax) : NaN;
+    if (Number.isFinite(max) && t.montant > max) return false;
+
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       const clientNom = resolveCaisseClientNom(t, thirdParties).toLowerCase();
       const mode = formatCaisseModePaiement(t).toLowerCase();
       const banque = formatCaisseBanqueLabel(t).toLowerCase();
+      const categorie = (t.categorie || '').toLowerCase();
       if (
         !t.description.toLowerCase().includes(q) &&
         !clientNom.includes(q) &&
         !mode.includes(q) &&
         !banque.includes(q) &&
+        !categorie.includes(q) &&
         !(clientNom === '—' && q === '—')
       ) {
         return false;
@@ -534,7 +795,26 @@ export default function Caisse() {
     filterType !== 'all' ||
     filterModePaiement !== 'all' ||
     filterModePaiementDetail !== 'all' ||
+    filterCategorie !== 'all' ||
+    filterCamion !== 'all' ||
+    Boolean(filterDateFrom) ||
+    Boolean(filterDateTo) ||
+    Boolean(filterMontantMin.trim()) ||
+    Boolean(filterMontantMax.trim()) ||
     searchTerm.trim() !== '';
+
+  const resetCaisseFilters = () => {
+    setSearchTerm('');
+    setFilterType('all');
+    setFilterModePaiement('all');
+    setFilterModePaiementDetail('all');
+    setFilterCategorie('all');
+    setFilterCamion('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterMontantMin('');
+    setFilterMontantMax('');
+  };
 
   const filteredStats = useMemo(() => {
     const entrees = filteredTransactions.filter((t) => t.type === 'entree');
@@ -554,13 +834,40 @@ export default function Caisse() {
     if (filterModePaiement !== 'all') {
       parts.push(`Mode: ${labelCaisseModeFilter(filterModePaiement, filterModePaiementDetail)}`);
     }
+    if (filterCategorie !== 'all') {
+      parts.push(`Catégorie: ${filterCategorie}`);
+    }
+    if (filterCamion !== 'all') {
+      const truckLabel =
+        filterCamion === 'none'
+          ? 'Sans camion'
+          : trucks.find((t) => t.id === filterCamion)?.immatriculation || filterCamion;
+      parts.push(`Camion: ${truckLabel}`);
+    }
+    if (filterDateFrom) parts.push(`Du ${filterDateFrom}`);
+    if (filterDateTo) parts.push(`Au ${filterDateTo}`);
+    if (filterMontantMin.trim()) parts.push(`Min ${filterMontantMin} FCFA`);
+    if (filterMontantMax.trim()) parts.push(`Max ${filterMontantMax} FCFA`);
     if (searchTerm.trim()) {
       parts.push(`Recherche: « ${searchTerm.trim()} »`);
     }
     const sortLabel = CAISSE_SORT_OPTIONS.find((o) => o.value === listSort)?.label;
     if (sortLabel) parts.push(`Tri: ${sortLabel}`);
     return parts.length ? parts.join(' · ') : undefined;
-  }, [filterType, filterModePaiement, filterModePaiementDetail, searchTerm, listSort]);
+  }, [
+    filterType,
+    filterModePaiement,
+    filterModePaiementDetail,
+    filterCategorie,
+    filterCamion,
+    filterDateFrom,
+    filterDateTo,
+    filterMontantMin,
+    filterMontantMax,
+    searchTerm,
+    listSort,
+    trucks,
+  ]);
 
   const sortedTransactions = useMemo(() => {
     const list = [...filteredTransactions];
@@ -642,7 +949,7 @@ export default function Caisse() {
         {
           label: 'Solde caisse (global)',
           value: `${soldeActuel >= 0 ? '+' : '−'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
-          style: (soldeActuel >= 0 ? 'positive' : 'negative') as const,
+          style: (soldeActuel >= 0 ? 'positive' : 'negative') as 'positive' | 'negative',
           icon: EMOJI.argent,
         },
       ];
@@ -651,7 +958,7 @@ export default function Caisse() {
       {
         label: 'Solde caisse',
         value: `${soldeActuel >= 0 ? '+' : '−'}${Math.abs(soldeActuel).toLocaleString('fr-FR')} FCFA`,
-        style: (soldeActuel >= 0 ? 'positive' : 'negative') as const,
+        style: (soldeActuel >= 0 ? 'positive' : 'negative') as 'positive' | 'negative',
         icon: EMOJI.argent,
       },
       {
@@ -701,6 +1008,7 @@ export default function Caisse() {
         { header: 'Sortie (FCFA)', value: (t) => t.sortie ?? '' },
         { header: 'Solde (FCFA)', value: (t) => t.solde },
         { header: 'Description', value: (t) => t.description },
+        { header: 'Catégorie', value: (t) => t.categorie || '—' },
         { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Mode', value: (t) => formatCaisseModePaiement(t) },
@@ -740,6 +1048,7 @@ export default function Caisse() {
         },
         { header: 'Solde (FCFA)', value: (t) => `${t.solde.toLocaleString('fr-FR')}` },
         { header: 'Description', value: (t) => t.description },
+        { header: 'Catégorie', value: (t) => t.categorie || '—' },
         { header: 'Client', value: (t) => resolveCaisseClientNom(t, thirdParties) },
         { header: 'Utilisateur', value: formatCaisseUtilisateur },
         { header: 'Mode', value: (t) => formatCaisseModePaiement(t) },
@@ -774,6 +1083,259 @@ export default function Caisse() {
               onChange={handleRestoreCaisse}
             />
             {canManageTreasury && (
+              <>
+              <Dialog
+                open={isExpenseDialogOpen}
+                onOpenChange={(open) => {
+                  setIsExpenseDialogOpen(open);
+                  if (!open) resetExpenseForm();
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button variant="secondary">
+                    <Tag className="mr-2 h-4 w-4" />
+                    Nouvelle dépense
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Nouvelle dépense (caisse)</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleExpenseSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Catégorie *</Label>
+                        <Select
+                          value={expenseForm.categorie}
+                          onValueChange={(categorie) =>
+                            setExpenseForm((f) => ({
+                              ...f,
+                              categorie,
+                              chauffeurId: categorie === 'Salaire' ? f.chauffeurId : f.chauffeurId,
+                              fournisseurId:
+                                categorie === 'Salaire' ? f.fournisseurId : f.fournisseurId,
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EXPENSE_CATEGORIES.map((c) => (
+                              <SelectItem key={c} value={c}>
+                                {c}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="expense-montant">Montant (FCFA) *</Label>
+                        <Input
+                          id="expense-montant"
+                          type="number"
+                          min="0"
+                          value={expenseForm.montant || ''}
+                          onChange={(e) =>
+                            setExpenseForm((f) => ({
+                              ...f,
+                              montant: parseFloat(e.target.value) || 0,
+                            }))
+                          }
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="expense-date">Date *</Label>
+                      <Input
+                        id="expense-date"
+                        type="date"
+                        value={expenseForm.date}
+                        onChange={(e) =>
+                          setExpenseForm((f) => ({ ...f, date: e.target.value }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="expense-description">Description *</Label>
+                      <Input
+                        id="expense-description"
+                        value={expenseForm.description}
+                        onChange={(e) =>
+                          setExpenseForm((f) => ({ ...f, description: e.target.value }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Camion (optionnel)</Label>
+                        <Select
+                          value={expenseForm.camionId || 'none'}
+                          onValueChange={(value) => {
+                            if (value === 'none') {
+                              setExpenseForm((f) => ({ ...f, camionId: '', chauffeurId: '' }));
+                              return;
+                            }
+                            const truck = trucks.find((t) => t.id === value);
+                            setExpenseForm((f) => ({
+                              ...f,
+                              camionId: value,
+                              chauffeurId: truck?.chauffeurId || f.chauffeurId,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Aucun camion" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Aucun camion</SelectItem>
+                            {trucks.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                {t.immatriculation} - {t.modele}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>
+                          {expenseForm.categorie === 'Salaire'
+                            ? 'Chauffeur (salaire conducteur)'
+                            : 'Chauffeur (optionnel)'}
+                        </Label>
+                        <Select
+                          value={expenseForm.chauffeurId || 'none'}
+                          onValueChange={(value) => {
+                            const id = value === 'none' ? '' : value;
+                            setExpenseForm((f) => ({
+                              ...f,
+                              chauffeurId: id,
+                              fournisseurId: id ? '' : f.fournisseurId,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Aucun</SelectItem>
+                            {drivers.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.prenom} {d.nom}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {expenseForm.categorie === 'Salaire' ? (
+                      <div>
+                        <Label>Personnel siège (si pas chauffeur)</Label>
+                        <Select
+                          value={expenseForm.fournisseurId || 'none'}
+                          onValueChange={(value) => {
+                            const id = value === 'none' ? '' : value;
+                            setExpenseForm((f) => ({
+                              ...f,
+                              fournisseurId: id,
+                              chauffeurId: id ? '' : f.chauffeurId,
+                            }));
+                          }}
+                          disabled={Boolean(expenseForm.chauffeurId)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Employé siège" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Aucun</SelectItem>
+                            {employesSiege.map((tp) => (
+                              <SelectItem key={tp.id} value={tp.id}>
+                                {tp.nom}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <div>
+                        <Label>Fournisseur (optionnel)</Label>
+                        <ThirdPartyPicker
+                          className="mt-1"
+                          options={fournisseurs}
+                          value={expenseForm.fournisseurId}
+                          onValueChange={(fournisseurId) =>
+                            setExpenseForm((f) => ({ ...f, fournisseurId }))
+                          }
+                          placeholder="Choisir un fournisseur…"
+                          topChoices={[{ id: '', label: 'Aucun fournisseur' }]}
+                        />
+                      </div>
+                    )}
+
+                    <PaymentModePicker
+                      id="caisse-expense-mode"
+                      label="Mode de paiement (caisse)"
+                      value={expenseForm.modePaiement}
+                      onChange={(modePaiement) =>
+                        setExpenseForm((f) => ({ ...f, modePaiement }))
+                      }
+                      entreprises={fournisseurs}
+                    />
+
+                    <PaymentAtCreationFields
+                      variant="fournisseur"
+                      label="Règlement facture fournisseur"
+                      montant={expenseForm.montant}
+                      mode={expenseForm.paiementMode}
+                      onModeChange={(paiementMode) =>
+                        setExpenseForm((f) => ({ ...f, paiementMode }))
+                      }
+                      montantAvance={expenseForm.montantAvance}
+                      onMontantAvanceChange={(montantAvance) =>
+                        setExpenseForm((f) => ({ ...f, montantAvance }))
+                      }
+                      datePaiement={expenseForm.datePaiement}
+                      onDatePaiementChange={(datePaiement) =>
+                        setExpenseForm((f) => ({ ...f, datePaiement }))
+                      }
+                    />
+
+                    <p className="text-xs text-muted-foreground">
+                      Crée une dépense, une sortie caisse liée, et une facture fournisseur
+                      (comme sur l’écran Dépenses).
+                    </p>
+
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setIsExpenseDialogOpen(false)}
+                        disabled={isExpenseSubmitting}
+                      >
+                        Annuler
+                      </Button>
+                      <Button type="submit" disabled={isExpenseSubmitting}>
+                        {isExpenseSubmitting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Enregistrement...
+                          </>
+                        ) : (
+                          'Enregistrer la dépense'
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
                 <DialogTrigger asChild>
                   <Button>
@@ -903,6 +1465,7 @@ export default function Caisse() {
                   </form>
                 </DialogContent>
               </Dialog>
+              </>
             )}
             <Button variant="outline" onClick={handleExportExcel}>
               <FileDown className="mr-2 h-4 w-4" />
@@ -1065,6 +1628,7 @@ export default function Caisse() {
                       <SelectItem value="all">Tous les types</SelectItem>
                       <SelectItem value="entree">Entrées</SelectItem>
                       <SelectItem value="sortie">Sorties</SelectItem>
+                      <SelectItem value="depense">Dépenses</SelectItem>
                       <SelectItem value="financement">Financement (entrées hors encaissement)</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1097,6 +1661,69 @@ export default function Caisse() {
                     className="w-full"
                   />
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                  <Select value={filterCategorie} onValueChange={setFilterCategorie}>
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Toutes catégories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes catégories</SelectItem>
+                      {categorieOptions.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterCamion} onValueChange={setFilterCamion}>
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Tous les camions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les camions (dépenses)</SelectItem>
+                      <SelectItem value="none">Dépenses sans camion</SelectItem>
+                      {trucks.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.immatriculation} - {t.modele}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    className="h-10 w-full"
+                    aria-label="Date début"
+                    title="Date début"
+                  />
+                  <Input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    className="h-10 w-full"
+                    aria-label="Date fin"
+                    title="Date fin"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Montant min (FCFA)"
+                    value={filterMontantMin}
+                    onChange={(e) => setFilterMontantMin(e.target.value)}
+                    className="h-10 w-full"
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Montant max (FCFA)"
+                    value={filterMontantMax}
+                    onChange={(e) => setFilterMontantMax(e.target.value)}
+                    className="h-10 w-full"
+                  />
+                </div>
                 {showCaisseModeDetailFilter(filterModePaiement) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:max-w-md gap-2">
                     <Select
@@ -1109,7 +1736,7 @@ export default function Caisse() {
                       <SelectContent>
                         {filterModePaiement === 'electronique' ? (
                           <>
-                            <SelectItem value="all">Tous (MTN + Orange)</SelectItem>
+                            <SelectItem value="all">Tous les canaux</SelectItem>
                             {ELECTRONIC_PAYMENT_OPTIONS.map((o) => (
                               <SelectItem key={o.value} value={o.value}>
                                 {o.label}
@@ -1182,14 +1809,96 @@ export default function Caisse() {
                     </button>
                   </Badge>
                 )}
+                {filterCategorie !== 'all' && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Catégorie: {filterCategorie}
+                    <button
+                      type="button"
+                      onClick={() => setFilterCategorie('all')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le filtre catégorie"
+                      title="Retirer le filtre catégorie"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterCamion !== 'all' && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Camion:{' '}
+                    {filterCamion === 'none'
+                      ? 'Sans camion'
+                      : trucks.find((t) => t.id === filterCamion)?.immatriculation || filterCamion}
+                    <button
+                      type="button"
+                      onClick={() => setFilterCamion('all')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le filtre camion"
+                      title="Retirer le filtre camion"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterDateFrom && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Du {filterDateFrom}
+                    <button
+                      type="button"
+                      onClick={() => setFilterDateFrom('')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer la date début"
+                      title="Retirer la date début"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterDateTo && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Au {filterDateTo}
+                    <button
+                      type="button"
+                      onClick={() => setFilterDateTo('')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer la date fin"
+                      title="Retirer la date fin"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterMontantMin.trim() && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Min {filterMontantMin} FCFA
+                    <button
+                      type="button"
+                      onClick={() => setFilterMontantMin('')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le montant min"
+                      title="Retirer le montant min"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterMontantMax.trim() && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5">
+                    Max {filterMontantMax} FCFA
+                    <button
+                      type="button"
+                      onClick={() => setFilterMontantMax('')}
+                      className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                      aria-label="Retirer le montant max"
+                      title="Retirer le montant max"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterType('all');
-                    setFilterModePaiement('all');
-                    setFilterModePaiementDetail('all');
-                  }}
+                  onClick={resetCaisseFilters}
                   className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
                 >
                   Réinitialiser les filtres
@@ -1236,6 +1945,7 @@ export default function Caisse() {
                   </TableHead>
                   <TableHead rowSpan={2}>Solde</TableHead>
                   <TableHead rowSpan={2}>Description</TableHead>
+                  <TableHead rowSpan={2}>Catégorie</TableHead>
                   <TableHead rowSpan={2}>Client</TableHead>
                   <TableHead rowSpan={2}>Utilisateur</TableHead>
                   <TableHead rowSpan={2} className="whitespace-nowrap">Mode</TableHead>
@@ -1256,7 +1966,7 @@ export default function Caisse() {
               <TableBody>
                 {sortedTransactionRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManageTreasury ? 11 : 10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={canManageTreasury ? 12 : 11} className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-12 w-12 mx-auto mb-2 opacity-50" />
                       <p>
                         {transactions.length === 0
@@ -1274,6 +1984,12 @@ export default function Caisse() {
                           <Badge variant={t.type === 'entree' ? 'default' : 'secondary'}>
                             {t.type === 'entree' ? 'Entrée' : 'Sortie'}
                           </Badge>
+                          {isCaisseDepenseTransaction(t) && (
+                            <Badge variant="outline" className="gap-0.5 border-amber-400/50 text-amber-700 dark:text-amber-400">
+                              <Tag className="h-3 w-3" />
+                              Dépense
+                            </Badge>
+                          )}
                           {isFinancementEntree(t) && (
                             <Badge variant="outline" className="gap-0.5 border-violet-400/50 text-violet-600 dark:text-violet-400">
                               <Heart className="h-3 w-3" />
@@ -1292,6 +2008,9 @@ export default function Caisse() {
                         {t.solde.toLocaleString('fr-FR')} FCFA
                       </TableCell>
                       <TableCell>{t.description}</TableCell>
+                      <TableCell>
+                        <span className="text-sm">{t.categorie?.trim() || '—'}</span>
+                      </TableCell>
                       <TableCell>
                         <span className="text-sm">{resolveCaisseClientNom(t, thirdParties)}</span>
                       </TableCell>
