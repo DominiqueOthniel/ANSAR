@@ -1065,284 +1065,268 @@ export default function Caisse() {
         icon={Wallet}
         gradient="from-green-500/20 via-emerald-500/10 to-transparent"
         actions={
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={handleBackupCaisse} className="gap-2">
-              <HardDrive className="h-4 w-4" />
-              Backup
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => restoreFileRef.current?.click()} className="gap-2">
-              <Upload className="h-4 w-4" />
-              Restaurer
-            </Button>
-            <input
-              ref={restoreFileRef}
-              type="file"
-              accept=".json"
-              aria-label="Sélectionner un fichier de backup caisse JSON"
-              className="hidden"
-              onChange={handleRestoreCaisse}
-            />
+          <div className="flex flex-col gap-2 w-full sm:w-auto">
             {canManageTreasury && (
-              <>
-              <Dialog
-                open={isExpenseDialogOpen}
-                onOpenChange={(open) => {
-                  setIsExpenseDialogOpen(open);
-                  if (!open) resetExpenseForm();
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button variant="secondary">
-                    <Tag className="mr-2 h-4 w-4" />
-                    Nouvelle dépense
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>Nouvelle dépense (caisse)</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleExpenseSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Catégorie *</Label>
-                        <Select
-                          value={expenseForm.categorie}
-                          onValueChange={(categorie) =>
-                            setExpenseForm((f) => ({
-                              ...f,
-                              categorie,
-                              chauffeurId: categorie === 'Salaire' ? f.chauffeurId : f.chauffeurId,
-                              fournisseurId:
-                                categorie === 'Salaire' ? f.fournisseurId : f.fournisseurId,
-                            }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {EXPENSE_CATEGORIES.map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {c}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                <Dialog
+                  open={isExpenseDialogOpen}
+                  onOpenChange={(open) => {
+                    setIsExpenseDialogOpen(open);
+                    if (!open) resetExpenseForm();
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+                      <Tag className="mr-2 h-4 w-4" />
+                      Nouvelle dépense
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Nouvelle dépense (caisse)</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleExpenseSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Catégorie *</Label>
+                          <Select
+                            value={expenseForm.categorie}
+                            onValueChange={(categorie) =>
+                              setExpenseForm((f) => ({
+                                ...f,
+                                categorie,
+                                chauffeurId: categorie === 'Salaire' ? f.chauffeurId : f.chauffeurId,
+                                fournisseurId:
+                                  categorie === 'Salaire' ? f.fournisseurId : f.fournisseurId,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {EXPENSE_CATEGORIES.map((c) => (
+                                <SelectItem key={c} value={c}>
+                                  {c}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="expense-montant">Montant (FCFA) *</Label>
+                          <Input
+                            id="expense-montant"
+                            type="number"
+                            min="0"
+                            value={expenseForm.montant || ''}
+                            onChange={(e) =>
+                              setExpenseForm((f) => ({
+                                ...f,
+                                montant: parseFloat(e.target.value) || 0,
+                              }))
+                            }
+                            required
+                          />
+                        </div>
                       </div>
+
                       <div>
-                        <Label htmlFor="expense-montant">Montant (FCFA) *</Label>
+                        <Label htmlFor="expense-date">Date *</Label>
                         <Input
-                          id="expense-montant"
-                          type="number"
-                          min="0"
-                          value={expenseForm.montant || ''}
+                          id="expense-date"
+                          type="date"
+                          value={expenseForm.date}
                           onChange={(e) =>
-                            setExpenseForm((f) => ({
-                              ...f,
-                              montant: parseFloat(e.target.value) || 0,
-                            }))
+                            setExpenseForm((f) => ({ ...f, date: e.target.value }))
                           }
                           required
                         />
                       </div>
-                    </div>
 
-                    <div>
-                      <Label htmlFor="expense-date">Date *</Label>
-                      <Input
-                        id="expense-date"
-                        type="date"
-                        value={expenseForm.date}
-                        onChange={(e) =>
-                          setExpenseForm((f) => ({ ...f, date: e.target.value }))
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="expense-description">Description *</Label>
-                      <Input
-                        id="expense-description"
-                        value={expenseForm.description}
-                        onChange={(e) =>
-                          setExpenseForm((f) => ({ ...f, description: e.target.value }))
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <Label>Camion (optionnel)</Label>
-                        <Select
-                          value={expenseForm.camionId || 'none'}
-                          onValueChange={(value) => {
-                            if (value === 'none') {
-                              setExpenseForm((f) => ({ ...f, camionId: '', chauffeurId: '' }));
-                              return;
-                            }
-                            const truck = trucks.find((t) => t.id === value);
-                            setExpenseForm((f) => ({
-                              ...f,
-                              camionId: value,
-                              chauffeurId: truck?.chauffeurId || f.chauffeurId,
-                            }));
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Aucun camion" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Aucun camion</SelectItem>
-                            {trucks.map((t) => (
-                              <SelectItem key={t.id} value={t.id}>
-                                {t.immatriculation} - {t.modele}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>
-                          {expenseForm.categorie === 'Salaire'
-                            ? 'Chauffeur (salaire conducteur)'
-                            : 'Chauffeur (optionnel)'}
-                        </Label>
-                        <Select
-                          value={expenseForm.chauffeurId || 'none'}
-                          onValueChange={(value) => {
-                            const id = value === 'none' ? '' : value;
-                            setExpenseForm((f) => ({
-                              ...f,
-                              chauffeurId: id,
-                              fournisseurId: id ? '' : f.fournisseurId,
-                            }));
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sélectionner" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Aucun</SelectItem>
-                            {drivers.map((d) => (
-                              <SelectItem key={d.id} value={d.id}>
-                                {d.prenom} {d.nom}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    {expenseForm.categorie === 'Salaire' ? (
-                      <div>
-                        <Label>Personnel siège (si pas chauffeur)</Label>
-                        <Select
-                          value={expenseForm.fournisseurId || 'none'}
-                          onValueChange={(value) => {
-                            const id = value === 'none' ? '' : value;
-                            setExpenseForm((f) => ({
-                              ...f,
-                              fournisseurId: id,
-                              chauffeurId: id ? '' : f.chauffeurId,
-                            }));
-                          }}
-                          disabled={Boolean(expenseForm.chauffeurId)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Employé siège" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Aucun</SelectItem>
-                            {employesSiege.map((tp) => (
-                              <SelectItem key={tp.id} value={tp.id}>
-                                {tp.nom}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : (
-                      <div>
-                        <Label>Fournisseur (optionnel)</Label>
-                        <ThirdPartyPicker
-                          className="mt-1"
-                          options={fournisseurs}
-                          value={expenseForm.fournisseurId}
-                          onValueChange={(fournisseurId) =>
-                            setExpenseForm((f) => ({ ...f, fournisseurId }))
+                        <Label htmlFor="expense-description">Description *</Label>
+                        <Input
+                          id="expense-description"
+                          value={expenseForm.description}
+                          onChange={(e) =>
+                            setExpenseForm((f) => ({ ...f, description: e.target.value }))
                           }
-                          placeholder="Choisir un fournisseur…"
-                          topChoices={[{ id: '', label: 'Aucun fournisseur' }]}
+                          required
                         />
                       </div>
-                    )}
 
-                    <PaymentModePicker
-                      id="caisse-expense-mode"
-                      label="Mode de paiement (caisse)"
-                      value={expenseForm.modePaiement}
-                      onChange={(modePaiement) =>
-                        setExpenseForm((f) => ({ ...f, modePaiement }))
-                      }
-                      entreprises={fournisseurs}
-                    />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Camion (optionnel)</Label>
+                          <Select
+                            value={expenseForm.camionId || 'none'}
+                            onValueChange={(value) => {
+                              if (value === 'none') {
+                                setExpenseForm((f) => ({ ...f, camionId: '', chauffeurId: '' }));
+                                return;
+                              }
+                              const truck = trucks.find((t) => t.id === value);
+                              setExpenseForm((f) => ({
+                                ...f,
+                                camionId: value,
+                                chauffeurId: truck?.chauffeurId || f.chauffeurId,
+                              }));
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Aucun camion" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Aucun camion</SelectItem>
+                              {trucks.map((t) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.immatriculation} - {t.modele}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>
+                            {expenseForm.categorie === 'Salaire'
+                              ? 'Chauffeur (salaire conducteur)'
+                              : 'Chauffeur (optionnel)'}
+                          </Label>
+                          <Select
+                            value={expenseForm.chauffeurId || 'none'}
+                            onValueChange={(value) => {
+                              const id = value === 'none' ? '' : value;
+                              setExpenseForm((f) => ({
+                                ...f,
+                                chauffeurId: id,
+                                fournisseurId: id ? '' : f.fournisseurId,
+                              }));
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Sélectionner" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Aucun</SelectItem>
+                              {drivers.map((d) => (
+                                <SelectItem key={d.id} value={d.id}>
+                                  {d.prenom} {d.nom}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
 
-                    <PaymentAtCreationFields
-                      variant="fournisseur"
-                      label="Règlement facture fournisseur"
-                      montant={expenseForm.montant}
-                      mode={expenseForm.paiementMode}
-                      onModeChange={(paiementMode) =>
-                        setExpenseForm((f) => ({ ...f, paiementMode }))
-                      }
-                      montantAvance={expenseForm.montantAvance}
-                      onMontantAvanceChange={(montantAvance) =>
-                        setExpenseForm((f) => ({ ...f, montantAvance }))
-                      }
-                      datePaiement={expenseForm.datePaiement}
-                      onDatePaiementChange={(datePaiement) =>
-                        setExpenseForm((f) => ({ ...f, datePaiement }))
-                      }
-                    />
+                      {expenseForm.categorie === 'Salaire' ? (
+                        <div>
+                          <Label>Personnel siège (si pas chauffeur)</Label>
+                          <Select
+                            value={expenseForm.fournisseurId || 'none'}
+                            onValueChange={(value) => {
+                              const id = value === 'none' ? '' : value;
+                              setExpenseForm((f) => ({
+                                ...f,
+                                fournisseurId: id,
+                                chauffeurId: id ? '' : f.chauffeurId,
+                              }));
+                            }}
+                            disabled={Boolean(expenseForm.chauffeurId)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Employé siège" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Aucun</SelectItem>
+                              {employesSiege.map((tp) => (
+                                <SelectItem key={tp.id} value={tp.id}>
+                                  {tp.nom}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <div>
+                          <Label>Fournisseur (optionnel)</Label>
+                          <ThirdPartyPicker
+                            className="mt-1"
+                            options={fournisseurs}
+                            value={expenseForm.fournisseurId}
+                            onValueChange={(fournisseurId) =>
+                              setExpenseForm((f) => ({ ...f, fournisseurId }))
+                            }
+                            placeholder="Choisir un fournisseur…"
+                            topChoices={[{ id: '', label: 'Aucun fournisseur' }]}
+                          />
+                        </div>
+                      )}
 
-                    <p className="text-xs text-muted-foreground">
-                      Crée une dépense, une sortie caisse liée, et une facture fournisseur
-                      (comme sur l’écran Dépenses).
-                    </p>
+                      <PaymentModePicker
+                        id="caisse-expense-mode"
+                        label="Mode de paiement (caisse)"
+                        value={expenseForm.modePaiement}
+                        onChange={(modePaiement) =>
+                          setExpenseForm((f) => ({ ...f, modePaiement }))
+                        }
+                        entreprises={fournisseurs}
+                      />
 
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setIsExpenseDialogOpen(false)}
-                        disabled={isExpenseSubmitting}
-                      >
-                        Annuler
-                      </Button>
-                      <Button type="submit" disabled={isExpenseSubmitting}>
-                        {isExpenseSubmitting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Enregistrement...
-                          </>
-                        ) : (
-                          'Enregistrer la dépense'
-                        )}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                      <PaymentAtCreationFields
+                        variant="fournisseur"
+                        label="Règlement facture fournisseur"
+                        montant={expenseForm.montant}
+                        mode={expenseForm.paiementMode}
+                        onModeChange={(paiementMode) =>
+                          setExpenseForm((f) => ({ ...f, paiementMode }))
+                        }
+                        montantAvance={expenseForm.montantAvance}
+                        onMontantAvanceChange={(montantAvance) =>
+                          setExpenseForm((f) => ({ ...f, montantAvance }))
+                        }
+                        datePaiement={expenseForm.datePaiement}
+                        onDatePaiementChange={(datePaiement) =>
+                          setExpenseForm((f) => ({ ...f, datePaiement }))
+                        }
+                      />
 
-              <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nouvelle transaction
-                  </Button>
-                </DialogTrigger>
+                      <p className="text-xs text-muted-foreground">
+                        Crée une dépense, une sortie caisse liée, et une facture fournisseur
+                        (comme sur l’écran Dépenses).
+                      </p>
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setIsExpenseDialogOpen(false)}
+                          disabled={isExpenseSubmitting}
+                        >
+                          Annuler
+                        </Button>
+                        <Button type="submit" disabled={isExpenseSubmitting}>
+                          {isExpenseSubmitting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Enregistrement...
+                            </>
+                          ) : (
+                            'Enregistrer la dépense'
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
+                  <DialogTrigger asChild>
+                    <Button className="w-full">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nouvelle transaction
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>{editingTransaction ? 'Modifier la transaction' : 'Nouvelle transaction'}</DialogTitle>
@@ -1465,16 +1449,35 @@ export default function Caisse() {
                   </form>
                 </DialogContent>
               </Dialog>
-              </>
+              </div>
             )}
-            <Button variant="outline" onClick={handleExportExcel}>
-              <FileDown className="mr-2 h-4 w-4" />
-              Excel
-            </Button>
-            <Button variant="outline" onClick={handleExportPDF}>
-              <FileText className="mr-2 h-4 w-4" />
-              PDF
-            </Button>
+
+            <div className="flex flex-wrap gap-2 w-full">
+              <Button variant="outline" size="sm" onClick={handleBackupCaisse} className="gap-2">
+                <HardDrive className="h-4 w-4" />
+                Backup
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => restoreFileRef.current?.click()} className="gap-2">
+                <Upload className="h-4 w-4" />
+                Restaurer
+              </Button>
+              <input
+                ref={restoreFileRef}
+                type="file"
+                accept=".json"
+                aria-label="Sélectionner un fichier de backup caisse JSON"
+                className="hidden"
+                onChange={handleRestoreCaisse}
+              />
+              <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
+                <FileDown className="h-4 w-4" />
+                Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPDF} className="gap-2">
+                <FileText className="h-4 w-4" />
+                PDF
+              </Button>
+            </div>
           </div>
         }
       />
