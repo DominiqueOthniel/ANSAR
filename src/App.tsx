@@ -10,7 +10,6 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Trucks from "./pages/Trucks";
 import Trips from "./pages/Trips";
-import Expenses from "./pages/Expenses";
 import Invoices from "./pages/Invoices";
 import Drivers from "./pages/Drivers";
 import ThirdParties from "./pages/ThirdParties";
@@ -55,7 +54,6 @@ const App = () => (
             <Route path="/camions" element={<ProtectedRoute><Layout><Trucks /></Layout></ProtectedRoute>} />
             <Route path="/trajets" element={<ProtectedRoute><Layout><Trips /></Layout></ProtectedRoute>} />
             <Route path="/depot-garoua-boulai" element={<ProtectedRoute><Layout><DepotGarouaBoulai /></Layout></ProtectedRoute>} />
-            <Route path="/depenses" element={<ProtectedRoute><Layout><Expenses /></Layout></ProtectedRoute>} />
             <Route path="/factures" element={<ProtectedRoute><Layout><Invoices /></Layout></ProtectedRoute>} />
               <Route path="/chauffeurs" element={<ProtectedRoute><Layout><Drivers /></Layout></ProtectedRoute>} />
               <Route path="/clients" element={<ProtectedRoute><Layout><Clients /></Layout></ProtectedRoute>} />
@@ -65,6 +63,7 @@ const App = () => (
               <Route path="/fournisseurs" element={<ProtectedRoute><Layout><Fournisseurs /></Layout></ProtectedRoute>} />
               <Route path="/envoi-colis" element={<Navigate to="/clients" replace />} />
               <Route path="/banque" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
+              <Route path="/depenses" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
               <Route path="/caisse" element={<ProtectedRoute><Layout><Caisse /></Layout></ProtectedRoute>} />
               <Route path="/credits" element={<Navigate to="/factures" replace />} />
               <Route path="/historique" element={<ProtectedRoute><Layout><AuditLogs /></Layout></ProtectedRoute>} />

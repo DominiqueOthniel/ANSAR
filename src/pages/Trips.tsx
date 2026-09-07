@@ -845,8 +845,9 @@ export default function Trips() {
     navigate(`/factures?create=1&trajetId=${encodeURIComponent(tripId)}`);
   };
 
-  const openTripExpense = (tripId: string) => {
-    navigate(`/depenses?tripId=${encodeURIComponent(tripId)}`);
+  const openTripExpense = (_tripId: string) => {
+    toast.info('Enregistre la sortie depuis Caisse (type Sortie).');
+    navigate('/caisse');
   };
 
   const openStopsDialog = (trip: Trip) => {
@@ -2574,7 +2575,7 @@ export default function Trips() {
                             variant="outline"
                             onClick={() => openTripExpense(trip.id)}
                             className="h-8 w-8 p-0"
-                            title={`Créer une dépense pour ${formatTripCode(trip)}`}
+                            title="Enregistrer une sortie depuis Caisse"
                           >
                             <Receipt className="h-4 w-4" />
                           </Button>

@@ -157,7 +157,7 @@ export function buildSupplierSummaries(params: {
         label: e.description || e.categorie,
         detail: e.categorie,
         amount: e.montant,
-        linkTo: '/depenses',
+        linkTo: '/caisse',
       });
     }
     for (const d of transportsDirect) {
