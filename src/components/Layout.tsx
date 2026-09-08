@@ -48,6 +48,7 @@ const navigation = [
   { name: 'Mouvements', href: '/historique', icon: History,         color: 'from-slate-500 to-zinc-500', adminOnly: true },
   { name: 'Camions',    href: '/camions',    icon: Truck,           color: 'from-purple-500 to-pink-500' },
   { name: 'TJK',        href: '/tjk',        icon: Truck,           color: 'from-rose-500 to-orange-500' },
+  { name: 'Camrail',    href: '/camrail',    icon: Container,       color: 'from-sky-500 to-blue-600' },
   { name: 'Trajets',    href: '/trajets',    icon: Route,           color: 'from-teal-500 to-cyan-500' },
   { name: 'Dépôt Garoua-Boulai', href: '/depot-garoua-boulai', icon: Warehouse, color: 'from-amber-500 to-orange-500' },
   { name: 'Factures',   href: '/factures',   icon: FileText,        color: 'from-blue-500 to-cyan-500' },

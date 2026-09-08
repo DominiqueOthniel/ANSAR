@@ -14,6 +14,7 @@ const clientOps = require('./routes/client-ops.cjs');
 const loadings = require('./routes/loadings.cjs');
 const depotGaroua = require('./routes/depot-garoua-boulai.cjs');
 const tjkOperations = require('./routes/tjk-operations.cjs');
+const camrailOperations = require('./routes/camrail-operations.cjs');
 const admin = require('./routes/admin.cjs');
 const users = require('./routes/users.cjs');
 const R = require('./routes/resources.cjs');
@@ -55,6 +56,7 @@ async function handleLocal(method, path, event, origin) {
           'supplier-loadings',
           'depot-garoua-boulai',
           'tjk-operations',
+          'camrail-operations',
           'audit-logs',
           'admin',
           'users',
@@ -330,6 +332,26 @@ async function handleLocal(method, path, event, origin) {
     if (method === 'PATCH') return json(200, await tjkOperations.updateOperation(id, body(), actor), origin);
     if (method === 'DELETE') {
       await tjkOperations.deleteOperation(id, actor);
+      return noContent(origin);
+    }
+  }
+
+  // --- opérations Camrail (wagons) ---
+  if (path === '/api/camrail-operations') {
+    if (method === 'GET') return json(200, await camrailOperations.listOperations(), origin);
+    if (method === 'POST') return json(201, await camrailOperations.createOperation(body(), actor), origin);
+  }
+  m = path.match(/^\/api\/camrail-operations\/([^/]+)$/);
+  if (m && UUID.test(m[1])) {
+    const id = m[1];
+    if (method === 'GET') {
+      const row = await camrailOperations.getOperation(id);
+      if (!row) return json(404, { message: 'Opération introuvable' }, origin);
+      return json(200, row, origin);
+    }
+    if (method === 'PATCH') return json(200, await camrailOperations.updateOperation(id, body(), actor), origin);
+    if (method === 'DELETE') {
+      await camrailOperations.deleteOperation(id, actor);
       return noContent(origin);
     }
   }
