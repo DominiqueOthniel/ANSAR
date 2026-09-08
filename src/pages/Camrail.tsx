@@ -1,10 +1,11 @@
 /** Registre opérations Camrail : wagons, chargement, livraison, transporteur. */
 import { useEffect, useMemo, useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, type Truck } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import PageHeader from '@/components/PageHeader';
 import { ExportButtons } from '@/components/ExportButtons';
+import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -53,6 +54,9 @@ const SORT_OPTIONS = [
   { value: 'quantite_desc', label: 'Quantité (plus haute → plus basse)' },
 ] as const;
 
+/** Valeur Select pour basculer en saisie libre. */
+const AUTRE = '__autre__';
+
 function todayIso(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -60,6 +64,99 @@ function todayIso(): string {
 function formatOptionalDate(value?: string): string {
   if (!value) return '—';
   return new Date(value).toLocaleDateString('fr-FR');
+}
+
+function truckOptionLabel(t: Truck) {
+  const nom = t.nom?.trim();
+  if (nom) return nom;
+  return t.immatriculation;
+}
+
+function uniqueSortedStrings(values: Array<string | undefined | null>): string[] {
+  const set = new Set<string>();
+  for (const raw of values) {
+    const v = raw?.trim();
+    if (v) set.add(v);
+  }
+  return stableSort([...set], (a, b) => frCollator.compare(a, b));
+}
+
+/** Select catalogue + option Autre ; Input libre si Autre ou valeur hors liste. */
+function CatalogOrAutreField({
+  id,
+  label,
+  helper,
+  options,
+  value,
+  onChange,
+  placeholder,
+  inputClassName,
+  /** Remonte l’état « Autre » à chaque ouverture / reset du formulaire. */
+  resetKey,
+}: {
+  id: string;
+  label: string;
+  helper?: string;
+  options: string[];
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  inputClassName?: string;
+  resetKey: string | number;
+}) {
+  const inList = Boolean(value) && options.includes(value);
+  const [autreMode, setAutreMode] = useState(() => Boolean(value.trim()) && !inList);
+
+  useEffect(() => {
+    setAutreMode(Boolean(value.trim()) && !options.includes(value));
+  }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (inList) setAutreMode(false);
+    else if (value.trim()) setAutreMode(true);
+  }, [value, inList]);
+
+  const selectValue = inList ? value : autreMode ? AUTRE : undefined;
+  const showInput = autreMode;
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Select
+        value={selectValue}
+        onValueChange={(v) => {
+          if (v === AUTRE) {
+            setAutreMode(true);
+            if (inList) onChange('');
+          } else {
+            setAutreMode(false);
+            onChange(v);
+          }
+        }}
+      >
+        <SelectTrigger id={id}>
+          <SelectValue placeholder="Choisir…" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt} value={opt}>
+              {opt}
+            </SelectItem>
+          ))}
+          <SelectItem value={AUTRE}>Autre (saisie)</SelectItem>
+        </SelectContent>
+      </Select>
+      {showInput ? (
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder ?? 'Saisie libre'}
+          className={inputClassName}
+        />
+      ) : null}
+      {helper ? <p className="text-xs text-muted-foreground">{helper}</p> : null}
+    </div>
+  );
 }
 
 type FormState = {
@@ -95,7 +192,13 @@ const emptyForm = (): FormState => ({
 });
 
 export default function Camrail() {
-  const { merchandiseQualities } = useApp();
+  const {
+    trucks,
+    thirdParties,
+    merchandiseQualities,
+    trips,
+    supplierLoadings,
+  } = useApp();
   const { user, canManageFleet } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -108,14 +211,99 @@ export default function Camrail() {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [listSort, setListSort] = useState<string>('date_desc');
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [formKey, setFormKey] = useState(0);
+  const [camionAutreMode, setCamionAutreMode] = useState(false);
+  const [typeAutreMode, setTypeAutreMode] = useState(false);
+  const [destinataireLibre, setDestinataireLibre] = useState(false);
 
-  const sortedQualities = useMemo(
-    () =>
-      stableSort([...merchandiseQualities], (a, b) =>
-        frCollator.compare(a.libelle, b.libelle),
-      ),
+  const qualityLabels = useMemo(
+    () => uniqueSortedStrings(merchandiseQualities.map((q) => q.libelle)),
     [merchandiseQualities],
   );
+
+  const sortedTrucks = useMemo(
+    () =>
+      stableSort([...trucks], (a, b) =>
+        frCollator.compare(truckOptionLabel(a), truckOptionLabel(b)),
+      ),
+    [trucks],
+  );
+
+  const clients = useMemo(
+    () =>
+      stableSort(
+        thirdParties.filter((tp) => tp.type === 'client' && tp.nom.trim()),
+        (a, b) => frCollator.compare(a.nom, b.nom),
+      ),
+    [thirdParties],
+  );
+
+  const transporteurOptions = useMemo(() => {
+    const fromFournisseurs = thirdParties
+      .filter((tp) => tp.type === 'fournisseur')
+      .map((tp) => tp.nom);
+    const fromOps = operations.map((op) => op.transporteur);
+    return uniqueSortedStrings([...fromFournisseurs, ...fromOps]);
+  }, [thirdParties, operations]);
+
+  const atcOptions = useMemo(() => {
+    const fromTrips = trips.map((t) => t.referenceAtc);
+    const fromBons = supplierLoadings.map((s) => s.numeroBon);
+    const fromOps = operations.map((op) => op.referenceAtc);
+    return uniqueSortedStrings([...fromTrips, ...fromBons, ...fromOps]);
+  }, [trips, supplierLoadings, operations]);
+
+  const wagonOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => op.numeroWagon)),
+    [operations],
+  );
+
+  const matchedTruck = useMemo(() => {
+    const immat = form.camionImmatriculation.trim();
+    const nom = form.camionNom.trim();
+    if (immat) {
+      const byImmat = sortedTrucks.find((t) => t.immatriculation === immat);
+      if (byImmat) return byImmat;
+    }
+    if (nom) {
+      return (
+        sortedTrucks.find((t) => t.nom?.trim() === nom) ||
+        sortedTrucks.find((t) => truckOptionLabel(t) === nom) ||
+        null
+      );
+    }
+    return null;
+  }, [sortedTrucks, form.camionImmatriculation, form.camionNom]);
+
+  const destinataireClient = useMemo(
+    () => clients.find((c) => c.nom === form.destinataire) ?? null,
+    [clients, form.destinataire],
+  );
+
+  const typeInCatalog = Boolean(form.typeProduit) && qualityLabels.includes(form.typeProduit);
+
+  useEffect(() => {
+    setTypeAutreMode(Boolean(form.typeProduit.trim()) && !qualityLabels.includes(form.typeProduit));
+    setCamionAutreMode(
+      Boolean(form.camionNom.trim() || form.camionImmatriculation.trim()) && !matchedTruck,
+    );
+    setDestinataireLibre(Boolean(form.destinataire.trim()) && !destinataireClient);
+  }, [formKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (typeInCatalog) setTypeAutreMode(false);
+    else if (form.typeProduit.trim()) setTypeAutreMode(true);
+  }, [form.typeProduit, typeInCatalog]);
+
+  useEffect(() => {
+    if (matchedTruck) setCamionAutreMode(false);
+    else if (form.camionNom.trim() || form.camionImmatriculation.trim()) setCamionAutreMode(true);
+  }, [matchedTruck, form.camionNom, form.camionImmatriculation]);
+
+  useEffect(() => {
+    if (destinataireClient) setDestinataireLibre(false);
+    else if (form.destinataire.trim()) setDestinataireLibre(true);
+  }, [destinataireClient, form.destinataire]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -175,10 +363,19 @@ export default function Camrail() {
   const resetForm = () => {
     setForm(emptyForm());
     setEditing(null);
+    setCamionAutreMode(false);
+    setTypeAutreMode(false);
+    setDestinataireLibre(false);
+    setFormKey((k) => k + 1);
   };
 
   const openCreate = () => {
-    resetForm();
+    setForm(emptyForm());
+    setEditing(null);
+    setCamionAutreMode(false);
+    setTypeAutreMode(false);
+    setDestinataireLibre(false);
+    setFormKey((k) => k + 1);
     setDialogOpen(true);
   };
 
@@ -199,6 +396,7 @@ export default function Camrail() {
       commentaires: op.commentaires || '',
       transporteur: op.transporteur || '',
     });
+    setFormKey((k) => k + 1);
     setDialogOpen(true);
   };
 
@@ -406,34 +604,87 @@ export default function Camrail() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="camrail-camion-nom">Camion</Label>
-                        <Input
-                          id="camrail-camion-nom"
-                          value={form.camionNom}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, camionNom: e.target.value }))
+                    <div className="space-y-2">
+                      <Label htmlFor="camrail-camion">Camion</Label>
+                      <Select
+                        value={
+                          matchedTruck
+                            ? matchedTruck.id
+                            : camionAutreMode
+                              ? AUTRE
+                              : undefined
+                        }
+                        onValueChange={(v) => {
+                          if (v === AUTRE) {
+                            setCamionAutreMode(true);
+                            if (matchedTruck) {
+                              setForm((f) => ({
+                                ...f,
+                                camionNom: '',
+                                camionImmatriculation: '',
+                              }));
+                            }
+                            return;
                           }
-                          placeholder="Ex. M5, TF1"
-                          className="uppercase"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="camrail-immat">Immatriculation</Label>
-                        <Input
-                          id="camrail-immat"
-                          value={form.camionImmatriculation}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              camionImmatriculation: e.target.value,
-                            }))
-                          }
-                          placeholder="Optionnel"
-                          className="uppercase"
-                        />
-                      </div>
+                          const t = sortedTrucks.find((x) => x.id === v);
+                          if (!t) return;
+                          setCamionAutreMode(false);
+                          setForm((f) => ({
+                            ...f,
+                            camionNom: t.nom?.trim() || truckOptionLabel(t),
+                            camionImmatriculation: t.immatriculation,
+                          }));
+                        }}
+                      >
+                        <SelectTrigger id="camrail-camion">
+                          <SelectValue placeholder="Choisir un camion…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sortedTrucks.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {truckOptionLabel(t)}
+                              {t.nom?.trim() && t.immatriculation
+                                ? ` (${t.immatriculation})`
+                                : ''}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={AUTRE}>Autre (saisie)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {camionAutreMode ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="camrail-camion-nom">Nom</Label>
+                            <Input
+                              id="camrail-camion-nom"
+                              value={form.camionNom}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, camionNom: e.target.value }))
+                              }
+                              placeholder="Ex. M5, TF1"
+                              className="uppercase"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="camrail-immat">Immatriculation</Label>
+                            <Input
+                              id="camrail-immat"
+                              value={form.camionImmatriculation}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  camionImmatriculation: e.target.value,
+                                }))
+                              }
+                              placeholder="Optionnel"
+                              className="uppercase"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Liste des camions (écrans Camions / TJK).
+                      </p>
                     </div>
 
                     <div>
@@ -450,45 +701,64 @@ export default function Camrail() {
 
                     <div className="space-y-2">
                       <Label htmlFor="camrail-type">Type</Label>
-                      <Input
-                        id="camrail-type"
-                        value={form.typeProduit}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, typeProduit: e.target.value }))
+                      <Select
+                        value={
+                          typeInCatalog
+                            ? form.typeProduit
+                            : typeAutreMode
+                              ? AUTRE
+                              : undefined
                         }
-                        placeholder="Ex. Cimaf 32.5R, Miraco…"
-                      />
-                      {sortedQualities.length > 0 && (
-                        <Select
-                          onValueChange={(v) =>
-                            setForm((f) => ({ ...f, typeProduit: v }))
+                        onValueChange={(v) => {
+                          if (v === AUTRE) {
+                            setTypeAutreMode(true);
+                            if (typeInCatalog) {
+                              setForm((f) => ({ ...f, typeProduit: '' }));
+                            }
+                            return;
                           }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Choisir dans le catalogue…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {sortedQualities.map((q) => (
-                              <SelectItem key={q.id} value={q.libelle}>
-                                {q.libelle}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                          setTypeAutreMode(false);
+                          setForm((f) => ({ ...f, typeProduit: v }));
+                        }}
+                      >
+                        <SelectTrigger id="camrail-type">
+                          <SelectValue placeholder="Choisir dans le catalogue…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {qualityLabels.map((libelle) => (
+                            <SelectItem key={libelle} value={libelle}>
+                              {libelle}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={AUTRE}>Autre (saisie)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {typeAutreMode ? (
+                        <Input
+                          value={form.typeProduit}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, typeProduit: e.target.value }))
+                          }
+                          placeholder="Ex. Cimaf 32.5R, Miraco…"
+                        />
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Catalogue qualités / marchandises.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="camrail-atc">ATC</Label>
-                        <Input
-                          id="camrail-atc"
-                          value={form.referenceAtc}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, referenceAtc: e.target.value }))
-                          }
-                        />
-                      </div>
+                      <CatalogOrAutreField
+                        id="camrail-atc"
+                        label="ATC"
+                        helper="Références ATC / bons (Trajets, Chargements)."
+                        options={atcOptions}
+                        value={form.referenceAtc}
+                        onChange={(referenceAtc) =>
+                          setForm((f) => ({ ...f, referenceAtc }))
+                        }
+                        resetKey={formKey}
+                      />
                       <div>
                         <Label htmlFor="camrail-at-comp">Complément AT</Label>
                         <NumberInput
@@ -504,16 +774,46 @@ export default function Camrail() {
                       </div>
                     </div>
 
-                    <div>
-                      <Label htmlFor="camrail-dest">Destinataire</Label>
-                      <Input
-                        id="camrail-dest"
-                        value={form.destinataire}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, destinataire: e.target.value }))
+                    <div className="space-y-2">
+                      <Label>Destinataire</Label>
+                      <ThirdPartyPicker
+                        options={clients}
+                        value={
+                          destinataireClient?.id ?? (destinataireLibre ? AUTRE : '')
                         }
-                        placeholder="Nom du destinataire"
+                        onValueChange={(id) => {
+                          if (!id || id === AUTRE) {
+                            setDestinataireLibre(true);
+                            setForm((f) => ({
+                              ...f,
+                              destinataire: destinataireClient ? '' : f.destinataire,
+                            }));
+                            return;
+                          }
+                          const tp = clients.find((c) => c.id === id);
+                          setDestinataireLibre(false);
+                          setForm((f) => ({ ...f, destinataire: tp?.nom ?? '' }));
+                        }}
+                        placeholder="Choisir un client…"
+                        searchPlaceholder="Nom, téléphone…"
+                        topChoices={[{ id: AUTRE, label: 'Autre (saisie libre)' }]}
+                        orphanLabel={
+                          form.destinataire.trim() && !destinataireClient
+                            ? form.destinataire.trim()
+                            : undefined
+                        }
                       />
+                      {destinataireLibre ? (
+                        <Input
+                          id="camrail-dest"
+                          value={form.destinataire}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, destinataire: e.target.value }))
+                          }
+                          placeholder="Nom du destinataire"
+                        />
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">Fiches Clients.</p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -548,26 +848,26 @@ export default function Camrail() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="camrail-wagon">Numéro wagon</Label>
-                        <Input
-                          id="camrail-wagon"
-                          value={form.numeroWagon}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, numeroWagon: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="camrail-transporteur">Transporteur</Label>
-                        <Input
-                          id="camrail-transporteur"
-                          value={form.transporteur}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, transporteur: e.target.value }))
-                          }
-                        />
-                      </div>
+                      <CatalogOrAutreField
+                        id="camrail-wagon"
+                        label="Numéro wagon"
+                        options={wagonOptions}
+                        value={form.numeroWagon}
+                        onChange={(numeroWagon) =>
+                          setForm((f) => ({ ...f, numeroWagon }))
+                        }
+                        resetKey={formKey}
+                      />
+                      <CatalogOrAutreField
+                        id="camrail-transporteur"
+                        label="Transporteur"
+                        options={transporteurOptions}
+                        value={form.transporteur}
+                        onChange={(transporteur) =>
+                          setForm((f) => ({ ...f, transporteur }))
+                        }
+                        resetKey={formKey}
+                      />
                     </div>
 
                     <div>
