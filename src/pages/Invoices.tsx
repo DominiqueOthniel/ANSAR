@@ -50,6 +50,7 @@ import {
 import { buildSingleInvoicePdfInnerHtml } from '@/lib/invoice-single-pdf-html';
 import { openPdfPrintWindow } from '@/lib/pdf-print';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getInvoiceClientDefaultsFromTrip } from '@/lib/trip-client-participants';
@@ -537,7 +538,7 @@ export default function Invoices() {
 
   const getTruckLabel = (truckId: string) => {
     const truck = trucks.find(t => t.id === truckId);
-    return truck ? truck.immatriculation : 'N/A';
+    return truck ? truckMissionLabel(truck) : 'N/A';
   };
 
   // Fonction pour obtenir une dépense
@@ -1489,7 +1490,7 @@ export default function Invoices() {
                           <div className="space-y-2">
                             <div>
                               <span className="text-xs font-semibold text-muted-foreground">{EMOJI.camion} Tracteur</span>
-                              <p className="text-sm font-medium mt-1">{tracteur.immatriculation}</p>
+                              <p className="text-sm font-medium mt-1">{truckMissionLabel(tracteur)}</p>
                               <p className="text-xs text-muted-foreground mt-1">Modèle: {tracteur.modele}</p>
                             </div>
                           </div>
@@ -1500,7 +1501,7 @@ export default function Invoices() {
                           <div className="space-y-2">
                             <div>
                               <span className="text-xs font-semibold text-muted-foreground">🚚 Remorqueuse</span>
-                              <p className="text-sm font-medium mt-1">{remorqueuse.immatriculation}</p>
+                              <p className="text-sm font-medium mt-1">{truckMissionLabel(remorqueuse)}</p>
                               <p className="text-xs text-muted-foreground mt-1">Modèle: {remorqueuse.modele}</p>
                             </div>
                           </div>
@@ -2598,7 +2599,7 @@ export default function Invoices() {
                               <>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Camion:</span>
-                                  <span className="font-medium">{expenseTruck.immatriculation}</span>
+                                  <span className="font-medium">{truckMissionLabel(expenseTruck)}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Modèle:</span>

@@ -643,9 +643,6 @@ export default function Camrail() {
                           {sortedTrucks.map((t) => (
                             <SelectItem key={t.id} value={t.id}>
                               {truckOptionLabel(t)}
-                              {t.nom?.trim() && t.immatriculation
-                                ? ` (${t.immatriculation})`
-                                : ''}
                             </SelectItem>
                           ))}
                           <SelectItem value={AUTRE}>Autre (saisie)</SelectItem>

@@ -70,6 +70,7 @@ import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 import type { SupplierLoadingAssignmentPayload } from '@/lib/api';
 import {
   computeLineAmount,
@@ -228,14 +229,14 @@ export default function Chargements() {
     () =>
       stableSort(
         trucks.filter((t) => t.statut === 'actif' && (t.flotte || 'ansar') === 'ansar'),
-        (a, b) => frCollator.compare(a.immatriculation, b.immatriculation),
+        (a, b) => frCollator.compare(truckMissionLabel(a), truckMissionLabel(b)),
       ),
     [trucks],
   );
 
   const truckLabelById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const t of trucks) m.set(t.id, `${t.immatriculation} · ${t.modele}`);
+    for (const t of trucks) m.set(t.id, truckMissionLabel(t));
     return m;
   }, [trucks]);
 
@@ -1198,7 +1199,7 @@ export default function Chargements() {
                         ) : (
                           activeTrucks.map((truck) => (
                             <SelectItem key={truck.id} value={truck.id}>
-                              {truck.immatriculation} · {truck.modele}
+                              {truckMissionLabel(truck)}
                             </SelectItem>
                           ))
                         )}

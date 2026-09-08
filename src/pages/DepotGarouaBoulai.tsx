@@ -484,7 +484,7 @@ export default function DepotGarouaBoulai() {
                   </div>
 
                   <div>
-                    <Label>Camion (immatriculation) *</Label>
+                    <Label>Camion *</Label>
                     <Select
                       value={form.truckId}
                       onValueChange={(truckId) => setForm((f) => ({ ...f, truckId }))}
@@ -500,7 +500,7 @@ export default function DepotGarouaBoulai() {
                         ) : (
                           activeTrucks.map((t) => (
                             <SelectItem key={t.id} value={t.id}>
-                              {truckMissionLabel(t)} · {t.modele}
+                              {truckMissionLabel(t)}
                             </SelectItem>
                           ))
                         )}
