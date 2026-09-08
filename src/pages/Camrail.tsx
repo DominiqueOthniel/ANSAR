@@ -34,7 +34,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ListSortSelect } from '@/components/ListSortSelect';
-import { ClipboardList, Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ClipboardList, Plus, Edit, Trash2, Search, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
@@ -209,6 +210,12 @@ export default function Camrail() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterCamion, setFilterCamion] = useState('all');
+  const [filterType, setFilterType] = useState('all');
+  const [filterDestinataire, setFilterDestinataire] = useState('all');
+  const [filterTransporteur, setFilterTransporteur] = useState('all');
+  const [filterAtc, setFilterAtc] = useState('all');
+  const [filterWagon, setFilterWagon] = useState('all');
   const [listSort, setListSort] = useState<string>('date_desc');
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formKey, setFormKey] = useState(0);
@@ -257,6 +264,33 @@ export default function Camrail() {
     () => uniqueSortedStrings(operations.map((op) => op.numeroWagon)),
     [operations],
   );
+
+  const filterCamionOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => formatCamrailCamionLabel(op))),
+    [operations],
+  );
+
+  const filterTypeOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => op.typeProduit)),
+    [operations],
+  );
+
+  const filterDestinataireOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => op.destinataire)),
+    [operations],
+  );
+
+  const filterTransporteurOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => op.transporteur)),
+    [operations],
+  );
+
+  const filterAtcOptions = useMemo(
+    () => uniqueSortedStrings(operations.map((op) => op.referenceAtc)),
+    [operations],
+  );
+
+  const filterWagonOptions = wagonOptions;
 
   const matchedTruck = useMemo(() => {
     const immat = form.camionImmatriculation.trim();
@@ -328,6 +362,18 @@ export default function Camrail() {
       const d = op.date.split('T')[0];
       if (filterDateFrom && (!d || d < filterDateFrom)) return false;
       if (filterDateTo && (!d || d > filterDateTo)) return false;
+      if (filterCamion !== 'all' && formatCamrailCamionLabel(op) !== filterCamion) {
+        return false;
+      }
+      if (filterType !== 'all' && (op.typeProduit || '') !== filterType) return false;
+      if (filterDestinataire !== 'all' && (op.destinataire || '') !== filterDestinataire) {
+        return false;
+      }
+      if (filterTransporteur !== 'all' && (op.transporteur || '') !== filterTransporteur) {
+        return false;
+      }
+      if (filterAtc !== 'all' && (op.referenceAtc || '') !== filterAtc) return false;
+      if (filterWagon !== 'all' && (op.numeroWagon || '') !== filterWagon) return false;
       if (!q) return true;
       return (
         formatCamrailCamionLabel(op).toLowerCase().includes(q) ||
@@ -341,7 +387,41 @@ export default function Camrail() {
         (op.atComplement != null ? String(op.atComplement) : '').includes(q)
       );
     });
-  }, [operations, searchTerm, filterDateFrom, filterDateTo]);
+  }, [
+    operations,
+    searchTerm,
+    filterDateFrom,
+    filterDateTo,
+    filterCamion,
+    filterType,
+    filterDestinataire,
+    filterTransporteur,
+    filterAtc,
+    filterWagon,
+  ]);
+
+  const hasActiveFilters =
+    Boolean(searchTerm.trim()) ||
+    Boolean(filterDateFrom) ||
+    Boolean(filterDateTo) ||
+    filterCamion !== 'all' ||
+    filterType !== 'all' ||
+    filterDestinataire !== 'all' ||
+    filterTransporteur !== 'all' ||
+    filterAtc !== 'all' ||
+    filterWagon !== 'all';
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterCamion('all');
+    setFilterType('all');
+    setFilterDestinataire('all');
+    setFilterTransporteur('all');
+    setFilterAtc('all');
+    setFilterWagon('all');
+  };
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -525,6 +605,16 @@ export default function Camrail() {
   if (searchTerm.trim()) exportFiltersParts.push(`Recherche: "${searchTerm.trim()}"`);
   if (filterDateFrom) exportFiltersParts.push(`Du ${filterDateFrom}`);
   if (filterDateTo) exportFiltersParts.push(`Au ${filterDateTo}`);
+  if (filterCamion !== 'all') exportFiltersParts.push(`Camion: ${filterCamion}`);
+  if (filterType !== 'all') exportFiltersParts.push(`Type: ${filterType}`);
+  if (filterDestinataire !== 'all') {
+    exportFiltersParts.push(`Destinataire: ${filterDestinataire}`);
+  }
+  if (filterTransporteur !== 'all') {
+    exportFiltersParts.push(`Transporteur: ${filterTransporteur}`);
+  }
+  if (filterAtc !== 'all') exportFiltersParts.push(`ATC: ${filterAtc}`);
+  if (filterWagon !== 'all') exportFiltersParts.push(`Wagon: ${filterWagon}`);
   const exportFilters =
     exportFiltersParts.length > 0 ? exportFiltersParts.join(' · ') : undefined;
 
@@ -914,6 +1004,102 @@ export default function Camrail() {
               />
             </div>
             <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Camion</Label>
+              <Select value={filterCamion} onValueChange={setFilterCamion}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterCamionOptions.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Type</Label>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterTypeOptions.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[180px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Destinataire</Label>
+              <Select value={filterDestinataire} onValueChange={setFilterDestinataire}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterDestinataireOptions.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[180px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Transporteur</Label>
+              <Select value={filterTransporteur} onValueChange={setFilterTransporteur}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterTransporteurOptions.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">ATC</Label>
+              <Select value={filterAtc} onValueChange={setFilterAtc}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterAtcOptions.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Wagon</Label>
+              <Select value={filterWagon} onValueChange={setFilterWagon}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous</SelectItem>
+                  {filterWagonOptions.map((w) => (
+                    <SelectItem key={w} value={w}>
+                      {w}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[160px] space-y-1">
               <Label className="text-xs text-muted-foreground">Du</Label>
               <Input
                 type="date"
@@ -938,6 +1124,167 @@ export default function Camrail() {
               className="w-[220px]"
             />
           </div>
+
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2">
+              {searchTerm.trim() && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Recherche: {searchTerm.trim()}
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer la recherche"
+                    title="Retirer la recherche"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterCamion !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Camion: {filterCamion}
+                  <button
+                    type="button"
+                    onClick={() => setFilterCamion('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre camion"
+                    title="Retirer le filtre camion"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterType !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Type: {filterType}
+                  <button
+                    type="button"
+                    onClick={() => setFilterType('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre type"
+                    title="Retirer le filtre type"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterDestinataire !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Destinataire: {filterDestinataire}
+                  <button
+                    type="button"
+                    onClick={() => setFilterDestinataire('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre destinataire"
+                    title="Retirer le filtre destinataire"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterTransporteur !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Transporteur: {filterTransporteur}
+                  <button
+                    type="button"
+                    onClick={() => setFilterTransporteur('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre transporteur"
+                    title="Retirer le filtre transporteur"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterAtc !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  ATC: {filterAtc}
+                  <button
+                    type="button"
+                    onClick={() => setFilterAtc('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre ATC"
+                    title="Retirer le filtre ATC"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterWagon !== 'all' && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Wagon: {filterWagon}
+                  <button
+                    type="button"
+                    onClick={() => setFilterWagon('all')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer le filtre wagon"
+                    title="Retirer le filtre wagon"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterDateFrom && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Du: {filterDateFrom}
+                  <button
+                    type="button"
+                    onClick={() => setFilterDateFrom('')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer la date de début"
+                    title="Retirer la date de début"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterDateTo && (
+                <Badge
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 px-3 py-1.5"
+                >
+                  Au: {filterDateTo}
+                  <button
+                    type="button"
+                    onClick={() => setFilterDateTo('')}
+                    className="ml-2 hover:bg-primary/20 rounded-full p-0.5"
+                    aria-label="Retirer la date de fin"
+                    title="Retirer la date de fin"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+                Réinitialiser les filtres
+              </Button>
+            </div>
+          )}
 
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[1100px]">
