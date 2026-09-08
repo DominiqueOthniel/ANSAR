@@ -411,6 +411,30 @@ export const depotGarouaBoulaiApi = {
   delete: (id: string) => request<void>(`/depot-garoua-boulai/${id}`, { method: 'DELETE' }),
 };
 
+export interface TjkOperationPayload {
+  date: string;
+  clientId?: string | null;
+  clientNom?: string;
+  quantite: number;
+  unite?: string;
+  qualite?: string;
+  destination?: string;
+  camionNom?: string;
+  camionImmatriculation?: string;
+  referenceAtc?: string;
+  notes?: string;
+  utilisateur?: string;
+}
+
+export const tjkOperationsApi = {
+  getAll: () => request<any[]>('/tjk-operations'),
+  create: (data: TjkOperationPayload) =>
+    request<any>('/tjk-operations', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<TjkOperationPayload>) =>
+    request<any>(`/tjk-operations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/tjk-operations/${id}`, { method: 'DELETE' }),
+};
+
 // --- Expenses ---
 export const expensesApi = {
   getAll: () => request<any[]>('/expenses'),

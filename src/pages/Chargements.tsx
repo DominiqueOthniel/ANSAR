@@ -170,6 +170,8 @@ export default function Chargements() {
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [auHubOnly, setAuHubOnly] = useState(false);
   const [filterClientKind, setFilterClientKind] = useState<'all' | ClientAccountKind>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierLoading | null>(null);
@@ -264,6 +266,18 @@ export default function Chargements() {
         (l.assignments ?? []).some((a) => getClientAccountKind(a) === filterClientKind),
       );
     }
+    if (filterDateFrom) {
+      list = list.filter((l) => {
+        const d = (l.dateChargement || '').split('T')[0];
+        return d && d >= filterDateFrom;
+      });
+    }
+    if (filterDateTo) {
+      list = list.filter((l) => {
+        const d = (l.dateChargement || '').split('T')[0];
+        return d && d <= filterDateTo;
+      });
+    }
     if (q) {
       list = list.filter((l) => {
         const inMain =
@@ -281,7 +295,17 @@ export default function Chargements() {
       });
     }
     return list;
-  }, [supplierLoadings, search, filterFournisseur, filterStatut, unassignedOnly, auHubOnly, filterClientKind]);
+  }, [
+    supplierLoadings,
+    search,
+    filterFournisseur,
+    filterStatut,
+    unassignedOnly,
+    auHubOnly,
+    filterClientKind,
+    filterDateFrom,
+    filterDateTo,
+  ]);
 
   const loadingKpis = useMemo(() => {
     const actifs = supplierLoadings.filter((l) => l.statut !== 'annule');
@@ -812,6 +836,9 @@ export default function Chargements() {
     if (filterStatut !== 'all') parts.push(`Statut: ${formatSupplierLoadingStatusFr(filterStatut as SupplierLoadingStatus)}`);
     if (filterClientKind !== 'all') parts.push(formatClientAccountKindFr(filterClientKind));
     if (unassignedOnly) parts.push('Non affectés uniquement');
+    if (auHubOnly) parts.push('Au hub / CAMRAIL');
+    if (filterDateFrom) parts.push(`Du ${filterDateFrom}`);
+    if (filterDateTo) parts.push(`Au ${filterDateTo}`);
     return parts.length > 0 ? parts.join(' · ') : undefined;
   };
 
@@ -1399,6 +1426,22 @@ export default function Chargements() {
                   <SelectItem value="walk_in">Clients comptoir</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Du</Label>
+              <Input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">Au</Label>
+              <Input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+              />
             </div>
             <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
               <Checkbox
