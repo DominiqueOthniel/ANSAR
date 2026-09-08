@@ -258,7 +258,7 @@ export default function Dashboard() {
     const revenue = revenueTrips + revenueExpeditions;
     const tripsCount = truckTrips.length + truckExpeditions.length;
     return { 
-      name: truck.immatriculation, 
+      name: truck.nom?.trim() || truck.immatriculation, 
       revenue,
       tripsCount,
       model: truck.modele 

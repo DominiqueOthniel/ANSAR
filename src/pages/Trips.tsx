@@ -1627,7 +1627,7 @@ export default function Trips() {
                           const chauffeurAttitre = t.chauffeurId ? drivers.find(d => d.id === t.chauffeurId) : null;
                           return (
                             <SelectItem key={t.id} value={t.id}>
-                              {truckMissionLabel(t)} · {t.modele}
+                              {truckMissionLabel(t)}
                               {chauffeurAttitre && (
                                 <span className="ml-2 text-xs text-muted-foreground">
                                   ({EMOJI.personne} {chauffeurAttitre.prenom} {chauffeurAttitre.nom})
@@ -1682,7 +1682,7 @@ export default function Trips() {
                         </div>
                       ) : (
                         remorqueuses.map(t => (
-                          <SelectItem key={t.id} value={t.id}>{truckMissionLabel(t)} · {t.modele}</SelectItem>
+                          <SelectItem key={t.id} value={t.id}>{truckMissionLabel(t)}</SelectItem>
                         ))
                       )}
                     </SelectContent>

@@ -13,6 +13,7 @@ import {
   formatClientSexeFr,
   getClientAgeYears,
 } from '@/lib/client-profile';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 import {
   exportBlocksToExcel,
   exportToPrintablePDFWithDetails,
@@ -128,7 +129,10 @@ function getOrderCamionLabel(
 ): string {
   const labels = deliveries
     .filter((d) => d.clientOrderId === order.id && d.tracteurId)
-    .map((d) => trucks.find((t) => t.id === d.tracteurId)?.immatriculation)
+    .map((d) => {
+      const truck = trucks.find((t) => t.id === d.tracteurId);
+      return truck ? truckMissionLabel(truck) : undefined;
+    })
     .filter((x): x is string => !!x);
   return [...new Set(labels)].join(' / ') || '—';
 }

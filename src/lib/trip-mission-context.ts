@@ -19,6 +19,9 @@ export function truckMissionLabel(truck: Truck | undefined | null): string {
   return truck.immatriculation || '—';
 }
 
+/** Alias explicite pour filtres / listes (même logique que truckMissionLabel). */
+export const truckShortLabel = truckMissionLabel;
+
 export type TripMissionActivity = {
   loadings: SupplierLoading[];
   deliveries: ClientDelivery[];

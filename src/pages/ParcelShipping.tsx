@@ -64,6 +64,7 @@ import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import CityPicker, { CAMEROON_CITIES } from '@/components/CityPicker';
 import { formatTripStatusFr } from '@/lib/sync-utils';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 
 const ORIGIN_NAME = 'Douala';
 
@@ -460,11 +461,11 @@ export default function ParcelShipping() {
     const bits: string[] = [];
     if (tracteurId) {
       const t = trucks.find((x) => x.id === tracteurId);
-      if (t) bits.push(t.immatriculation);
+      if (t) bits.push(truckMissionLabel(t));
     }
     if (remorqueuseId) {
       const t = trucks.find((x) => x.id === remorqueuseId);
-      if (t) bits.push(t.immatriculation);
+      if (t) bits.push(truckMissionLabel(t));
     }
     return bits.length ? bits.join(' + ') : '—';
   };
@@ -798,7 +799,7 @@ export default function ParcelShipping() {
                             <SelectItem value="none">Aucun</SelectItem>
                             {tracteurs.map((t) => (
                               <SelectItem key={t.id} value={t.id}>
-                                {t.immatriculation} — {t.modele}
+                                {truckMissionLabel(t)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -824,7 +825,7 @@ export default function ParcelShipping() {
                             <SelectItem value="none">Aucune</SelectItem>
                             {remorqueuses.map((t) => (
                               <SelectItem key={t.id} value={t.id}>
-                                {t.immatriculation} — {t.modele}
+                                {truckMissionLabel(t)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1212,7 +1213,7 @@ export default function ParcelShipping() {
                     .filter((t) => t.type === 'tracteur')
                     .map((t) => (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.immatriculation} — {t.modele}
+                        {truckMissionLabel(t)}
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -1230,7 +1231,7 @@ export default function ParcelShipping() {
                     .filter((t) => t.type === 'remorqueuse')
                     .map((t) => (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.immatriculation} — {t.modele}
+                        {truckMissionLabel(t)}
                       </SelectItem>
                     ))}
                 </SelectContent>

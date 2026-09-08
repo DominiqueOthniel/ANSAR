@@ -82,6 +82,7 @@ import {
   thirdPartiesToClientTierLike,
 } from '@/lib/client-initial-balance';
 import { linkDriverTruckSelection } from '@/lib/driver-truck-link';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 
 function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
@@ -168,7 +169,7 @@ export function ClientOperationsPanels({
     () =>
       stableSort(
         trucks.filter((t) => t.statut === 'actif' && (t.flotte || 'ansar') === 'ansar'),
-        (a, b) => frCollator.compare(a.immatriculation, b.immatriculation),
+        (a, b) => frCollator.compare(truckMissionLabel(a), truckMissionLabel(b)),
       ),
     [trucks],
   );
@@ -1512,7 +1513,7 @@ export function ClientOperationsPanels({
                     ) : (
                       activeTrucks.map((truck) => (
                         <SelectItem key={truck.id} value={truck.id}>
-                          {truck.immatriculation} · {truck.modele}
+                          {truckMissionLabel(truck)}
                         </SelectItem>
                       ))
                     )}
@@ -1953,7 +1954,7 @@ export function ClientOperationsPanels({
                   <SelectItem value="__none__">—</SelectItem>
                   {activeTrucks.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.immatriculation}
+                      {truckMissionLabel(t)}
                     </SelectItem>
                   ))}
                 </SelectContent>

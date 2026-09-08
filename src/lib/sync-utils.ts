@@ -585,12 +585,18 @@ export const getDriverFullName = (driverId: string, drivers: Driver[]): string =
 };
 
 /**
- * Obtient l'immatriculation d'un camion
+ * Libellé court d’un camion (nom M1/TF1, sinon immatriculation).
  */
-export const getTruckLabel = (truckId: string, trucks: Truck[]): string => {
+export const getTruckImmatriculation = (truckId: string, trucks: Truck[]): string => {
   const truck = trucks.find(t => t.id === truckId);
-  return truck ? `${truck.immatriculation} (${truck.modele})` : 'Camion inconnu';
+  if (!truck) return 'Camion inconnu';
+  const short = truck.nom?.trim();
+  if (short) return short;
+  return truck.immatriculation || 'Camion inconnu';
 };
+
+/** @deprecated Préférer getTruckImmatriculation / truckMissionLabel */
+export const getTruckLabel = getTruckImmatriculation;
 
 /**
  * Génère un numéro de facture unique
