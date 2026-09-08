@@ -86,6 +86,8 @@ const SORTIE_CATEGORIES = [
   'Assurance',
   'Salaire',
   'Don',
+  'Dépense du PDG',
+  'Dépense du bureau',
   'Autre',
 ] as const;
 
