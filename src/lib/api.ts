@@ -435,6 +435,33 @@ export const tjkOperationsApi = {
   delete: (id: string) => request<void>(`/tjk-operations/${id}`, { method: 'DELETE' }),
 };
 
+export interface CamrailOperationPayload {
+  date: string;
+  camionNom?: string;
+  camionImmatriculation?: string;
+  quantite: number;
+  typeProduit?: string;
+  referenceAtc?: string;
+  atComplement?: number | null;
+  destinataire?: string;
+  dateChargement?: string | null;
+  dateLivraison?: string | null;
+  numeroWagon?: string;
+  commentaires?: string;
+  transporteur?: string;
+  notes?: string;
+  utilisateur?: string;
+}
+
+export const camrailOperationsApi = {
+  getAll: () => request<any[]>('/camrail-operations'),
+  create: (data: CamrailOperationPayload) =>
+    request<any>('/camrail-operations', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<CamrailOperationPayload>) =>
+    request<any>(`/camrail-operations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/camrail-operations/${id}`, { method: 'DELETE' }),
+};
+
 // --- Expenses ---
 export const expensesApi = {
   getAll: () => request<any[]>('/expenses'),
