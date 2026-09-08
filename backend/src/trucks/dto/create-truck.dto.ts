@@ -42,4 +42,9 @@ export class CreateTruckDto {
   @IsOptional()
   @IsString()
   chauffeurId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ansar', 'tjk'])
+  flotte?: 'ansar' | 'tjk';
 }

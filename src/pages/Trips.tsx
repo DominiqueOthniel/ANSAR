@@ -340,11 +340,19 @@ export default function Trips() {
   }, [trips, editingTripId]);
 
   const tracteurs = trucks.filter(
-    (t) => t.type === 'tracteur' && t.statut === 'actif' && !truckIdsInMission.has(t.id),
+    (t) =>
+      t.type === 'tracteur' &&
+      t.statut === 'actif' &&
+      (t.flotte || 'ansar') === 'ansar' &&
+      !truckIdsInMission.has(t.id),
   );
 
   const remorqueuses = trucks.filter(
-    (t) => t.type === 'remorqueuse' && t.statut === 'actif' && !truckIdsInMission.has(t.id),
+    (t) =>
+      t.type === 'remorqueuse' &&
+      t.statut === 'actif' &&
+      (t.flotte || 'ansar') === 'ansar' &&
+      !truckIdsInMission.has(t.id),
   );
 
   const driverIdsInMission = useMemo(() => {
@@ -2206,7 +2214,7 @@ export default function Trips() {
                   <SelectContent>
                     <SelectItem value="all">Tous les camions</SelectItem>
                     {stableSort(
-                      trucks.filter((t) => t.statut === 'actif'),
+                      trucks.filter((t) => t.statut === 'actif' && (t.flotte || 'ansar') === 'ansar'),
                       (a, b) => frCollator.compare(truckMissionLabel(a), truckMissionLabel(b)),
                     ).map((t) => (
                       <SelectItem key={t.id} value={t.id}>

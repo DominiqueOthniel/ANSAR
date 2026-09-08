@@ -55,11 +55,13 @@ CREATE TABLE IF NOT EXISTS trucks (
   "dateMiseEnCirculation" DATE NOT NULL,
   photo VARCHAR,
   "proprietaireId" UUID REFERENCES third_parties(id),
-  "chauffeurId" UUID REFERENCES drivers(id)
+  "chauffeurId" UUID REFERENCES drivers(id),
+  flotte VARCHAR(20) NOT NULL DEFAULT 'ansar' CHECK (flotte IN ('ansar', 'tjk'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_trucks_proprietaire ON trucks("proprietaireId");
 CREATE INDEX IF NOT EXISTS idx_trucks_chauffeur ON trucks("chauffeurId");
+CREATE INDEX IF NOT EXISTS idx_trucks_flotte ON trucks(flotte);
 
 -- 5. trips (FK → trucks x2, drivers)
 CREATE TABLE IF NOT EXISTS trips (
