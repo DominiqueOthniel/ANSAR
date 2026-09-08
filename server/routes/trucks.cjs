@@ -21,6 +21,7 @@ function mapTruck(row) {
     photo: row.photo ?? undefined,
     proprietaireId: row.proprietaireId ?? undefined,
     chauffeurId: row.chauffeurId ?? undefined,
+    flotte: row.flotte === 'tjk' ? 'tjk' : 'ansar',
   };
 }
 
@@ -49,6 +50,7 @@ async function createTruck(body) {
   let immatriculation = normalizeImmat(body.immatriculation);
   const remorqueImmatriculation = normalizeImmat(body.remorqueImmatriculation) || null;
   let sousType = body.sousType || null;
+  const flotte = body.flotte === 'tjk' ? 'tjk' : 'ansar';
 
   if (type === 'tracteur') {
     sousType = sousType || (remorqueImmatriculation ? 'tracteur_jumele' : 'tracteur_seul');
@@ -63,8 +65,8 @@ async function createTruck(body) {
   await query(
     `INSERT INTO trucks (
       id, immatriculation, nom, modele, type, "sousType", "remorqueImmatriculation",
-      statut, "dateMiseEnCirculation", photo, "proprietaireId", "chauffeurId"
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      statut, "dateMiseEnCirculation", photo, "proprietaireId", "chauffeurId", flotte
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       id,
       immatriculation,
@@ -78,6 +80,7 @@ async function createTruck(body) {
       body.photo || null,
       body.proprietaireId || null,
       body.chauffeurId || null,
+      flotte,
     ],
   );
   return getTruck(id);
@@ -92,6 +95,7 @@ async function updateTruck(id, body) {
   let immatriculation = normalizeImmat(merged.immatriculation);
   const remorqueImmatriculation = normalizeImmat(merged.remorqueImmatriculation) || null;
   let sousType = merged.sousType || null;
+  const flotte = (body.flotte ?? merged.flotte) === 'tjk' ? 'tjk' : 'ansar';
 
   if (type === 'tracteur') {
     sousType = sousType || (remorqueImmatriculation ? 'tracteur_jumele' : 'tracteur_seul');
@@ -107,7 +111,7 @@ async function updateTruck(id, body) {
     `UPDATE trucks SET
       immatriculation = $2, nom = $3, modele = $4, type = $5, "sousType" = $6,
       "remorqueImmatriculation" = $7, statut = $8, "dateMiseEnCirculation" = $9,
-      photo = $10, "proprietaireId" = $11, "chauffeurId" = $12
+      photo = $10, "proprietaireId" = $11, "chauffeurId" = $12, flotte = $13
      WHERE id = $1`,
     [
       id,
@@ -122,6 +126,7 @@ async function updateTruck(id, body) {
       merged.photo || null,
       merged.proprietaireId || null,
       merged.chauffeurId || null,
+      flotte,
     ],
   );
   return getTruck(id);

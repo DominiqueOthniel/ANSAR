@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, Truck, TruckType, TruckStatus, TruckSousType, ThirdParty, type SupplierLoading, type ClientDelivery, type ClientOrder } from '@/contexts/AppContext';
+import { useApp, Truck, TruckType, TruckStatus, TruckSousType, TruckFlotte, ThirdParty, type SupplierLoading, type ClientDelivery, type ClientOrder } from '@/contexts/AppContext';
 import { TruckOperationsPanels } from '@/components/trucks/TruckOperationsPanels';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -228,9 +228,9 @@ function buildTruckDetailBlocks(
   ];
 }
 
-export default function Trucks() {
+export default function Trucks({ flotteScope = 'ansar' }: { flotteScope?: TruckFlotte }) {
   const {
-    trucks,
+    trucks: allTrucks,
     trips,
     parcelExpeditions,
     expenses,
@@ -249,6 +249,22 @@ export default function Trucks() {
     refreshClientOrders,
     isLoading,
   } = useApp();
+  const trucks = useMemo(
+    () => allTrucks.filter((t) => (t.flotte || 'ansar') === flotteScope),
+    [allTrucks, flotteScope],
+  );
+  const isTjk = flotteScope === 'tjk';
+  const pageTitle = isTjk ? 'Camions TJK' : 'Camions SIA-ANSAR';
+  const pageDescription = isTjk
+    ? 'Véhicules hors flotte Ansar (partenaires, sous-traitants, TJK).'
+    : 'Flotte SIA-ANSAR : tracteurs et remorques de l’entreprise.';
+  const addTruckLabel = isTjk ? 'Ajouter un camion TJK' : 'Ajouter un camion';
+  const emptyListMessage = isTjk
+    ? 'Aucun camion TJK pour le moment. Ajoutez un véhicule hors flotte Ansar.'
+    : 'Aucun camion SIA-ANSAR pour le moment.';
+  const emptyFilterMessage = isTjk
+    ? 'Aucun camion TJK ne correspond aux critères de filtrage sélectionnés'
+    : 'Aucun camion ne correspond aux critères de filtrage sélectionnés';
   const { canManageFleet } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
@@ -351,6 +367,7 @@ export default function Trucks() {
         photo: formData.photo || undefined,
         proprietaireId: formData.proprietaireId || undefined,
         chauffeurId: formData.chauffeurId || undefined,
+        flotte: flotteScope,
       };
       await withGuard(async () => {
         try {
@@ -399,6 +416,7 @@ export default function Trucks() {
       photo: formData.photo || undefined,
       proprietaireId: formData.proprietaireId || undefined,
       chauffeurId: formData.chauffeurId || undefined,
+      flotte: flotteScope,
     };
     await withGuard(async () => {
       try {
@@ -583,8 +601,8 @@ export default function Trucks() {
   // Fonctions d'export
   const handleExportExcel = () => {
     exportToExcel({
-      title: 'Liste des Camions',
-      fileName: `camions_${new Date().toISOString().split('T')[0]}.xlsx`,
+      title: isTjk ? 'Liste des camions TJK' : 'Liste des camions SIA-ANSAR',
+      fileName: `${isTjk ? 'camions_tjk' : 'camions'}_${new Date().toISOString().split('T')[0]}.xlsx`,
       filtersDescription: getFiltersDescription(),
       columns: [
         { header: 'Immatriculation', value: exportShortImmat },
@@ -614,8 +632,8 @@ export default function Trucks() {
     const totalTrajetsAnnules = sortedTrucks.reduce((sum, t) => sum + calculateTruckStats(t.id, trips, expenses, invoices, parcelExpeditions, clientDeliveries).tripsCancelledCount, 0);
 
     exportToPrintablePDFWithDetails({
-      title: 'Liste des Camions',
-      fileName: `camions_${new Date().toISOString().split('T')[0]}.pdf`,
+      title: isTjk ? 'Liste des camions TJK' : 'Liste des camions SIA-ANSAR',
+      fileName: `${isTjk ? 'camions_tjk' : 'camions'}_${new Date().toISOString().split('T')[0]}.pdf`,
       filtersDescription: getFiltersDescription(),
       headerColor: '#ea580c',
       headerTextColor: '#ffffff',
@@ -677,7 +695,8 @@ export default function Trucks() {
     <div className="space-y-6 p-1">
       {/* En-tête professionnel */}
       <PageHeader
-        title="Gestion de la Flotte"
+        title={pageTitle}
+        description={pageDescription}
         icon={TruckIcon}
         gradient="from-orange-500/20 via-red-500/10 to-transparent"
         stats={[
@@ -727,14 +746,14 @@ export default function Trucks() {
               <DialogTrigger asChild>
                 <Button className="shadow-md hover:shadow-lg transition-all duration-300 shrink-0">
                   <Plus className="mr-1.5 h-4 w-4 sm:mr-2 shrink-0" />
-                  <span className="hidden sm:inline">Ajouter un camion</span>
+                  <span className="hidden sm:inline">{addTruckLabel}</span>
                   <span className="sm:hidden">Ajouter</span>
                 </Button>
               </DialogTrigger>
               )}
             <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] flex flex-col">
               <DialogHeader className="shrink-0">
-                <DialogTitle>{editingTruck ? 'Modifier le camion' : 'Ajouter un camion'}</DialogTitle>
+                <DialogTitle>{editingTruck ? 'Modifier le camion' : addTruckLabel}</DialogTitle>
               </DialogHeader>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -1219,7 +1238,7 @@ export default function Trucks() {
       <Card className="shadow-md">
         <CardHeader className="bg-gradient-to-br from-background to-muted/20">
           <CardTitle className="flex items-center gap-2">
-            {EMOJI.camion} Liste des Camions {filteredTrucks.length !== trucks.length && `(${filteredTrucks.length} résultat${filteredTrucks.length > 1 ? 's' : ''})`}
+            {EMOJI.camion} Liste des {isTjk ? 'camions TJK' : 'camions SIA-ANSAR'} {filteredTrucks.length !== trucks.length && `(${filteredTrucks.length} résultat${filteredTrucks.length > 1 ? 's' : ''})`}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
@@ -1247,8 +1266,10 @@ export default function Trucks() {
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Chargement de la flotte…
                       </span>
+                    ) : trucks.length === 0 ? (
+                      emptyListMessage
                     ) : (
-                      'Aucun camion ne correspond aux critères de filtrage sélectionnés'
+                      emptyFilterMessage
                     )}
                   </TableCell>
                 </TableRow>

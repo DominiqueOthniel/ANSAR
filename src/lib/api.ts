@@ -114,6 +114,7 @@ export interface TruckPayload {
   photo?: string;
   proprietaireId?: string;
   chauffeurId?: string;
+  flotte?: 'ansar' | 'tjk';
 }
 
 export interface TripStopPayload {

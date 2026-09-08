@@ -14,6 +14,7 @@ import { Expense } from './expense.entity';
 export type TruckType = 'tracteur' | 'remorqueuse';
 export type TruckStatus = 'actif' | 'inactif';
 export type TruckSousType = 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';
+export type TruckFlotte = 'ansar' | 'tjk';
 
 @Entity('trucks')
 export class Truck {
@@ -53,6 +54,10 @@ export class Truck {
 
   @Column({ type: 'uuid', nullable: true })
   chauffeurId?: string;
+
+  /** Flotte SIA-ANSAR ou véhicules hors Ansar (TJK). */
+  @Column({ type: 'varchar', length: 20, default: 'ansar' })
+  flotte: TruckFlotte;
 
   @ManyToOne(() => ThirdParty, { nullable: true })
   @JoinColumn({ name: 'proprietaireId' })

@@ -225,7 +225,7 @@ export default function Chargements() {
   const activeTrucks = useMemo(
     () =>
       stableSort(
-        trucks.filter((t) => t.statut === 'actif'),
+        trucks.filter((t) => t.statut === 'actif' && (t.flotte || 'ansar') === 'ansar'),
         (a, b) => frCollator.compare(a.immatriculation, b.immatriculation),
       ),
     [trucks],

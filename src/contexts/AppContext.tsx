@@ -29,6 +29,7 @@ import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
 export type TruckType = 'tracteur' | 'remorqueuse';
 export type TruckStatus = 'actif' | 'inactif';
 export type TruckSousType = 'tracteur_seul' | 'tracteur_jumele' | 'remorque_seule';
+export type TruckFlotte = 'ansar' | 'tjk';
 
 export interface Truck {
   id: string;
@@ -43,6 +44,7 @@ export interface Truck {
   photo?: string;
   proprietaireId?: string;
   chauffeurId?: string;
+  flotte: TruckFlotte;
 }
 
 export type TripStatus = 'planifie' | 'en_cours' | 'termine' | 'annule';
@@ -346,6 +348,7 @@ function normalizeTruck(r: Record<string, unknown>): Truck {
     photo: r.photo ? String(r.photo) : undefined,
     proprietaireId: r.proprietaireId ? String(r.proprietaireId) : undefined,
     chauffeurId: r.chauffeurId ? String(r.chauffeurId) : undefined,
+    flotte: r.flotte === 'tjk' ? 'tjk' : 'ansar',
   };
 }
 
