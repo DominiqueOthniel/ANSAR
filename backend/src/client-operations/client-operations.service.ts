@@ -637,7 +637,8 @@ export class ClientOperationsService {
     if (patch.statut === 'annulee') {
       await this.releaseSupplierLoadingsForOrder(id);
     }
-    if (patch.statut === 'livree' && existing.statut !== 'livree') {
+    // Après le garde-fou ci-dessus, existing n’est jamais déjà « livree ».
+    if (patch.statut === 'livree') {
       const today = new Date().toISOString().slice(0, 10);
       const deliveries = await this.deliveryRepo.find({ where: { clientOrderId: id } });
       for (const d of deliveries) {
