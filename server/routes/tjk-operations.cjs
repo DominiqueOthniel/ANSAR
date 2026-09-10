@@ -5,6 +5,8 @@ const { HttpError, dateOnly, num, audit, rowToJson, randomUUID, query } = requir
 const TABLE = 'tjk_operations';
 const MODULE = 'tjk-operations';
 
+let schemaReady = false;
+
 function normalizeImmat(v) {
   if (v == null) return null;
   const s = String(v).replace(/\s+/g, '').toUpperCase().trim();
@@ -17,6 +19,15 @@ function mapRow(row) {
   j.quantite = num(j.quantite);
   if (j.created_at && !j.createdAt) j.createdAt = j.created_at;
   return j;
+}
+
+async function ensureSchema() {
+  if (schemaReady) return;
+  await query(`
+    ALTER TABLE ${TABLE}
+      ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID
+  `);
+  schemaReady = true;
 }
 
 function validatePayload(body, partial) {
@@ -48,6 +59,7 @@ function validatePayload(body, partial) {
 }
 
 async function listOperations() {
+  await ensureSchema();
   const { rows } = await query(
     `SELECT * FROM ${TABLE} ORDER BY date DESC, created_at DESC, id DESC`,
   );
@@ -55,11 +67,13 @@ async function listOperations() {
 }
 
 async function getOperation(id) {
+  await ensureSchema();
   const { rows } = await query(`SELECT * FROM ${TABLE} WHERE id = $1`, [id]);
   return mapRow(rows[0]);
 }
 
 async function createOperation(body, actor) {
+  await ensureSchema();
   validatePayload(body, false);
   const id = randomUUID();
   const clientNom = body.clientNom?.trim() || null;
@@ -68,8 +82,8 @@ async function createOperation(body, actor) {
   await query(
     `INSERT INTO ${TABLE}
       (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
-       "camionNom", "camionImmatriculation", "referenceAtc", notes, utilisateur)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId", notes, utilisateur)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       id,
       dateOnly(body.date),
@@ -82,6 +96,7 @@ async function createOperation(body, actor) {
       body.camionNom?.trim() || null,
       normalizeImmat(body.camionImmatriculation),
       body.referenceAtc?.trim() || null,
+      body.supplierLoadingId || null,
       body.notes?.trim() || null,
       body.utilisateur?.trim() || actor?.login || 'Système',
     ],
@@ -93,6 +108,7 @@ async function createOperation(body, actor) {
 }
 
 async function updateOperation(id, body, actor) {
+  await ensureSchema();
   const prev = await getOperation(id);
   if (!prev) throw HttpError(404, 'Opération introuvable.');
   validatePayload(body, true);
@@ -119,7 +135,8 @@ async function updateOperation(id, body, actor) {
       "camionNom" = COALESCE($9, "camionNom"),
       "camionImmatriculation" = COALESCE($10, "camionImmatriculation"),
       "referenceAtc" = COALESCE($11, "referenceAtc"),
-      notes = COALESCE($12, notes)
+      "supplierLoadingId" = $12,
+      notes = COALESCE($13, notes)
      WHERE id = $1`,
     [
       id,
@@ -137,6 +154,9 @@ async function updateOperation(id, body, actor) {
         ? normalizeImmat(body.camionImmatriculation)
         : null,
       body.referenceAtc !== undefined ? body.referenceAtc?.trim() || null : null,
+      body.supplierLoadingId !== undefined
+        ? body.supplierLoadingId || null
+        : prev.supplierLoadingId || null,
       body.notes !== undefined ? body.notes?.trim() || null : null,
     ],
   );
@@ -147,6 +167,7 @@ async function updateOperation(id, body, actor) {
 }
 
 async function deleteOperation(id, actor) {
+  await ensureSchema();
   const prev = await getOperation(id);
   if (!prev) throw HttpError(404, 'Opération introuvable.');
   await query(`DELETE FROM ${TABLE} WHERE id = $1`, [id]);

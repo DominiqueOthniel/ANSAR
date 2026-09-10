@@ -7,6 +7,7 @@ export type SupplierLoadingEntryMode =
   | 'bon_simple'
   | 'camion_ansar'
   | 'rail'
+  | 'tjk'
   | 'rendu_fournisseur'
   | 'camion'
   | 'autre';

@@ -305,7 +305,7 @@ export interface SupplierLoading {
   dateChargement: string;
   dateLivraison?: string;
   statut: SupplierLoadingStatus;
-  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
+  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'tjk' | 'rendu_fournisseur' | 'camion' | 'autre';
   camionId?: string;
   hubArrivee?: string;
   dateArriveeHub?: string;

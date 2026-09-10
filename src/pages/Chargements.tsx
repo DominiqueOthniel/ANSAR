@@ -64,7 +64,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, MapPin, RefreshCw, Container, Package, CheckCircle, Clock, Layers } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, Truck, MapPin, RefreshCw, Container, Package, CheckCircle, Clock, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
@@ -337,6 +337,16 @@ export default function Chargements() {
       hubArrivee: hub,
       lieu: hub,
       statut: 'en_transit',
+    });
+    setDialogOpen(true);
+  };
+
+  const openTjkBon = () => {
+    setEditing(null);
+    setForm({
+      ...emptyForm(),
+      modeEntree: 'tjk',
+      statut: 'en_attente_affectation',
     });
     setDialogOpen(true);
   };
@@ -989,6 +999,10 @@ export default function Chargements() {
               <Train className="h-4 w-4 mr-2" />
               Bon CAMRAIL (rail)
             </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={openTjkBon}>
+              <Truck className="h-4 w-4 mr-2" />
+              Bon TJK
+            </Button>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -1155,7 +1169,9 @@ export default function Chargements() {
                             ? f.dateArriveeHub
                               ? 'au_hub'
                               : 'en_transit'
-                            : f.statut,
+                            : !editing && mode === 'tjk'
+                              ? 'en_attente_affectation'
+                              : f.statut,
                       }));
                     }}
                   >
@@ -1170,6 +1186,15 @@ export default function Chargements() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.modeEntree === 'tjk' && (
+                    <p className="text-xs text-muted-foreground">
+                      Ce bon sera ventilé depuis l’écran{' '}
+                      <Link to="/tjk" className="underline underline-offset-2">
+                        TJK
+                      </Link>{' '}
+                      (liaison aux clients).
+                    </p>
+                  )}
                 </div>
                 {showTransportTruck && (
                   <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/30">

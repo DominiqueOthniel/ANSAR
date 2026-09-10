@@ -422,6 +422,8 @@ export interface TjkOperationPayload {
   camionNom?: string;
   camionImmatriculation?: string;
   referenceAtc?: string;
+  /** Bon de chargement (mode TJK) ventilé par cette opération. */
+  supplierLoadingId?: string | null;
   notes?: string;
   utilisateur?: string;
 }
@@ -568,7 +570,7 @@ export interface SupplierLoadingPayload {
   dateChargement: string;
   dateLivraison?: string;
   statut?: SupplierLoadingStatusPayload;
-  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'rendu_fournisseur' | 'camion' | 'autre';
+  modeEntree?: 'bon_simple' | 'camion_ansar' | 'rail' | 'tjk' | 'rendu_fournisseur' | 'camion' | 'autre';
   camionId?: string | null;
   hubArrivee?: string;
   dateArriveeHub?: string;

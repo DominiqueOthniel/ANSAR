@@ -18,6 +18,8 @@ export interface TjkOperation {
   camionNom?: string;
   camionImmatriculation?: string;
   referenceAtc?: string;
+  /** Bon de chargement (mode TJK) lié à cette opération. */
+  supplierLoadingId?: string;
   notes?: string;
   utilisateur?: string;
   createdAt?: string;
@@ -46,6 +48,7 @@ export function normalizeTjkOperation(r: Record<string, unknown>): TjkOperation 
     camionNom: r.camionNom ? String(r.camionNom) : undefined,
     camionImmatriculation: r.camionImmatriculation ? String(r.camionImmatriculation) : undefined,
     referenceAtc: r.referenceAtc ? String(r.referenceAtc) : undefined,
+    supplierLoadingId: r.supplierLoadingId ? String(r.supplierLoadingId) : undefined,
     notes: r.notes ? String(r.notes) : undefined,
     utilisateur: r.utilisateur ? String(r.utilisateur) : undefined,
     createdAt: r.createdAt
@@ -141,6 +144,7 @@ export async function createTjkOperation(
       ? String(payload.camionImmatriculation).replace(/\s+/g, '').toUpperCase()
       : undefined,
     referenceAtc: payload.referenceAtc?.trim() || undefined,
+    supplierLoadingId: payload.supplierLoadingId || undefined,
     notes: payload.notes?.trim() || undefined,
     utilisateur: payload.utilisateur?.trim() || undefined,
     createdAt: new Date().toISOString(),
@@ -203,6 +207,10 @@ export async function updateTjkOperation(
       payload.referenceAtc !== undefined
         ? payload.referenceAtc?.trim() || undefined
         : prev.referenceAtc,
+    supplierLoadingId:
+      payload.supplierLoadingId !== undefined
+        ? payload.supplierLoadingId || undefined
+        : prev.supplierLoadingId,
     notes:
       payload.notes !== undefined ? payload.notes?.trim() || undefined : prev.notes,
     utilisateur:
