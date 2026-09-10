@@ -4,6 +4,7 @@ import type {
   Invoice,
   SupplierLoading,
   ThirdParty,
+  Trip,
   Truck,
 } from '@/contexts/AppContext';
 import { sumEncoursClientPourPlafond, type CreditLike } from '@/lib/client-credit-plafond';
@@ -53,6 +54,8 @@ export type ClientsExportContext = {
   invoices: Invoice[];
   supplierLoadings: SupplierLoading[];
   trucks: Truck[];
+  /** Trajets : pour afficher le camion opérant chaque course client. */
+  trips?: Trip[];
   credits: CreditLike[];
   soldeInitialByClientId: Map<string, number>;
   /** Mouvements de caisse rattachés à un client (versements / sorties). */
@@ -122,19 +125,99 @@ function getOrderInvoice(order: ClientOrder, invoices: Invoice[]): Invoice | und
     : invoices.find((i) => i.clientOrderId === order.id);
 }
 
-function getOrderCamionLabel(
+function truckLabelFromId(truckId: string | undefined, trucks: Truck[]): string | undefined {
+  if (!truckId) return undefined;
+  const truck = trucks.find((t) => t.id === truckId);
+  if (!truck) return undefined;
+  const label = truckMissionLabel(truck);
+  return label && label !== '—' ? label : undefined;
+}
+
+function tripTruckLabel(trip: Trip | undefined, trucks: Truck[]): string | undefined {
+  if (!trip) return undefined;
+  return (
+    truckLabelFromId(trip.tracteurId, trucks) ||
+    truckLabelFromId(trip.remorqueuseId, trucks)
+  );
+}
+
+function uniqueTruckLabels(labels: Array<string | undefined>): string {
+  const set = new Set<string>();
+  for (const raw of labels) {
+    const v = raw?.trim();
+    if (v && v !== '—') set.add(v);
+  }
+  return [...set].join(' / ') || '—';
+}
+
+function loadingsForOrder(
+  orderId: string,
+  loadings: SupplierLoading[],
+): SupplierLoading[] {
+  return loadings.filter((l) =>
+    (l.assignments ?? []).some(
+      (a) => a.clientOrderId === orderId && a.orderStatus !== 'annulee',
+    ),
+  );
+}
+
+/**
+ * Camion opérant la course : livraison, bon de chargement, puis trajet lié.
+ */
+export function getOrderCamionLabel(
   order: ClientOrder,
   deliveries: ClientDelivery[],
-  trucks: Truck[],
+  ctx: Pick<ClientsExportContext, 'trucks' | 'supplierLoadings' | 'invoices' | 'trips'>,
 ): string {
-  const labels = deliveries
-    .filter((d) => d.clientOrderId === order.id && d.tracteurId)
-    .map((d) => {
-      const truck = trucks.find((t) => t.id === d.tracteurId);
-      return truck ? truckMissionLabel(truck) : undefined;
-    })
-    .filter((x): x is string => !!x);
-  return [...new Set(labels)].join(' / ') || '—';
+  const trucks = ctx.trucks;
+  const labels: Array<string | undefined> = [];
+
+  for (const d of deliveries) {
+    if (d.clientOrderId !== order.id || d.statut === 'annulee') continue;
+    labels.push(truckLabelFromId(d.tracteurId, trucks));
+  }
+
+  const linkedLoadings = loadingsForOrder(order.id, ctx.supplierLoadings);
+  for (const loading of linkedLoadings) {
+    labels.push(truckLabelFromId(loading.camionId, trucks));
+  }
+
+  const trips = ctx.trips ?? [];
+  const loadingIds = new Set(linkedLoadings.map((l) => l.id));
+  for (const trip of trips) {
+    if (trip.supplierLoadingId && loadingIds.has(trip.supplierLoadingId)) {
+      labels.push(tripTruckLabel(trip, trucks));
+    }
+  }
+
+  for (const inv of ctx.invoices) {
+    if (inv.clientOrderId !== order.id || !inv.trajetId) continue;
+    const trip = trips.find((t) => t.id === inv.trajetId);
+    labels.push(tripTruckLabel(trip, trucks));
+  }
+
+  return uniqueTruckLabels(labels);
+}
+
+/** Camion pour une facture hors commande (ex. trajet facturé directement). */
+export function getInvoiceCamionLabel(
+  inv: Invoice,
+  ctx: Pick<ClientsExportContext, 'trucks' | 'clientDeliveries' | 'trips'>,
+): string {
+  const trucks = ctx.trucks;
+  const labels: Array<string | undefined> = [];
+
+  if (inv.trajetId) {
+    const trip = (ctx.trips ?? []).find((t) => t.id === inv.trajetId);
+    labels.push(tripTruckLabel(trip, trucks));
+  }
+
+  if (inv.clientDeliveryId) {
+    const delivery = ctx.clientDeliveries.find((d) => d.id === inv.clientDeliveryId);
+    labels.push(truckLabelFromId(delivery?.tracteurId, trucks));
+  }
+
+  return uniqueTruckLabels(labels);
 }
 
 function getInvoiceCreditForClient(inv: Invoice, client: ThirdParty): number {
@@ -195,7 +278,7 @@ function buildClientLedgerRows(
       qtes: order.quantite ?? '',
       qltes: order.designation,
       atc: cell(order.reference),
-      camion: getOrderCamionLabel(order, deliveries, ctx.trucks),
+      camion: getOrderCamionLabel(order, deliveries, ctx),
       prixUnitaire: order.prixUnitaire != null ? Math.round(order.prixUnitaire) : '',
       debit: Math.round(debit),
       credit: 0,
@@ -211,7 +294,7 @@ function buildClientLedgerRows(
         qtes: '',
         qltes: inv.factureClientLibelle || inv.numero,
         atc: inv.numero,
-        camion: '',
+        camion: getInvoiceCamionLabel(inv, ctx),
         prixUnitaire: '',
         debit: Math.round(inv.montantTTC),
         credit: 0,
@@ -352,7 +435,7 @@ function buildClientDetailBlocks(
     },
     {
       title: 'Compte client',
-      columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'N°CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
+      columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
       rows: buildClientLedgerRows(client, orders, deliveries, clientInvoices, ctx),
     },
   ];
@@ -379,7 +462,7 @@ function buildClientLedgerBlock(
 
   return {
     title: client.nom,
-    columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'N°CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
+    columns: ['DATE', 'QTES', 'QLTES', 'ATC', 'CAMION', 'P.U', 'DEBIT', 'CREDIT', 'SOLDE'],
     rows: buildClientLedgerRows(client, orders, deliveries, clientInvoices, ctx),
   };
 }

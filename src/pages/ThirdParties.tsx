@@ -120,6 +120,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const {
     thirdParties,
     trucks,
+    trips,
     invoices,
     expenses,
     clientOrders,
@@ -676,6 +677,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       invoices,
       supplierLoadings,
       trucks,
+      trips,
       credits,
       soldeInitialByClientId,
       caisseTransactions,
@@ -711,6 +713,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
       invoices,
       supplierLoadings,
       trucks,
+      trips,
       credits,
       soldeInitialByClientId,
       caisseTransactions,
