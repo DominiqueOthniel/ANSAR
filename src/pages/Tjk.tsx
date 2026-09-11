@@ -1,13 +1,14 @@
 /** Registre opérations TJK : camions partenaires hors flotte Ansar. */
 import { useEffect, useMemo, useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import { Link } from 'react-router-dom';
+import { useApp, type SupplierLoading } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import PageHeader from '@/components/PageHeader';
 import { ExportButtons } from '@/components/ExportButtons';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
@@ -38,6 +39,7 @@ import { ClipboardList, Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react
 import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
+import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
 import {
   type TjkOperation,
   createTjkOperation,
@@ -59,6 +61,20 @@ function todayIso(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+function isTjkLoading(l: SupplierLoading): boolean {
+  return normalizeLoadingEntryMode(l.modeEntree) === 'tjk' && l.statut !== 'annule';
+}
+
+function ventilatedQtyForLoading(
+  loadingId: string,
+  operations: TjkOperation[],
+  excludeOpId?: string,
+): number {
+  return operations
+    .filter((op) => op.supplierLoadingId === loadingId && op.id !== excludeOpId)
+    .reduce((s, op) => s + (Number(op.quantite) || 0), 0);
+}
+
 type FormState = {
   date: string;
   clientId: string;
@@ -70,6 +86,7 @@ type FormState = {
   camionNom: string;
   camionImmatriculation: string;
   referenceAtc: string;
+  supplierLoadingId: string;
   notes: string;
 };
 
@@ -84,11 +101,12 @@ const emptyForm = (): FormState => ({
   camionNom: '',
   camionImmatriculation: '',
   referenceAtc: '',
+  supplierLoadingId: '',
   notes: '',
 });
 
 export default function Tjk() {
-  const { thirdParties, merchandiseQualities } = useApp();
+  const { thirdParties, merchandiseQualities, supplierLoadings } = useApp();
   const { user, canManageFleet } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -118,6 +136,51 @@ export default function Tjk() {
       ),
     [merchandiseQualities],
   );
+
+  const tjkLoadings = useMemo(
+    () =>
+      stableSort(
+        supplierLoadings.filter(isTjkLoading),
+        (a, b) => parseDateMs(b.dateChargement) - parseDateMs(a.dateChargement),
+      ),
+    [supplierLoadings],
+  );
+
+  const pendingTjkBons = useMemo(() => {
+    return tjkLoadings
+      .map((l) => {
+        const total = Number(l.quantite) || 0;
+        const used = ventilatedQtyForLoading(l.id, operations);
+        const reste = Math.max(0, total - used);
+        return { loading: l, total, used, reste };
+      })
+      .filter((row) => row.total <= 0 || row.reste > 0);
+  }, [tjkLoadings, operations]);
+
+  const applyBonToForm = (loadingId: string, prev: FormState): FormState => {
+    if (!loadingId) return { ...prev, supplierLoadingId: '' };
+    const bon = tjkLoadings.find((l) => l.id === loadingId);
+    if (!bon) return { ...prev, supplierLoadingId: loadingId };
+    const used = ventilatedQtyForLoading(loadingId, operations, editing?.id);
+    const reste =
+      bon.quantite != null && bon.quantite > 0
+        ? Math.max(0, bon.quantite - used)
+        : undefined;
+    return {
+      ...prev,
+      supplierLoadingId: loadingId,
+      referenceAtc: bon.numeroBon?.trim() || prev.referenceAtc,
+      qualite: bon.designation?.trim() || prev.qualite,
+      unite: bon.unite?.trim() || prev.unite,
+      quantite:
+        prev.quantite != null && prev.quantite > 0
+          ? prev.quantite
+          : reste != null && reste > 0
+            ? reste
+            : prev.quantite,
+      date: bon.dateChargement || prev.date,
+    };
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -182,6 +245,12 @@ export default function Tjk() {
     setDialogOpen(true);
   };
 
+  const openVentiler = (loadingId: string) => {
+    setEditing(null);
+    setForm(applyBonToForm(loadingId, emptyForm()));
+    setDialogOpen(true);
+  };
+
   const openEdit = (op: TjkOperation) => {
     setEditing(op);
     setForm({
@@ -195,6 +264,7 @@ export default function Tjk() {
       camionNom: op.camionNom || '',
       camionImmatriculation: op.camionImmatriculation || '',
       referenceAtc: op.referenceAtc || '',
+      supplierLoadingId: op.supplierLoadingId || '',
       notes: op.notes || '',
     });
     setDialogOpen(true);
@@ -220,6 +290,22 @@ export default function Tjk() {
       toast.error('Indiquez la destination.');
       return;
     }
+    if (form.supplierLoadingId) {
+      const bon = tjkLoadings.find((l) => l.id === form.supplierLoadingId);
+      if (bon?.quantite != null && bon.quantite > 0) {
+        const used = ventilatedQtyForLoading(
+          form.supplierLoadingId,
+          operations,
+          editing?.id,
+        );
+        if (used + q > bon.quantite + 1e-6) {
+          toast.error(
+            `Quantité trop élevée : reste ${Math.max(0, bon.quantite - used).toLocaleString('fr-FR')} sur ce bon TJK.`,
+          );
+          return;
+        }
+      }
+    }
     if (!form.camionNom.trim() && !form.camionImmatriculation.trim()) {
       toast.warning('Camion non renseigné (nom ou immatriculation recommandé).');
     }
@@ -236,6 +322,7 @@ export default function Tjk() {
       camionNom: form.camionNom.trim() || undefined,
       camionImmatriculation: form.camionImmatriculation.trim() || undefined,
       referenceAtc: form.referenceAtc.trim() || undefined,
+      supplierLoadingId: form.supplierLoadingId || null,
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
     };
@@ -298,7 +385,7 @@ export default function Tjk() {
     <div className="space-y-6 p-1">
       <PageHeader
         title="Opérations TJK"
-        description="Opérations hors flotte Ansar (camions partenaires)."
+        description="Bons TJK à ventiler vers les clients, et opérations hors flotte Ansar."
         icon={ClipboardList}
         gradient="from-sky-500/20 via-cyan-500/10 to-transparent"
         iconColor="from-sky-600 via-cyan-600 to-teal-700"
@@ -366,6 +453,56 @@ export default function Tjk() {
                         onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
                         required
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Bon TJK (chargement)</Label>
+                      <Select
+                        value={form.supplierLoadingId || '__none__'}
+                        onValueChange={(v) => {
+                          const id = v === '__none__' ? '' : v;
+                          setForm((f) => applyBonToForm(id, f));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Lier à un bon TJK…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Sans bon (saisie libre)</SelectItem>
+                          {tjkLoadings.map((l) => {
+                            const used = ventilatedQtyForLoading(
+                              l.id,
+                              operations,
+                              editing?.id,
+                            );
+                            const reste =
+                              l.quantite != null && l.quantite > 0
+                                ? Math.max(0, l.quantite - used)
+                                : null;
+                            const label = [
+                              l.numeroBon?.trim() || 'Sans n°',
+                              l.designation,
+                              reste != null
+                                ? `reste ${reste.toLocaleString('fr-FR')}${l.unite ? ` ${l.unite}` : ''}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ');
+                            return (
+                              <SelectItem key={l.id} value={l.id}>
+                                {label}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Les bons créés en mode TJK dans{' '}
+                        <Link to="/chargements" className="underline underline-offset-2">
+                          Chargements
+                        </Link>{' '}
+                        apparaissent ici pour être liés aux clients.
+                      </p>
                     </div>
 
                     <div className="space-y-2">
@@ -535,6 +672,53 @@ export default function Tjk() {
           </div>
         }
       />
+
+      {pendingTjkBons.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Bons TJK à ventiler</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Liez chaque part du bon à un client depuis TJK.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingTjkBons.map(({ loading: bon, total, used, reste }) => (
+              <div
+                key={bon.id}
+                className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between rounded-md border p-3"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="font-medium truncate">
+                    {bon.numeroBon?.trim() || 'Bon sans numéro'} · {bon.designation}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {bon.fournisseurNom || 'Fournisseur'} ·{' '}
+                    {new Date(bon.dateChargement).toLocaleDateString('fr-FR')}
+                    {total > 0 && (
+                      <>
+                        {' '}
+                        · {used.toLocaleString('fr-FR')} / {total.toLocaleString('fr-FR')}
+                        {bon.unite ? ` ${bon.unite}` : ''}
+                        {reste > 0 ? ` · reste ${reste.toLocaleString('fr-FR')}` : ''}
+                      </>
+                    )}
+                  </p>
+                </div>
+                {canManageFleet && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openVentiler(bon.id)}
+                  >
+                    Ventiler vers un client
+                  </Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="pt-6 space-y-4">

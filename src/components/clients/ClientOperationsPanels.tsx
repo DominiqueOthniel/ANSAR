@@ -1484,6 +1484,11 @@ export function ClientOperationsPanels({
                   ))}
                 </SelectContent>
               </Select>
+              {loadingForm.modeEntree === 'tjk' && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ventilation des clients depuis l’écran TJK.
+                </p>
+              )}
             </div>
             {showLoadingTransportTruck && (
               <div>

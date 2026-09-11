@@ -1,9 +1,10 @@
-/** Flux hub / CAMRAIL — entrée fournisseur et sortie vers le client. */
+/** Flux hub / CAMRAIL / TJK — entrée fournisseur et sortie vers le client. */
 
 export type LoadingEntryMode =
   | 'bon_simple'
   | 'camion_ansar'
   | 'rail'
+  | 'tjk'
   | 'rendu_fournisseur'
   /** Anciennes valeurs conservées pour les bons déjà enregistrés. */
   | 'camion'
@@ -37,6 +38,7 @@ export const LOADING_ENTRY_MODE_OPTIONS: { value: LoadingEntryMode; label: strin
   { value: 'bon_simple', label: 'Bon simple (client se débrouille)' },
   { value: 'camion_ansar', label: 'Camion direct SIA-ANSAR' },
   { value: 'rail', label: 'CAMRAIL' },
+  { value: 'tjk', label: 'TJK' },
   { value: 'rendu_fournisseur', label: 'Rendu fournisseur' },
 ];
 
@@ -66,6 +68,7 @@ const ENTRY_LABELS: Record<LoadingEntryMode, string> = {
   bon_simple: 'Bon simple',
   camion_ansar: 'Camion direct SIA-ANSAR',
   rail: 'CAMRAIL',
+  tjk: 'TJK',
   rendu_fournisseur: 'Rendu fournisseur',
   camion: 'Camion direct SIA-ANSAR',
   autre: 'Bon simple',
@@ -84,6 +87,7 @@ const LOADING_ENTRY_MODES: LoadingEntryMode[] = [
   'bon_simple',
   'camion_ansar',
   'rail',
+  'tjk',
   'rendu_fournisseur',
   'camion',
   'autre',

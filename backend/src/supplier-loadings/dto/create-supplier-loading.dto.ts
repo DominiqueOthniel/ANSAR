@@ -26,6 +26,7 @@ const MODES_ENTREE = [
   'bon_simple',
   'camion_ansar',
   'rail',
+  'tjk',
   'rendu_fournisseur',
   'camion',
   'autre',
