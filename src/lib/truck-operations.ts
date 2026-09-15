@@ -4,13 +4,18 @@ import type {
   SupplierLoading,
   SupplierLoadingAssignment,
 } from '@/contexts/AppContext';
+import { isLoadingFinished } from '@/lib/supplier-loadings';
 
-/** Bons de chargement rattachés à un camion. */
+/** Bons de chargement rattachés à un camion (actifs uniquement). */
 export function listLoadingsForTruck(
   loadings: SupplierLoading[],
   truckId: string,
 ): SupplierLoading[] {
-  return loadings.filter((l) => l.camionId === truckId);
+  return loadings.filter(
+    (l) =>
+      l.camionId === truckId &&
+      !isLoadingFinished(l.statut, l.quantite, l.assignments),
+  );
 }
 
 /** Livraisons assignées à un camion (tracteur). */
@@ -27,7 +32,9 @@ export function listLoadingsAvailableToLink(
   truckId: string,
 ): SupplierLoading[] {
   return loadings.filter(
-    (l) => l.statut !== 'annule' && (!l.camionId || l.camionId === truckId),
+    (l) =>
+      !isLoadingFinished(l.statut, l.quantite, l.assignments) &&
+      (!l.camionId || l.camionId === truckId),
   );
 }
 
@@ -76,13 +83,21 @@ export function summarizeLoadingAssignments(assignments?: SupplierLoadingAssignm
     .join(', ');
 }
 
-/** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés). */
+/** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés / terminés). */
+export function isLoadingFinishedForTripSelection(l: SupplierLoading): boolean {
+  return isLoadingFinished(l.statut, l.quantite, l.assignments);
+}
+
 export function listLoadingsForTripSelection(params: {
   loadings: SupplierLoading[];
   trucks: { id: string; chauffeurId?: string }[];
   tracteurId?: string;
   remorqueuseId?: string;
   chauffeurId?: string;
+  /** Trajets déjà liés à un bon (pour masquer les bons terminés / déjà pris). */
+  trips?: { id: string; supplierLoadingId?: string; statut?: string }[];
+  /** Trajet en cours d’édition : son bon reste sélectionnable. */
+  currentTripId?: string;
 }): SupplierLoading[] {
   const truckIds = new Set<string>();
   if (params.tracteurId) truckIds.add(params.tracteurId);
@@ -93,8 +108,21 @@ export function listLoadingsForTripSelection(params: {
     }
   }
   if (truckIds.size === 0) return [];
+
+  const usedByOtherTrip = new Set<string>();
+  for (const trip of params.trips ?? []) {
+    if (!trip.supplierLoadingId) continue;
+    if (params.currentTripId && trip.id === params.currentTripId) continue;
+    if (trip.statut === 'annule') continue;
+    usedByOtherTrip.add(trip.supplierLoadingId);
+  }
+
   return params.loadings.filter(
-    (l) => l.statut !== 'annule' && !!l.camionId && truckIds.has(l.camionId),
+    (l) =>
+      !isLoadingFinishedForTripSelection(l) &&
+      !!l.camionId &&
+      truckIds.has(l.camionId) &&
+      !usedByOtherTrip.has(l.id),
   );
 }
 

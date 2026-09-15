@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
+import { isLoadingFinished } from '@/lib/supplier-loadings';
 import {
   type TjkOperation,
   createTjkOperation,
@@ -106,7 +107,7 @@ const emptyForm = (): FormState => ({
 });
 
 export default function Tjk() {
-  const { thirdParties, merchandiseQualities, supplierLoadings } = useApp();
+  const { thirdParties, merchandiseQualities, supplierLoadings, updateSupplierLoading } = useApp();
   const { user, canManageFleet } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -154,7 +155,13 @@ export default function Tjk() {
         const reste = Math.max(0, total - used);
         return { loading: l, total, used, reste };
       })
-      .filter((row) => row.total <= 0 || row.reste > 0);
+      .filter((row) => {
+        if (isLoadingFinished(row.loading.statut, row.loading.quantite, row.loading.assignments)) {
+          return false;
+        }
+        if (row.total > 0) return row.reste > 1e-6;
+        return row.used <= 1e-6;
+      });
   }, [tjkLoadings, operations]);
 
   const applyBonToForm = (loadingId: string, prev: FormState): FormState => {
@@ -336,6 +343,30 @@ export default function Tjk() {
           await createTjkOperation(payload);
           toast.success('Opération enregistrée.');
         }
+        if (form.supplierLoadingId) {
+          const bon = tjkLoadings.find((l) => l.id === form.supplierLoadingId);
+          if (bon?.quantite != null && bon.quantite > 0) {
+            const usedAfter = ventilatedQtyForLoading(
+              form.supplierLoadingId,
+              [
+                ...operations.filter((op) => op.id !== editing?.id),
+                {
+                  id: editing?.id || 'new',
+                  date: form.date,
+                  quantite: q,
+                  supplierLoadingId: form.supplierLoadingId,
+                },
+              ],
+            );
+            if (usedAfter + 1e-6 >= bon.quantite) {
+              try {
+                await updateSupplierLoading(form.supplierLoadingId, { statut: 'affecte' });
+              } catch (e) {
+                console.error('mark tjk bon affecte', e);
+              }
+            }
+          }
+        }
         await loadAll();
         setDialogOpen(false);
         resetForm();
@@ -469,7 +500,22 @@ export default function Tjk() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">Sans bon (saisie libre)</SelectItem>
-                          {tjkLoadings.map((l) => {
+                          {tjkLoadings
+                            .filter((l) => {
+                              if (l.statut === 'affecte' || l.statut === 'solde') {
+                                return l.id === form.supplierLoadingId;
+                              }
+                              const used = ventilatedQtyForLoading(
+                                l.id,
+                                operations,
+                                editing?.id,
+                              );
+                              if (l.quantite != null && l.quantite > 0) {
+                                return l.quantite - used > 1e-6 || l.id === form.supplierLoadingId;
+                              }
+                              return used <= 1e-6 || l.id === form.supplierLoadingId;
+                            })
+                            .map((l) => {
                             const used = ventilatedQtyForLoading(
                               l.id,
                               operations,
