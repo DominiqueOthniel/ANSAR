@@ -110,6 +110,25 @@ export function isLoadingFinished(
   return false;
 }
 
+/**
+ * Bon encore choisissable dans un Select (attribution / trajet / dépôt / TJK).
+ * Un bon totalement attribué ne doit plus figurer.
+ */
+export function isLoadingOpenForSelection(
+  loading: {
+    id?: string;
+    statut?: SupplierLoadingStatus | string;
+    quantite?: number;
+    assignments?: AssignmentQtyRow[];
+  },
+  options?: { keepLoadingId?: string },
+): boolean {
+  if (options?.keepLoadingId && loading.id && loading.id === options.keepLoadingId) {
+    return true;
+  }
+  return !isLoadingFinished(loading.statut, loading.quantite, loading.assignments);
+}
+
 /** Fournisseur CIMAF (nom contenant « CIMAF », insensible à la casse). */
 export function isCimafSupplierName(nom: string | undefined | null): boolean {
   return /\bcimaf\b/i.test(String(nom ?? '').trim());
