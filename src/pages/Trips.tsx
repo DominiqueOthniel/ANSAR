@@ -20,7 +20,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, MapPin, Route, CheckCircle, Clock, XCircle, FileText, Filter, X, Search, Download, Eye, DollarSign, Loader2, ListOrdered, ChevronUp, ChevronDown, Pencil, Copy, ListPlus, Receipt, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -604,10 +603,6 @@ export default function Trips() {
             return;
           }
         }
-        if (participantsLint.length >= 2 && !formData.payeurParticipantId.trim()) {
-          toast.error('Avec plusieurs clients, sélectionnez le payeur au règlement.');
-          return;
-        }
         const sumsParts = participantsLint
           .map((p) => ({ p, m: participantLineMontant(p) }))
           .filter((x) => x.m != null);
@@ -631,11 +626,7 @@ export default function Trips() {
               })
             : [];
         const payeurPayload =
-          participantsLint.length >= 2
-            ? formData.payeurParticipantId.trim() || participantsLint[0].id
-            : participantsLint.length === 1
-              ? participantsLint[0].id
-              : undefined;
+          participantsLint.length > 0 ? participantsLint[0].id : undefined;
         const qtySum = sumParticipantsQuantite(participantsLint);
         const firstLieu = participantsLint.find((p) => p.lieuLivraison?.trim())?.lieuLivraison;
         const clientLabel =
@@ -684,12 +675,13 @@ export default function Trips() {
           });
           if (formData.supplierLoadingId) {
             const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
-            if (camionId) {
-              try {
-                await updateSupplierLoading(formData.supplierLoadingId, { camionId });
-              } catch (linkErr) {
-                console.error('link bon mission', linkErr);
-              }
+            try {
+              await updateSupplierLoading(formData.supplierLoadingId, {
+                ...(camionId ? { camionId } : {}),
+                statut: 'affecte',
+              });
+            } catch (linkErr) {
+              console.error('link bon mission', linkErr);
             }
           }
           toast.success('Trajet mis à jour');
@@ -727,12 +719,13 @@ export default function Trips() {
         });
         if (formData.supplierLoadingId) {
           const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
-          if (camionId) {
-            try {
-              await updateSupplierLoading(formData.supplierLoadingId, { camionId });
-            } catch (linkErr) {
-              console.error('link bon mission', linkErr);
-            }
+          try {
+            await updateSupplierLoading(formData.supplierLoadingId, {
+              ...(camionId ? { camionId } : {}),
+              statut: 'affecte',
+            });
+          } catch (linkErr) {
+            console.error('link bon mission', linkErr);
           }
         }        if (formData.prefinancement > 0) {
           try {
@@ -1053,6 +1046,8 @@ export default function Trips() {
         tracteurId: formData.tracteurId || undefined,
         remorqueuseId: formData.remorqueuseId || undefined,
         chauffeurId: formData.chauffeurId || undefined,
+        trips,
+        currentTripId: editingTripId || undefined,
       }),
     [
       supplierLoadings,
@@ -1060,6 +1055,8 @@ export default function Trips() {
       formData.tracteurId,
       formData.remorqueuseId,
       formData.chauffeurId,
+      trips,
+      editingTripId,
     ],
   );
 
@@ -1593,6 +1590,8 @@ export default function Trips() {
                       tracteurId: tracteurId || undefined,
                       remorqueuseId: formData.remorqueuseId || undefined,
                       chauffeurId: nextChauffeur || undefined,
+                      trips,
+                      currentTripId: editingTripId || undefined,
                     });
                     setFormData({ 
                       ...formData, 
@@ -1657,6 +1656,8 @@ export default function Trips() {
                         tracteurId: formData.tracteurId || undefined,
                         remorqueuseId: remorqueuseId || undefined,
                         chauffeurId: formData.chauffeurId || undefined,
+                        trips,
+                        currentTripId: editingTripId || undefined,
                       });
                       setFormData({
                         ...formData,
@@ -1815,6 +1816,8 @@ export default function Trips() {
                       tracteurId: formData.tracteurId || undefined,
                       remorqueuseId: formData.remorqueuseId || undefined,
                       chauffeurId: value || undefined,
+                      trips,
+                      currentTripId: editingTripId || undefined,
                     });
                     setFormData({
                       ...formData,
@@ -2048,33 +2051,6 @@ export default function Trips() {
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-
-                  {formData.clientParticipants.filter((x) => x.libelle.trim()).length >= 2 && (
-                    <div className="space-y-2 pt-2 border-t">
-                      <Label className="text-sm">Payeur au règlement</Label>
-                      <RadioGroup
-                        value={formData.payeurParticipantId}
-                        onValueChange={(v) =>
-                          setFormData((prev) => ({ ...prev, payeurParticipantId: v }))
-                        }
-                        className="flex flex-col gap-2"
-                      >
-                        {formData.clientParticipants
-                          .filter((x) => x.libelle.trim())
-                          .map((x) => (
-                            <div key={x.id} className="flex items-center gap-2">
-                              <RadioGroupItem value={x.id} id={`payeur-${x.id}`} />
-                              <Label
-                                htmlFor={`payeur-${x.id}`}
-                                className="font-normal cursor-pointer text-sm"
-                              >
-                                {x.libelle.trim()}
-                              </Label>
-                            </div>
-                          ))}
-                      </RadioGroup>
                     </div>
                   )}
                 </div>

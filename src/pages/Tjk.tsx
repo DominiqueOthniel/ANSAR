@@ -106,7 +106,7 @@ const emptyForm = (): FormState => ({
 });
 
 export default function Tjk() {
-  const { thirdParties, merchandiseQualities, supplierLoadings } = useApp();
+  const { thirdParties, merchandiseQualities, supplierLoadings, updateSupplierLoading } = useApp();
   const { user, canManageFleet } = useAuth();
   const { isSubmitting, withGuard } = useSubmitGuard();
 
@@ -154,7 +154,13 @@ export default function Tjk() {
         const reste = Math.max(0, total - used);
         return { loading: l, total, used, reste };
       })
-      .filter((row) => row.total <= 0 || row.reste > 0);
+      .filter((row) => {
+        const s = row.loading.statut;
+        if (s === 'affecte' || s === 'solde' || s === 'annule') return false;
+        if (row.total > 0) return row.reste > 1e-6;
+        // Bon sans quantité : disparaît dès qu’au moins une opération le lie.
+        return row.used <= 1e-6;
+      });
   }, [tjkLoadings, operations]);
 
   const applyBonToForm = (loadingId: string, prev: FormState): FormState => {
@@ -335,6 +341,30 @@ export default function Tjk() {
         } else {
           await createTjkOperation(payload);
           toast.success('Opération enregistrée.');
+        }
+        if (form.supplierLoadingId) {
+          const bon = tjkLoadings.find((l) => l.id === form.supplierLoadingId);
+          if (bon?.quantite != null && bon.quantite > 0) {
+            const usedAfter = ventilatedQtyForLoading(
+              form.supplierLoadingId,
+              [
+                ...operations.filter((op) => op.id !== editing?.id),
+                {
+                  id: editing?.id || 'new',
+                  date: form.date,
+                  quantite: q,
+                  supplierLoadingId: form.supplierLoadingId,
+                },
+              ],
+            );
+            if (usedAfter + 1e-6 >= bon.quantite) {
+              try {
+                await updateSupplierLoading(form.supplierLoadingId, { statut: 'affecte' });
+              } catch (e) {
+                console.error('mark tjk bon affecte', e);
+              }
+            }
+          }
         }
         await loadAll();
         setDialogOpen(false);

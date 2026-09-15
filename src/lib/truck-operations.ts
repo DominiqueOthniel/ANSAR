@@ -4,6 +4,7 @@ import type {
   SupplierLoading,
   SupplierLoadingAssignment,
 } from '@/contexts/AppContext';
+import { getLoadingRemainderQty } from '@/lib/supplier-loadings';
 
 /** Bons de chargement rattachés à un camion. */
 export function listLoadingsForTruck(
@@ -76,13 +77,24 @@ export function summarizeLoadingAssignments(assignments?: SupplierLoadingAssignm
     .join(', ');
 }
 
-/** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés). */
+/** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés / terminés). */
+export function isLoadingFinishedForTripSelection(l: SupplierLoading): boolean {
+  if (l.statut === 'annule' || l.statut === 'affecte' || l.statut === 'solde') return true;
+  const remainder = getLoadingRemainderQty(l.quantite, l.assignments);
+  if (remainder != null && remainder <= 1e-6) return true;
+  return false;
+}
+
 export function listLoadingsForTripSelection(params: {
   loadings: SupplierLoading[];
   trucks: { id: string; chauffeurId?: string }[];
   tracteurId?: string;
   remorqueuseId?: string;
   chauffeurId?: string;
+  /** Trajets déjà liés à un bon (pour masquer les bons terminés / déjà pris). */
+  trips?: { id: string; supplierLoadingId?: string; statut?: string }[];
+  /** Trajet en cours d’édition : son bon reste sélectionnable. */
+  currentTripId?: string;
 }): SupplierLoading[] {
   const truckIds = new Set<string>();
   if (params.tracteurId) truckIds.add(params.tracteurId);
@@ -93,8 +105,21 @@ export function listLoadingsForTripSelection(params: {
     }
   }
   if (truckIds.size === 0) return [];
+
+  const usedByOtherTrip = new Set<string>();
+  for (const trip of params.trips ?? []) {
+    if (!trip.supplierLoadingId) continue;
+    if (params.currentTripId && trip.id === params.currentTripId) continue;
+    if (trip.statut === 'annule') continue;
+    usedByOtherTrip.add(trip.supplierLoadingId);
+  }
+
   return params.loadings.filter(
-    (l) => l.statut !== 'annule' && !!l.camionId && truckIds.has(l.camionId),
+    (l) =>
+      !isLoadingFinishedForTripSelection(l) &&
+      !!l.camionId &&
+      truckIds.has(l.camionId) &&
+      !usedByOtherTrip.has(l.id),
   );
 }
 
