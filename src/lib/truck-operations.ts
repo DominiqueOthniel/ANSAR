@@ -4,14 +4,18 @@ import type {
   SupplierLoading,
   SupplierLoadingAssignment,
 } from '@/contexts/AppContext';
-import { getLoadingRemainderQty } from '@/lib/supplier-loadings';
+import { isLoadingFinished } from '@/lib/supplier-loadings';
 
-/** Bons de chargement rattachés à un camion. */
+/** Bons de chargement rattachés à un camion (actifs uniquement). */
 export function listLoadingsForTruck(
   loadings: SupplierLoading[],
   truckId: string,
 ): SupplierLoading[] {
-  return loadings.filter((l) => l.camionId === truckId);
+  return loadings.filter(
+    (l) =>
+      l.camionId === truckId &&
+      !isLoadingFinished(l.statut, l.quantite, l.assignments),
+  );
 }
 
 /** Livraisons assignées à un camion (tracteur). */
@@ -28,7 +32,9 @@ export function listLoadingsAvailableToLink(
   truckId: string,
 ): SupplierLoading[] {
   return loadings.filter(
-    (l) => l.statut !== 'annule' && (!l.camionId || l.camionId === truckId),
+    (l) =>
+      !isLoadingFinished(l.statut, l.quantite, l.assignments) &&
+      (!l.camionId || l.camionId === truckId),
   );
 }
 
@@ -79,10 +85,7 @@ export function summarizeLoadingAssignments(assignments?: SupplierLoadingAssignm
 
 /** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés / terminés). */
 export function isLoadingFinishedForTripSelection(l: SupplierLoading): boolean {
-  if (l.statut === 'annule' || l.statut === 'affecte' || l.statut === 'solde') return true;
-  const remainder = getLoadingRemainderQty(l.quantite, l.assignments);
-  if (remainder != null && remainder <= 1e-6) return true;
-  return false;
+  return isLoadingFinished(l.statut, l.quantite, l.assignments);
 }
 
 export function listLoadingsForTripSelection(params: {

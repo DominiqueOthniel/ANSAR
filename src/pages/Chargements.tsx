@@ -10,6 +10,7 @@ import {
   type SupplierLoadingStatus,
   isLoadingUnassigned,
   isLoadingAtHub,
+  isLoadingFinished,
   sumLoadingAssignedQty,
   getLoadingRemainderQty,
   validateLoadingAssignmentRows,
@@ -253,6 +254,11 @@ export default function Chargements() {
     }
     if (filterStatut !== 'all') {
       list = list.filter((l) => l.statut === filterStatut);
+    } else {
+      // Par défaut : les bons terminés (affectés / soldés / annulés / épuisés) disparaissent.
+      list = list.filter(
+        (l) => !isLoadingFinished(l.statut, l.quantite, l.assignments),
+      );
     }
     if (unassignedOnly) {
       list = list.filter((l) =>
@@ -1428,7 +1434,7 @@ export default function Chargements() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tous</SelectItem>
+                  <SelectItem value="all">En cours (masque terminés)</SelectItem>
                   {SUPPLIER_LOADING_STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>
                       {formatSupplierLoadingStatusFr(s)}

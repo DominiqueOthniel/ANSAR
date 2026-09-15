@@ -95,6 +95,21 @@ export function isLoadingAtHub(statut: SupplierLoadingStatus): boolean {
   return statut === 'au_hub' || statut === 'en_dispatch' || statut === 'en_transit';
 }
 
+/**
+ * Bon terminé : plus à traiter (affecté, soldé, annulé, ou quantité entièrement affectée).
+ * Ces bons doivent disparaître des listes / sélections actives.
+ */
+export function isLoadingFinished(
+  statut: SupplierLoadingStatus | string | undefined,
+  quantite?: number,
+  assignments?: AssignmentQtyRow[],
+): boolean {
+  if (statut === 'annule' || statut === 'affecte' || statut === 'solde') return true;
+  const remainder = getLoadingRemainderQty(quantite, assignments);
+  if (remainder != null && remainder <= 1e-6) return true;
+  return false;
+}
+
 /** Fournisseur CIMAF (nom contenant « CIMAF », insensible à la casse). */
 export function isCimafSupplierName(nom: string | undefined | null): boolean {
   return /\bcimaf\b/i.test(String(nom ?? '').trim());
@@ -132,6 +147,7 @@ export function canLinkClientOrderToLoading(statut: SupplierLoadingStatus): bool
     statut !== 'annule' &&
     statut !== 'brouillon' &&
     statut !== 'en_transit' &&
+    statut !== 'affecte' &&
     statut !== 'solde'
   );
 }

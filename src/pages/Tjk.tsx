@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
+import { isLoadingFinished } from '@/lib/supplier-loadings';
 import {
   type TjkOperation,
   createTjkOperation,
@@ -155,10 +156,10 @@ export default function Tjk() {
         return { loading: l, total, used, reste };
       })
       .filter((row) => {
-        const s = row.loading.statut;
-        if (s === 'affecte' || s === 'solde' || s === 'annule') return false;
+        if (isLoadingFinished(row.loading.statut, row.loading.quantite, row.loading.assignments)) {
+          return false;
+        }
         if (row.total > 0) return row.reste > 1e-6;
-        // Bon sans quantité : disparaît dès qu’au moins une opération le lie.
         return row.used <= 1e-6;
       });
   }, [tjkLoadings, operations]);
@@ -499,7 +500,22 @@ export default function Tjk() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">Sans bon (saisie libre)</SelectItem>
-                          {tjkLoadings.map((l) => {
+                          {tjkLoadings
+                            .filter((l) => {
+                              if (l.statut === 'affecte' || l.statut === 'solde') {
+                                return l.id === form.supplierLoadingId;
+                              }
+                              const used = ventilatedQtyForLoading(
+                                l.id,
+                                operations,
+                                editing?.id,
+                              );
+                              if (l.quantite != null && l.quantite > 0) {
+                                return l.quantite - used > 1e-6 || l.id === form.supplierLoadingId;
+                              }
+                              return used <= 1e-6 || l.id === form.supplierLoadingId;
+                            })
+                            .map((l) => {
                             const used = ventilatedQtyForLoading(
                               l.id,
                               operations,
