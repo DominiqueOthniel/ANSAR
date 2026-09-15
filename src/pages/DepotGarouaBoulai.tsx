@@ -53,7 +53,7 @@ import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { truckMissionLabel } from '@/lib/trip-mission-context';
 import { formatLoadingEntryModeFr } from '@/lib/hub-transit';
-import { SUPPLIER_LOADING_STATUS_OPTIONS, formatSupplierLoadingStatusFr } from '@/lib/supplier-loadings';
+import { SUPPLIER_LOADING_STATUS_OPTIONS, formatSupplierLoadingStatusFr, isLoadingOpenForSelection } from '@/lib/supplier-loadings';
 import {
   type DepotGarouaMovement,
   type DepotGarouaMovementType,
@@ -570,7 +570,15 @@ export default function DepotGarouaBoulai() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Aucun bon</SelectItem>
-                        {bonSummary.rows.map((b) => (
+                        {bonSummary.rows
+                          .filter(
+                            (b) =>
+                              isLoadingOpenForSelection(b, {
+                                keepLoadingId: form.supplierLoadingId || undefined,
+                              }) &&
+                              (b.resteAuDepot == null || b.resteAuDepot > 1e-6),
+                          )
+                          .map((b) => (
                           <SelectItem key={b.id} value={b.id}>
                             {(b.numeroBon ? `Bon ${b.numeroBon} · ` : '') +
                               b.designation +

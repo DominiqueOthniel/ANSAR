@@ -4,7 +4,7 @@ import type {
   SupplierLoading,
   SupplierLoadingAssignment,
 } from '@/contexts/AppContext';
-import { isLoadingFinished } from '@/lib/supplier-loadings';
+import { isLoadingFinished, isLoadingOpenForSelection } from '@/lib/supplier-loadings';
 
 /** Bons de chargement rattachés à un camion (actifs uniquement). */
 export function listLoadingsForTruck(
@@ -12,9 +12,7 @@ export function listLoadingsForTruck(
   truckId: string,
 ): SupplierLoading[] {
   return loadings.filter(
-    (l) =>
-      l.camionId === truckId &&
-      !isLoadingFinished(l.statut, l.quantite, l.assignments),
+    (l) => l.camionId === truckId && isLoadingOpenForSelection(l),
   );
 }
 
@@ -33,7 +31,7 @@ export function listLoadingsAvailableToLink(
 ): SupplierLoading[] {
   return loadings.filter(
     (l) =>
-      !isLoadingFinished(l.statut, l.quantite, l.assignments) &&
+      isLoadingOpenForSelection(l) &&
       (!l.camionId || l.camionId === truckId),
   );
 }
@@ -85,7 +83,7 @@ export function summarizeLoadingAssignments(assignments?: SupplierLoadingAssignm
 
 /** Bons liés au tracteur / remorqueuse / camions du chauffeur (hors annulés / terminés). */
 export function isLoadingFinishedForTripSelection(l: SupplierLoading): boolean {
-  return isLoadingFinished(l.statut, l.quantite, l.assignments);
+  return !isLoadingOpenForSelection(l);
 }
 
 export function listLoadingsForTripSelection(params: {
