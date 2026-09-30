@@ -17,15 +17,31 @@ function mapRow(row) {
   if (!row) return null;
   const j = rowToJson(row);
   j.quantite = num(j.quantite);
+  if (j.qtes != null) j.qtes = num(j.qtes);
+  if (j.tonnage != null) j.tonnage = num(j.tonnage);
+  if (j.prixTrans != null) j.prixTrans = num(j.prixTrans);
+  if (j.paiement != null) j.paiement = num(j.paiement);
   if (j.created_at && !j.createdAt) j.createdAt = j.created_at;
   return j;
+}
+
+function optionalNum(v) {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  const n = num(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function ensureSchema() {
   if (schemaReady) return;
   await query(`
     ALTER TABLE ${TABLE}
-      ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID
+      ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID,
+      ADD COLUMN IF NOT EXISTS qtes NUMERIC(12, 2),
+      ADD COLUMN IF NOT EXISTS tonnage NUMERIC(12, 2),
+      ADD COLUMN IF NOT EXISTS "telChauffeur" VARCHAR(40),
+      ADD COLUMN IF NOT EXISTS "prixTrans" NUMERIC(14, 2),
+      ADD COLUMN IF NOT EXISTS paiement NUMERIC(14, 2)
   `);
   schemaReady = true;
 }
@@ -82,8 +98,9 @@ async function createOperation(body, actor) {
   await query(
     `INSERT INTO ${TABLE}
       (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
-       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId", notes, utilisateur)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId",
+       qtes, tonnage, "telChauffeur", "prixTrans", paiement, notes, utilisateur)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     [
       id,
       dateOnly(body.date),
@@ -97,6 +114,11 @@ async function createOperation(body, actor) {
       normalizeImmat(body.camionImmatriculation),
       body.referenceAtc?.trim() || null,
       body.supplierLoadingId || null,
+      optionalNum(body.qtes) ?? q,
+      optionalNum(body.tonnage),
+      body.telChauffeur?.trim() || null,
+      optionalNum(body.prixTrans),
+      optionalNum(body.paiement),
       body.notes?.trim() || null,
       body.utilisateur?.trim() || actor?.login || 'Système',
     ],
@@ -123,6 +145,35 @@ async function updateOperation(id, body, actor) {
     throw HttpError(400, 'Indiquez un client (fiche ou nom libre).');
   }
 
+  const nextQtes =
+    body.qtes !== undefined
+      ? optionalNum(body.qtes)
+      : prev.qtes != null
+        ? num(prev.qtes)
+        : null;
+  const nextTonnage =
+    body.tonnage !== undefined
+      ? optionalNum(body.tonnage)
+      : prev.tonnage != null
+        ? num(prev.tonnage)
+        : null;
+  const nextTel =
+    body.telChauffeur !== undefined
+      ? body.telChauffeur?.trim() || null
+      : prev.telChauffeur || null;
+  const nextPrix =
+    body.prixTrans !== undefined
+      ? optionalNum(body.prixTrans)
+      : prev.prixTrans != null
+        ? num(prev.prixTrans)
+        : null;
+  const nextPaiement =
+    body.paiement !== undefined
+      ? optionalNum(body.paiement)
+      : prev.paiement != null
+        ? num(prev.paiement)
+        : null;
+
   await query(
     `UPDATE ${TABLE} SET
       date = COALESCE($2, date),
@@ -136,7 +187,12 @@ async function updateOperation(id, body, actor) {
       "camionImmatriculation" = COALESCE($10, "camionImmatriculation"),
       "referenceAtc" = COALESCE($11, "referenceAtc"),
       "supplierLoadingId" = $12,
-      notes = COALESCE($13, notes)
+      qtes = $13,
+      tonnage = $14,
+      "telChauffeur" = $15,
+      "prixTrans" = $16,
+      paiement = $17,
+      notes = COALESCE($18, notes)
      WHERE id = $1`,
     [
       id,
@@ -157,6 +213,11 @@ async function updateOperation(id, body, actor) {
       body.supplierLoadingId !== undefined
         ? body.supplierLoadingId || null
         : prev.supplierLoadingId || null,
+      nextQtes,
+      nextTonnage,
+      nextTel,
+      nextPrix,
+      nextPaiement,
       body.notes !== undefined ? body.notes?.trim() || null : null,
     ],
   );

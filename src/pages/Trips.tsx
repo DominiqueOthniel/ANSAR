@@ -58,6 +58,10 @@ import {
   formatLoadingBonOption,
   listLoadingsForTripSelection,
 } from '@/lib/truck-operations';
+import {
+  buildTripOperationDetailRows,
+  summarizeTripOperationDetails,
+} from '@/lib/trip-operations-detail';
 
 /** Affichage itinéraire quand la destination résumé est vide. */
 function itineraireResume(origine: string, destination: string | undefined): string {
@@ -204,8 +208,8 @@ export default function Trips() {
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestinationPickerOpen, setIsDestinationPickerOpen] = useState(false);
-  const [isExpensesDialogOpen, setIsExpensesDialogOpen] = useState(false);
-  const [selectedTripForExpenses, setSelectedTripForExpenses] = useState<Trip | null>(null);
+  const [isTripDetailDialogOpen, setIsTripDetailDialogOpen] = useState(false);
+  const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
   const [isStopsDialogOpen, setIsStopsDialogOpen] = useState(false);
   const [stopsDialogTrip, setStopsDialogTrip] = useState<Trip | null>(null);
   const [stopsDraft, setStopsDraft] = useState<TripStop[]>([]);
@@ -2503,23 +2507,18 @@ export default function Trips() {
                             <SelectItem value="annule" disabled={trip.statut === 'termine' || trip.statut === 'annule'}>Annulé</SelectItem>
                           </SelectContent>
                         </Select>
-                        {(() => {
-                          const stats = calculateTripStats(trip.id, expenses, trip, invoices);
-                          return stats.linkedExpensesCount > 0 && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedTripForExpenses(trip);
-                                setIsExpensesDialogOpen(true);
-                              }}
-                              className="h-8 w-8 p-0"
-                              title="Voir les dépenses de ce trajet"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          );
-                        })()}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedTripForDetail(trip);
+                            setIsTripDetailDialogOpen(true);
+                          }}
+                          className="h-8 w-8 p-0"
+                          title="Détails du trajet : opérations, bons, livraisons, dépenses"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
                         {canManageFleet && trip.statut !== 'annule' && (
                           <>
                             <Button
@@ -2815,57 +2814,73 @@ export default function Trips() {
         selectedCity={formData.destination}
       />
 
-      {/* Dialog de consultation des dépenses d'un trajet */}
-      <Dialog open={isExpensesDialogOpen} onOpenChange={setIsExpensesDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto">
+      {/* Dialog détail trajet : opérations + dépenses */}
+      <Dialog open={isTripDetailDialogOpen} onOpenChange={setIsTripDetailDialogOpen}>
+        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Dépenses du trajet</DialogTitle>
+            <DialogTitle>Détails du trajet</DialogTitle>
+            <DialogDescription>
+              Toutes les opérations réalisées pendant ce trajet (mission, arrêts, bons, livraisons) et les dépenses liées.
+            </DialogDescription>
           </DialogHeader>
-          {selectedTripForExpenses && (() => {
-            const tripExpenses = expenses.filter(e => e.tripId === selectedTripForExpenses.id);
-            const stats = calculateTripStats(selectedTripForExpenses.id, expenses, selectedTripForExpenses, invoices);
-            
+          {selectedTripForDetail && (() => {
+            const trip = selectedTripForDetail;
+            const tripExpenses = expenses.filter((e) => e.tripId === trip.id);
+            const stats = calculateTripStats(trip.id, expenses, trip, invoices);
+            const opRows = buildTripOperationDetailRows({
+              trip,
+              trucks,
+              drivers,
+              loadings: supplierLoadings,
+              deliveries: clientDeliveries,
+              invoices,
+            });
+            const opSummary = summarizeTripOperationDetails(trip, opRows, invoices);
+
             return (
               <div className="space-y-4">
-                {/* Informations du trajet */}
                 <div className="bg-muted/50 rounded-lg p-4 border border-border">
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
                     <div>
-                      <span className="text-muted-foreground">Itinéraire:</span>
+                      <span className="text-muted-foreground">Itinéraire</span>
                       <p className="font-semibold">
-                        {itineraireResume(selectedTripForExpenses.origine, selectedTripForExpenses.destination)}
+                        {itineraireResume(trip.origine, trip.destination)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Statut:</span>
-                      <p className={`font-semibold ${selectedTripForExpenses.statut === 'annule' ? 'text-red-600 dark:text-red-400' : ''}`}>
-                        {formatTripStatusFr(selectedTripForExpenses.statut)}
+                      <span className="text-muted-foreground">Statut</span>
+                      <p className={`font-semibold ${trip.statut === 'annule' ? 'text-red-600 dark:text-red-400' : ''}`}>
+                        {formatTripStatusFr(trip.statut)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Départ:</span>
+                      <span className="text-muted-foreground">Départ</span>
                       <p className="font-semibold">
-                        {new Date(selectedTripForExpenses.dateDepart).toLocaleDateString('fr-FR')}
+                        {new Date(trip.dateDepart).toLocaleDateString('fr-FR')}
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Arrivée:</span>
+                      <span className="text-muted-foreground">Arrivée</span>
                       <p className="font-semibold">
-                        {selectedTripForExpenses.dateArrivee
-                          ? new Date(selectedTripForExpenses.dateArrivee).toLocaleDateString('fr-FR')
+                        {trip.dateArrivee
+                          ? new Date(trip.dateArrivee).toLocaleDateString('fr-FR')
                           : 'À définir'}
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Recette:</span>
-                      <p className="font-semibold text-green-600 dark:text-green-400">{stats.recette.toLocaleString('fr-FR')} FCFA</p>
+                      <span className="text-muted-foreground">Recette</span>
+                      <p className="font-semibold text-green-600 dark:text-green-400">
+                        {stats.recette.toLocaleString('fr-FR')} FCFA
+                      </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Préfinancement:</span>
-                      <p className="font-semibold text-blue-600 dark:text-blue-400">{stats.prefinancement.toLocaleString('fr-FR')} FCFA</p>
+                      <span className="text-muted-foreground">Préfinancement</span>
+                      <p className="font-semibold text-blue-600 dark:text-blue-400">
+                        {stats.prefinancement.toLocaleString('fr-FR')} FCFA
+                      </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Solde:</span>
+                      <span className="text-muted-foreground">Solde</span>
                       <p className={`font-bold ${stats.solde >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {stats.solde.toLocaleString('fr-FR')} FCFA
                       </p>
@@ -2873,13 +2888,117 @@ export default function Trips() {
                   </div>
                 </div>
 
-                {/* Résumé des dépenses */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
+                  <div className="rounded-md border bg-background p-3">
+                    <p className="text-muted-foreground text-xs">Nbre opérations</p>
+                    <p className="font-semibold tabular-nums">{opSummary.nbreOperations}</p>
+                  </div>
+                  <div className="rounded-md border bg-background p-3">
+                    <p className="text-muted-foreground text-xs">Prix TRANS total</p>
+                    <p className="font-semibold tabular-nums">
+                      {opSummary.prixTransTotal.toLocaleString('fr-FR')}
+                    </p>
+                  </div>
+                  <div className="rounded-md border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-3">
+                    <p className="text-muted-foreground text-xs">Total paiement</p>
+                    <p className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
+                      {opSummary.totalPaiement.toLocaleString('fr-FR')}
+                    </p>
+                  </div>
+                  <div className="rounded-md border bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 p-3">
+                    <p className="text-muted-foreground text-xs">Reste à payer</p>
+                    <p className="font-semibold tabular-nums text-orange-700 dark:text-orange-300">
+                      {opSummary.resteAPayer.toLocaleString('fr-FR')}
+                    </p>
+                  </div>
+                  <div className="rounded-md border bg-background p-3">
+                    <p className="text-muted-foreground text-xs">Tonnage total</p>
+                    <p className="font-semibold tabular-nums">
+                      {opSummary.tonnageTotal > 0
+                        ? opSummary.tonnageTotal.toLocaleString('fr-FR')
+                        : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Opérations du trajet</h4>
+                  <Table
+                    className="min-w-[1100px]"
+                    containerClassName="max-h-none shadow-none"
+                  >
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Quantité</TableHead>
+                        <TableHead>Qualité</TableHead>
+                        <TableHead>Destination</TableHead>
+                        <TableHead>N° camion</TableHead>
+                        <TableHead>ATC</TableHead>
+                        <TableHead className="text-right">Qtes</TableHead>
+                        <TableHead className="text-right">Tonnage</TableHead>
+                        <TableHead>Tel chauf</TableHead>
+                        <TableHead className="text-right">Prix TRANS</TableHead>
+                        <TableHead className="text-right">Paiement</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {opRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>
+                            <Badge variant="outline" className="font-normal text-[10px]">
+                              {row.kindLabel}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {row.date
+                              ? new Date(row.date).toLocaleDateString('fr-FR')
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.quantite != null
+                              ? row.quantite.toLocaleString('fr-FR')
+                              : '—'}
+                          </TableCell>
+                          <TableCell>{row.qualite || '—'}</TableCell>
+                          <TableCell>{row.destination || '—'}</TableCell>
+                          <TableCell>{row.camionLabel || '—'}</TableCell>
+                          <TableCell>{row.atc || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.qtes != null ? row.qtes.toLocaleString('fr-FR') : '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.tonnage != null
+                              ? row.tonnage.toLocaleString('fr-FR')
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {row.telChauffeur || '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.prixTrans != null
+                              ? row.prixTrans.toLocaleString('fr-FR')
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.paiement != null
+                              ? row.paiement.toLocaleString('fr-FR')
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
                 <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-5 w-5 text-primary" />
                       <span className="font-semibold">
-                        Dépenses d’exploitation (hors préfinancement) : {stats.expenses.toLocaleString('fr-FR')} FCFA
+                        Dépenses d’exploitation (hors préfinancement) :{' '}
+                        {stats.expenses.toLocaleString('fr-FR')} FCFA
                       </span>
                     </div>
                     <Badge variant="outline" className="bg-primary/10">
@@ -2891,7 +3010,6 @@ export default function Trips() {
                   </p>
                 </div>
 
-                {/* Liste des dépenses */}
                 {tripExpenses.length > 0 ? (
                   <div>
                     <h4 className="font-semibold mb-3">Détail des dépenses</h4>
@@ -2911,7 +3029,9 @@ export default function Trips() {
                       <TableBody>
                         {tripExpenses.map((expense) => (
                           <TableRow key={expense.id}>
-                            <TableCell>{new Date(expense.date).toLocaleDateString('fr-FR')}</TableCell>
+                            <TableCell>
+                              {new Date(expense.date).toLocaleDateString('fr-FR')}
+                            </TableCell>
                             <TableCell className="font-medium">{expense.categorie}</TableCell>
                             <TableCell>{expense.sousCategorie || '-'}</TableCell>
                             <TableCell>{expense.description}</TableCell>
@@ -2924,8 +3044,8 @@ export default function Trips() {
                     </Table>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>Aucune dépense enregistrée pour ce trajet</p>
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    Aucune dépense enregistrée pour ce trajet
                   </div>
                 )}
               </div>

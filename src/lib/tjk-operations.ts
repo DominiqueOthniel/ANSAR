@@ -20,6 +20,12 @@ export interface TjkOperation {
   referenceAtc?: string;
   /** Bon de chargement (mode TJK) lié à cette opération. */
   supplierLoadingId?: string;
+  /** Quantité suivie (souvent égale à quantite). */
+  qtes?: number;
+  tonnage?: number;
+  telChauffeur?: string;
+  prixTrans?: number;
+  paiement?: number;
   notes?: string;
   utilisateur?: string;
   createdAt?: string;
@@ -49,6 +55,23 @@ export function normalizeTjkOperation(r: Record<string, unknown>): TjkOperation 
     camionImmatriculation: r.camionImmatriculation ? String(r.camionImmatriculation) : undefined,
     referenceAtc: r.referenceAtc ? String(r.referenceAtc) : undefined,
     supplierLoadingId: r.supplierLoadingId ? String(r.supplierLoadingId) : undefined,
+    qtes:
+      r.qtes != null && String(r.qtes) !== ''
+        ? parseNum(r.qtes)
+        : undefined,
+    tonnage:
+      r.tonnage != null && String(r.tonnage) !== ''
+        ? parseNum(r.tonnage)
+        : undefined,
+    telChauffeur: r.telChauffeur ? String(r.telChauffeur) : undefined,
+    prixTrans:
+      r.prixTrans != null && String(r.prixTrans) !== ''
+        ? parseNum(r.prixTrans)
+        : undefined,
+    paiement:
+      r.paiement != null && String(r.paiement) !== ''
+        ? parseNum(r.paiement)
+        : undefined,
     notes: r.notes ? String(r.notes) : undefined,
     utilisateur: r.utilisateur ? String(r.utilisateur) : undefined,
     createdAt: r.createdAt
@@ -145,6 +168,23 @@ export async function createTjkOperation(
       : undefined,
     referenceAtc: payload.referenceAtc?.trim() || undefined,
     supplierLoadingId: payload.supplierLoadingId || undefined,
+    qtes:
+      payload.qtes != null && Number.isFinite(Number(payload.qtes))
+        ? Number(payload.qtes)
+        : undefined,
+    tonnage:
+      payload.tonnage != null && Number.isFinite(Number(payload.tonnage))
+        ? Number(payload.tonnage)
+        : undefined,
+    telChauffeur: payload.telChauffeur?.trim() || undefined,
+    prixTrans:
+      payload.prixTrans != null && Number.isFinite(Number(payload.prixTrans))
+        ? Number(payload.prixTrans)
+        : undefined,
+    paiement:
+      payload.paiement != null && Number.isFinite(Number(payload.paiement))
+        ? Number(payload.paiement)
+        : undefined,
     notes: payload.notes?.trim() || undefined,
     utilisateur: payload.utilisateur?.trim() || undefined,
     createdAt: new Date().toISOString(),
@@ -211,6 +251,34 @@ export async function updateTjkOperation(
       payload.supplierLoadingId !== undefined
         ? payload.supplierLoadingId || undefined
         : prev.supplierLoadingId,
+    qtes:
+      payload.qtes !== undefined
+        ? payload.qtes != null && Number.isFinite(Number(payload.qtes))
+          ? Number(payload.qtes)
+          : undefined
+        : prev.qtes,
+    tonnage:
+      payload.tonnage !== undefined
+        ? payload.tonnage != null && Number.isFinite(Number(payload.tonnage))
+          ? Number(payload.tonnage)
+          : undefined
+        : prev.tonnage,
+    telChauffeur:
+      payload.telChauffeur !== undefined
+        ? payload.telChauffeur?.trim() || undefined
+        : prev.telChauffeur,
+    prixTrans:
+      payload.prixTrans !== undefined
+        ? payload.prixTrans != null && Number.isFinite(Number(payload.prixTrans))
+          ? Number(payload.prixTrans)
+          : undefined
+        : prev.prixTrans,
+    paiement:
+      payload.paiement !== undefined
+        ? payload.paiement != null && Number.isFinite(Number(payload.paiement))
+          ? Number(payload.paiement)
+          : undefined
+        : prev.paiement,
     notes:
       payload.notes !== undefined ? payload.notes?.trim() || undefined : prev.notes,
     utilisateur:
