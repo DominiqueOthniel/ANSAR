@@ -424,6 +424,11 @@ export interface TjkOperationPayload {
   referenceAtc?: string;
   /** Bon de chargement (mode TJK) ventilé par cette opération. */
   supplierLoadingId?: string | null;
+  qtes?: number | null;
+  tonnage?: number | null;
+  telChauffeur?: string;
+  prixTrans?: number | null;
+  paiement?: number | null;
   notes?: string;
   utilisateur?: string;
 }
