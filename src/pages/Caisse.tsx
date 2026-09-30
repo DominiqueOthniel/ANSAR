@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,8 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2, X, Tag } from 'lucide-react';
-import { useRef } from 'react';
+import { Plus, Edit, Trash2, Wallet, TrendingUp, TrendingDown, Search, FileDown, FileText, HardDrive, Upload, Landmark, Receipt, Layers, Heart, Loader2, X, Tag, Route } from 'lucide-react';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/PageHeader';
@@ -24,7 +24,7 @@ import {
   refreshBankFromApi,
   removeBankTransactionAsync,
 } from '@/lib/bank-local';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, type Trip } from '@/contexts/AppContext';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { PaymentModePicker } from '@/components/PaymentModePicker';
 import { getTotalCreancesClients } from '@/lib/sync-utils';
@@ -45,6 +45,13 @@ import {
   isCaisseDepenseTransaction,
 } from '@/lib/caisse-local';
 import {
+  caisseReferenceForExpense,
+  linkedExpenseIdFromCaisse,
+  removeLinkedExpenseForCaisseSortie,
+  syncExpenseForTripCaisseSortie,
+} from '@/lib/caisse-trip-expense';
+import { formatTripCode } from '@/lib/trip-display';
+import {
   missingVersementDetailMessage,
   normalizePaymentMode,
   parseAnsarBanque,
@@ -59,6 +66,13 @@ import {
 } from '@/lib/payment-modes';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
+
+function tripCaisseLabel(trip: Trip): string {
+  const o = (trip.origine ?? '').trim() || '—';
+  const d = (trip.destination ?? '').trim();
+  const route = d ? `${o} → ${d}` : `${o} → —`;
+  return `${formatTripCode(trip)} · ${route}`;
+}
 
 const CAISSE_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date (récent → ancien)' },
@@ -188,8 +202,17 @@ function formatCaisseBanqueLabel(t: Pick<CaisseTransaction, 'modePaiement'>): st
 }
 
 export default function Caisse() {
-  const { invoices, thirdParties } = useApp();
+  const {
+    invoices,
+    thirdParties,
+    trips,
+    expenses,
+    createExpense,
+    updateExpense,
+    deleteExpense,
+  } = useApp();
   const { canManageTreasury, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const restoreFileRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<CaisseTransaction[]>([]);
 
@@ -221,6 +244,8 @@ export default function Caisse() {
     clientTierId: '',
     modePaiement: '',
     categorie: '',
+    /** Trajet impacté par une sortie (solde / dépenses du trajet). */
+    tripId: '',
   });
 
   const clients = useMemo(
@@ -231,6 +256,20 @@ export default function Caisse() {
   const fournisseurs = useMemo(
     () => thirdParties.filter((tp) => tp.type === 'fournisseur'),
     [thirdParties],
+  );
+
+  const selectableTrips = useMemo(
+    () =>
+      stableSort(
+        trips.filter((t) => t.statut !== 'annule'),
+        (a, b) => parseDateMs(b.dateDepart) - parseDateMs(a.dateDepart),
+      ),
+    [trips],
+  );
+
+  const expenseWriters = useMemo(
+    () => ({ createExpense, updateExpense, deleteExpense }),
+    [createExpense, updateExpense, deleteExpense],
   );
 
   const categorieOptions = useMemo(() => {
@@ -275,6 +314,34 @@ export default function Caisse() {
   useEffect(() => {
     if (isDialogOpen) refreshBankAccounts();
   }, [isDialogOpen]);
+
+  /** Ouverture depuis Trajets : /caisse?create=1&type=sortie&tripId=… */
+  useEffect(() => {
+    const create = searchParams.get('create');
+    const type = searchParams.get('type');
+    const tripId = searchParams.get('tripId')?.trim() || '';
+    if (create !== '1' && !tripId) return;
+
+    setEditingTransaction(null);
+    setFormData({
+      type: type === 'sortie' || tripId ? 'sortie' : 'entree',
+      montant: 0,
+      date: new Date().toISOString().split('T')[0],
+      description: '',
+      exclutRevenu: false,
+      clientTierId: '',
+      modePaiement: '',
+      categorie: type === 'sortie' || tripId ? 'Carburant' : '',
+      tripId,
+    });
+    setIsDialogOpen(true);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('create');
+    next.delete('type');
+    next.delete('tripId');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   /** Recharger les soldes banque depuis le localStorage quand la caisse change (ex. prélèvement lié). */
   useEffect(() => {
@@ -343,6 +410,7 @@ export default function Caisse() {
       clientTierId: '',
       modePaiement: '',
       categorie: '',
+      tripId: '',
     });
     setEditingTransaction(null);
   };
@@ -389,6 +457,9 @@ export default function Caisse() {
 
     const categorie =
       formData.type === 'sortie' ? formData.categorie.trim() || undefined : undefined;
+    const tripId =
+      formData.type === 'sortie' ? formData.tripId.trim() || '' : '';
+    const linkedTrip = tripId ? trips.find((t) => t.id === tripId) : undefined;
 
     await withGuard(async () => {
     if (editingTransaction) {
@@ -397,25 +468,56 @@ export default function Caisse() {
         await removeBankTransactionAsync(prevLinked);
       }
 
-      const base: CaisseTransaction = {
-        ...formData,
-        id: editingTransaction.id,
-        montant,
-        utilisateur: editingTransaction.utilisateur || user?.login || 'system',
-        compteBanqueId: undefined,
-        bankTransactionId: undefined,
-        categorie,
-        reference: editingTransaction.reference,
-        exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-        clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
-        modePaiement: mode,
-      };
+      let reference = editingTransaction.reference;
+      const existingExpenseId = linkedExpenseIdFromCaisse(editingTransaction.reference);
 
       try {
+        if (formData.type === 'sortie' && tripId) {
+          const expenseId = await syncExpenseForTripCaisseSortie(expenseWriters, {
+            tripId,
+            existingExpenseId,
+            montant,
+            date: formData.date,
+            description: formData.description,
+            categorie: categorie || 'Autre',
+            camionId: linkedTrip?.tracteurId || linkedTrip?.remorqueuseId,
+            chauffeurId: linkedTrip?.chauffeurId,
+          });
+          reference = caisseReferenceForExpense(expenseId);
+        } else if (existingExpenseId) {
+          await removeLinkedExpenseForCaisseSortie(
+            expenseWriters,
+            editingTransaction.reference,
+          );
+          if (isCaisseDepenseTransaction(editingTransaction)) {
+            reference = undefined;
+          }
+        }
+
+        const base: CaisseTransaction = {
+          id: editingTransaction.id,
+          type: formData.type,
+          date: formData.date,
+          description: formData.description,
+          montant,
+          utilisateur: editingTransaction.utilisateur || user?.login || 'system',
+          compteBanqueId: undefined,
+          bankTransactionId: undefined,
+          categorie,
+          reference,
+          exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
+          clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
+          modePaiement: mode,
+        };
+
         await saveCaisseTransactionRemote(base, false);
         setTransactions(getCaisseTransactions());
         setSoldeInitial(getCaisseSoldeInitialSync());
-        toast.success('Transaction modifiée avec succès');
+        toast.success(
+          tripId
+            ? 'Sortie enregistrée et déduite du trajet.'
+            : 'Transaction modifiée avec succès',
+        );
         setIsDialogOpen(false);
         resetForm();
         refreshBankAccounts();
@@ -426,22 +528,44 @@ export default function Caisse() {
     }
 
     const newId = Date.now().toString();
-    const newTransaction: CaisseTransaction = {
-      ...formData,
-      id: newId,
-      montant,
-      utilisateur: user?.login || 'system',
-      exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-      clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
-      modePaiement: mode,
-      categorie,
-    };
+    let reference: string | undefined;
 
     try {
+      if (formData.type === 'sortie' && tripId) {
+        const expenseId = await syncExpenseForTripCaisseSortie(expenseWriters, {
+          tripId,
+          montant,
+          date: formData.date,
+          description: formData.description,
+          categorie: categorie || 'Autre',
+          camionId: linkedTrip?.tracteurId || linkedTrip?.remorqueuseId,
+          chauffeurId: linkedTrip?.chauffeurId,
+        });
+        reference = caisseReferenceForExpense(expenseId);
+      }
+
+      const newTransaction: CaisseTransaction = {
+        id: newId,
+        type: formData.type,
+        date: formData.date,
+        description: formData.description,
+        montant,
+        utilisateur: user?.login || 'system',
+        exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
+        clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
+        modePaiement: mode,
+        categorie,
+        reference,
+      };
+
       await saveCaisseTransactionRemote(newTransaction, true);
       setTransactions(getCaisseTransactions());
       setSoldeInitial(getCaisseSoldeInitialSync());
-      toast.success('Transaction ajoutée avec succès');
+      toast.success(
+        tripId
+          ? 'Sortie enregistrée et déduite du trajet.'
+          : 'Transaction ajoutée avec succès',
+      );
       setIsDialogOpen(false);
       resetForm();
       refreshBankAccounts();
@@ -458,6 +582,9 @@ export default function Caisse() {
       await removeBankTransactionAsync(t.bankTransactionId);
     }
     try {
+      if (t?.type === 'sortie') {
+        await removeLinkedExpenseForCaisseSortie(expenseWriters, t.reference);
+      }
       if (isRemoteCaisse()) {
         await deleteCaisseTransactionRemote(id);
         setTransactions(getCaisseTransactions());
@@ -474,6 +601,10 @@ export default function Caisse() {
 
   const handleEdit = (t: CaisseTransaction) => {
     setEditingTransaction(t);
+    const linkedExpenseId = linkedExpenseIdFromCaisse(t.reference);
+    const linkedExpense = linkedExpenseId
+      ? expenses.find((e) => e.id === linkedExpenseId)
+      : undefined;
     setFormData({
       type: t.type,
       montant: t.montant,
@@ -483,6 +614,7 @@ export default function Caisse() {
       clientTierId: t.clientTierId || '',
       modePaiement: t.modePaiement || '',
       categorie: t.categorie || (t.type === 'sortie' ? 'Carburant' : ''),
+      tripId: linkedExpense?.tripId || '',
     });
     setIsDialogOpen(true);
   };
@@ -893,6 +1025,7 @@ export default function Caisse() {
                                   ? ''
                                   : formData.categorie || 'Carburant',
                               clientTierId: v === 'sortie' ? '' : formData.clientTierId,
+                              tripId: v === 'entree' ? '' : formData.tripId,
                             });
                           }}
                         >
@@ -938,6 +1071,40 @@ export default function Caisse() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    )}
+
+                    {formData.type === 'sortie' && (
+                      <div>
+                        <Label>Trajet impacté (optionnel)</Label>
+                        <Select
+                          value={formData.tripId || '__none__'}
+                          onValueChange={(v) =>
+                            setFormData((f) => ({
+                              ...f,
+                              tripId: v === '__none__' ? '' : v,
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Aucun trajet" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Aucun trajet</SelectItem>
+                            {selectableTrips.map((trip) => (
+                              <SelectItem key={trip.id} value={trip.id}>
+                                {tripCaisseLabel(trip)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                          <Route className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          <span>
+                            Si un trajet est choisi, la sortie est déduite des dépenses et du solde
+                            de ce trajet.
+                          </span>
+                        </p>
                       </div>
                     )}
 

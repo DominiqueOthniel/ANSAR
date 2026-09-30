@@ -850,9 +850,11 @@ export default function Trips() {
     navigate(`/factures?create=1&trajetId=${encodeURIComponent(tripId)}`);
   };
 
-  const openTripExpense = (_tripId: string) => {
-    toast.info('Enregistre la sortie depuis Caisse (type Sortie).');
-    navigate('/caisse');
+  const openTripExpense = (tripId: string) => {
+    toast.info('Enregistre la sortie : elle sera déduite du solde de ce trajet.');
+    navigate(
+      `/caisse?create=1&type=sortie&tripId=${encodeURIComponent(tripId)}`,
+    );
   };
 
   const openStopsDialog = (trip: Trip) => {
