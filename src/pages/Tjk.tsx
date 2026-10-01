@@ -94,6 +94,17 @@ type FormState = {
   prixTrans: number | undefined;
   paiement: number | undefined;
   notes: string;
+  soldeAnterieur: number | undefined;
+  nombreCamions: number | undefined;
+  tonnageTotal: number | undefined;
+  qtfs: number | undefined;
+  tonnage: number | undefined;
+  resteAPayer: number | undefined;
+  prixTransport: number | undefined;
+  totalTransport: number | undefined;
+  telChauffeur: string;
+  prixVoyage: number | undefined;
+  totalPalemarr: number | undefined;
 };
 
 const emptyForm = (): FormState => ({
@@ -114,6 +125,17 @@ const emptyForm = (): FormState => ({
   prixTrans: undefined,
   paiement: undefined,
   notes: '',
+  soldeAnterieur: undefined,
+  nombreCamions: undefined,
+  tonnageTotal: undefined,
+  qtfs: undefined,
+  tonnage: undefined,
+  resteAPayer: undefined,
+  prixTransport: undefined,
+  totalTransport: undefined,
+  telChauffeur: '',
+  prixVoyage: undefined,
+  totalPalemarr: undefined,
 });
 
 export default function Tjk() {
@@ -231,7 +253,19 @@ export default function Tjk() {
         (op.referenceAtc ?? '').toLowerCase().includes(q) ||
         (op.telChauffeur ?? '').toLowerCase().includes(q) ||
         (op.notes ?? '').toLowerCase().includes(q) ||
-        String(op.quantite).includes(q)
+        (op.telChauffeur ?? '').toLowerCase().includes(q) ||
+        (op.unite ?? '').toLowerCase().includes(q) ||
+        String(op.quantite).includes(q) ||
+        (op.soldeAnterieur && String(op.soldeAnterieur).includes(q)) ||
+        (op.nombreCamions && String(op.nombreCamions).includes(q)) ||
+        (op.tonnageTotal && String(op.tonnageTotal).includes(q)) ||
+        (op.qtfs && String(op.qtfs).includes(q)) ||
+        (op.tonnage && String(op.tonnage).includes(q)) ||
+        (op.resteAPayer && String(op.resteAPayer).includes(q)) ||
+        (op.prixTransport && String(op.prixTransport).includes(q)) ||
+        (op.totalTransport && String(op.totalTransport).includes(q)) ||
+        (op.prixVoyage && String(op.prixVoyage).includes(q)) ||
+        (op.totalPalemarr && String(op.totalPalemarr).includes(q))
       );
     });
   }, [operations, searchTerm, filterDateFrom, filterDateTo]);
@@ -289,6 +323,17 @@ export default function Tjk() {
       prixTrans: op.prixTrans,
       paiement: op.paiement,
       notes: op.notes || '',
+      soldeAnterieur: op.soldeAnterieur,
+      nombreCamions: op.nombreCamions,
+      tonnageTotal: op.tonnageTotal,
+      qtfs: op.qtfs,
+      tonnage: op.tonnage,
+      resteAPayer: op.resteAPayer,
+      prixTransport: op.prixTransport,
+      totalTransport: op.totalTransport,
+      telChauffeur: op.telChauffeur || '',
+      prixVoyage: op.prixVoyage,
+      totalPalemarr: op.totalPalemarr,
     });
     setDialogOpen(true);
   };
@@ -366,6 +411,17 @@ export default function Tjk() {
           : null,
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
+      soldeAnterieur: form.soldeAnterieur,
+      nombreCamions: form.nombreCamions,
+      tonnageTotal: form.tonnageTotal,
+      qtfs: form.qtfs,
+      tonnage: form.tonnage,
+      resteAPayer: form.resteAPayer,
+      prixTransport: form.prixTransport,
+      totalTransport: form.totalTransport,
+      telChauffeur: form.telChauffeur.trim() || undefined,
+      prixVoyage: form.prixVoyage,
+      totalPalemarr: form.totalPalemarr,
     };
 
     await withGuard(async () => {
@@ -479,6 +535,50 @@ export default function Tjk() {
       header: 'Paiement',
       value: (op: TjkOperation) =>
         op.paiement != null ? op.paiement.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Solde antérieur',
+      value: (op: TjkOperation) =>
+        op.soldeAnterieur ? op.soldeAnterieur.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Nbre Camions',
+      value: (op: TjkOperation) =>
+        op.nombreCamions ? op.nombreCamions.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Tonnage Total',
+      value: (op: TjkOperation) =>
+        op.tonnageTotal ? op.tonnageTotal.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'QTFS',
+      value: (op: TjkOperation) => (op.qtfs ? op.qtfs.toLocaleString('fr-FR') : ''),
+    },
+    {
+      header: 'Reste à Payer',
+      value: (op: TjkOperation) =>
+        op.resteAPayer ? op.resteAPayer.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Prix Transport',
+      value: (op: TjkOperation) =>
+        op.prixTransport ? op.prixTransport.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Total Transport',
+      value: (op: TjkOperation) =>
+        op.totalTransport ? op.totalTransport.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Prix Voyage',
+      value: (op: TjkOperation) =>
+        op.prixVoyage ? op.prixVoyage.toLocaleString('fr-FR') : '',
+    },
+    {
+      header: 'Total Palemarr',
+      value: (op: TjkOperation) =>
+        op.totalPalemarr ? op.totalPalemarr.toLocaleString('fr-FR') : '',
     },
     { header: 'Notes', value: (op: TjkOperation) => op.notes || '' },
   ];
@@ -838,6 +938,168 @@ export default function Tjk() {
                     </div>
 
                     <div>
+                      <Label htmlFor="tjk-tel-chauffeur">Téléphone chauffeur</Label>
+                      <Input
+                        id="tjk-tel-chauffeur"
+                        value={form.telChauffeur}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, telChauffeur: e.target.value }))
+                        }
+                        placeholder="+225..."
+                      />
+                    </div>
+
+                    <div className="border-t pt-4 space-y-4">
+                      <h3 className="font-medium text-sm">Informations financières</h3>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-solde-anterieur">Solde antérieur</Label>
+                          <NumberInput
+                            id="tjk-solde-anterieur"
+                            value={form.soldeAnterieur}
+                            onChange={(soldeAnterieur) =>
+                              setForm((f) => ({ ...f, soldeAnterieur }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 1000000"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="tjk-nombre-camions">Nombre de camions</Label>
+                          <NumberInput
+                            id="tjk-nombre-camions"
+                            value={form.nombreCamions}
+                            onChange={(nombreCamions) =>
+                              setForm((f) => ({ ...f, nombreCamions }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 2"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-tonnage-total">Tonnage total</Label>
+                          <NumberInput
+                            id="tjk-tonnage-total"
+                            value={form.tonnageTotal}
+                            onChange={(tonnageTotal) =>
+                              setForm((f) => ({ ...f, tonnageTotal }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 2048"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="tjk-qtfs">QTFS</Label>
+                          <NumberInput
+                            id="tjk-qtfs"
+                            value={form.qtfs}
+                            onChange={(qtfs) => setForm((f) => ({ ...f, qtfs }))}
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 540"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-tonnage">Tonnage</Label>
+                          <NumberInput
+                            id="tjk-tonnage"
+                            value={form.tonnage}
+                            onChange={(tonnage) => setForm((f) => ({ ...f, tonnage }))}
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 27"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="tjk-reste-a-payer">Reste à payer</Label>
+                          <NumberInput
+                            id="tjk-reste-a-payer"
+                            value={form.resteAPayer}
+                            onChange={(resteAPayer) =>
+                              setForm((f) => ({ ...f, resteAPayer }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 6000000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-prix-transport">Prix transport</Label>
+                          <NumberInput
+                            id="tjk-prix-transport"
+                            value={form.prixTransport}
+                            onChange={(prixTransport) =>
+                              setForm((f) => ({ ...f, prixTransport }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 784000"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="tjk-total-transport">Total transport</Label>
+                          <NumberInput
+                            id="tjk-total-transport"
+                            value={form.totalTransport}
+                            onChange={(totalTransport) =>
+                              setForm((f) => ({ ...f, totalTransport }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 11788000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-prix-voyage">Prix voyage</Label>
+                          <NumberInput
+                            id="tjk-prix-voyage"
+                            value={form.prixVoyage}
+                            onChange={(prixVoyage) =>
+                              setForm((f) => ({ ...f, prixVoyage }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 28683600"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="tjk-total-palemarr">Total Palemarr</Label>
+                          <NumberInput
+                            id="tjk-total-palemarr"
+                            value={form.totalPalemarr}
+                            onChange={(totalPalemarr) =>
+                              setForm((f) => ({ ...f, totalPalemarr }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 10000000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
                       <Label htmlFor="tjk-notes">Notes</Label>
                       <Input
                         id="tjk-notes"
@@ -923,7 +1185,7 @@ export default function Tjk() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Rechercher client, camion, destination…"
+                placeholder="Rechercher dans tous les champs…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -986,7 +1248,7 @@ export default function Tjk() {
           </div>
 
           <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1280px]">
+            <Table className="min-w-[1400px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>

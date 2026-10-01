@@ -21,6 +21,15 @@ function mapRow(row) {
   if (j.tonnage != null) j.tonnage = num(j.tonnage);
   if (j.prixTrans != null) j.prixTrans = num(j.prixTrans);
   if (j.paiement != null) j.paiement = num(j.paiement);
+  if (j.soldeAnterieur != null) j.soldeAnterieur = num(j.soldeAnterieur);
+  if (j.nombreCamions != null) j.nombreCamions = num(j.nombreCamions);
+  if (j.tonnageTotal != null) j.tonnageTotal = num(j.tonnageTotal);
+  if (j.qtfs != null) j.qtfs = num(j.qtfs);
+  if (j.resteAPayer != null) j.resteAPayer = num(j.resteAPayer);
+  if (j.prixTransport != null) j.prixTransport = num(j.prixTransport);
+  if (j.totalTransport != null) j.totalTransport = num(j.totalTransport);
+  if (j.prixVoyage != null) j.prixVoyage = num(j.prixVoyage);
+  if (j.totalPalemarr != null) j.totalPalemarr = num(j.totalPalemarr);
   if (j.created_at && !j.createdAt) j.createdAt = j.created_at;
   return j;
 }
@@ -99,8 +108,10 @@ async function createOperation(body, actor) {
     `INSERT INTO ${TABLE}
       (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
        "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId",
-       qtes, tonnage, "telChauffeur", "prixTrans", paiement, notes, utilisateur)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+       qtes, tonnage, "telChauffeur", "prixTrans", paiement, notes, utilisateur,
+       "soldeAnterieur", "nombreCamions", "tonnageTotal", "qtfs", "resteAPayer",
+       "prixTransport", "totalTransport", "prixVoyage", "totalPalemarr")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
     [
       id,
       dateOnly(body.date),
@@ -121,6 +132,15 @@ async function createOperation(body, actor) {
       optionalNum(body.paiement),
       body.notes?.trim() || null,
       body.utilisateur?.trim() || actor?.login || 'Système',
+      num(body.soldeAnterieur) || 0,
+      num(body.nombreCamions) || 0,
+      num(body.tonnageTotal) || 0,
+      num(body.qtfs) || 0,
+      num(body.resteAPayer) || 0,
+      num(body.prixTransport) || 0,
+      num(body.totalTransport) || 0,
+      num(body.prixVoyage) || 0,
+      num(body.totalPalemarr) || 0,
     ],
   );
 
@@ -192,7 +212,16 @@ async function updateOperation(id, body, actor) {
       "telChauffeur" = $15,
       "prixTrans" = $16,
       paiement = $17,
-      notes = COALESCE($18, notes)
+      notes = COALESCE($18, notes),
+      "soldeAnterieur" = COALESCE($19, "soldeAnterieur"),
+      "nombreCamions" = COALESCE($20, "nombreCamions"),
+      "tonnageTotal" = COALESCE($21, "tonnageTotal"),
+      "qtfs" = COALESCE($22, "qtfs"),
+      "resteAPayer" = COALESCE($23, "resteAPayer"),
+      "prixTransport" = COALESCE($24, "prixTransport"),
+      "totalTransport" = COALESCE($25, "totalTransport"),
+      "prixVoyage" = COALESCE($26, "prixVoyage"),
+      "totalPalemarr" = COALESCE($27, "totalPalemarr")
      WHERE id = $1`,
     [
       id,
@@ -219,6 +248,15 @@ async function updateOperation(id, body, actor) {
       nextPrix,
       nextPaiement,
       body.notes !== undefined ? body.notes?.trim() || null : null,
+      body.soldeAnterieur !== undefined ? num(body.soldeAnterieur) : null,
+      body.nombreCamions !== undefined ? num(body.nombreCamions) : null,
+      body.tonnageTotal !== undefined ? num(body.tonnageTotal) : null,
+      body.qtfs !== undefined ? num(body.qtfs) : null,
+      body.resteAPayer !== undefined ? num(body.resteAPayer) : null,
+      body.prixTransport !== undefined ? num(body.prixTransport) : null,
+      body.totalTransport !== undefined ? num(body.totalTransport) : null,
+      body.prixVoyage !== undefined ? num(body.prixVoyage) : null,
+      body.totalPalemarr !== undefined ? num(body.totalPalemarr) : null,
     ],
   );
 
