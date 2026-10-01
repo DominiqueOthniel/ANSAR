@@ -242,7 +242,19 @@ export default function Tjk() {
         (op.qualite ?? '').toLowerCase().includes(q) ||
         (op.referenceAtc ?? '').toLowerCase().includes(q) ||
         (op.notes ?? '').toLowerCase().includes(q) ||
-        String(op.quantite).includes(q)
+        (op.telChauffeur ?? '').toLowerCase().includes(q) ||
+        (op.unite ?? '').toLowerCase().includes(q) ||
+        String(op.quantite).includes(q) ||
+        (op.soldeAnterieur && String(op.soldeAnterieur).includes(q)) ||
+        (op.nombreCamions && String(op.nombreCamions).includes(q)) ||
+        (op.tonnageTotal && String(op.tonnageTotal).includes(q)) ||
+        (op.qtfs && String(op.qtfs).includes(q)) ||
+        (op.tonnage && String(op.tonnage).includes(q)) ||
+        (op.resteAPayer && String(op.resteAPayer).includes(q)) ||
+        (op.prixTransport && String(op.prixTransport).includes(q)) ||
+        (op.totalTransport && String(op.totalTransport).includes(q)) ||
+        (op.prixVoyage && String(op.prixVoyage).includes(q)) ||
+        (op.totalPalemarr && String(op.totalPalemarr).includes(q))
       );
     });
   }, [operations, searchTerm, filterDateFrom, filterDateTo]);
@@ -1028,7 +1040,7 @@ export default function Tjk() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Rechercher client, camion, destination…"
+                placeholder="Rechercher dans tous les champs…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
