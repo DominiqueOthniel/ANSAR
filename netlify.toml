@@ -1,10 +1,18 @@
 [build]
-  command = "npm run build"
+  command = "npm run build:netlify"
   publish = "dist"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
+
+# Déploiement automatique activé pour la branche main
+[context.production]
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[context.deploy-preview]
+  command = "npm run build:netlify"
 
 [functions]
   directory = "netlify/functions"
