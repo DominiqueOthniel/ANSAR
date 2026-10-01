@@ -17,6 +17,16 @@ function mapRow(row) {
   if (!row) return null;
   const j = rowToJson(row);
   j.quantite = num(j.quantite);
+  j.soldeAnterieur = num(j.soldeAnterieur);
+  j.nombreCamions = num(j.nombreCamions);
+  j.tonnageTotal = num(j.tonnageTotal);
+  j.qtfs = num(j.qtfs);
+  j.tonnage = num(j.tonnage);
+  j.resteAPayer = num(j.resteAPayer);
+  j.prixTransport = num(j.prixTransport);
+  j.totalTransport = num(j.totalTransport);
+  j.prixVoyage = num(j.prixVoyage);
+  j.totalPalemarr = num(j.totalPalemarr);
   if (j.created_at && !j.createdAt) j.createdAt = j.created_at;
   return j;
 }
@@ -82,8 +92,10 @@ async function createOperation(body, actor) {
   await query(
     `INSERT INTO ${TABLE}
       (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
-       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId", notes, utilisateur)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId", notes, utilisateur,
+       "soldeAnterieur", "nombreCamions", "tonnageTotal", "qtfs", "tonnage", "resteAPayer",
+       "prixTransport", "totalTransport", "telChauffeur", "prixVoyage", "totalPalemarr")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
     [
       id,
       dateOnly(body.date),
@@ -99,6 +111,17 @@ async function createOperation(body, actor) {
       body.supplierLoadingId || null,
       body.notes?.trim() || null,
       body.utilisateur?.trim() || actor?.login || 'Système',
+      num(body.soldeAnterieur) || 0,
+      num(body.nombreCamions) || 0,
+      num(body.tonnageTotal) || 0,
+      num(body.qtfs) || 0,
+      num(body.tonnage) || 0,
+      num(body.resteAPayer) || 0,
+      num(body.prixTransport) || 0,
+      num(body.totalTransport) || 0,
+      body.telChauffeur?.trim() || null,
+      num(body.prixVoyage) || 0,
+      num(body.totalPalemarr) || 0,
     ],
   );
 
@@ -136,7 +159,18 @@ async function updateOperation(id, body, actor) {
       "camionImmatriculation" = COALESCE($10, "camionImmatriculation"),
       "referenceAtc" = COALESCE($11, "referenceAtc"),
       "supplierLoadingId" = $12,
-      notes = COALESCE($13, notes)
+      notes = COALESCE($13, notes),
+      "soldeAnterieur" = COALESCE($14, "soldeAnterieur"),
+      "nombreCamions" = COALESCE($15, "nombreCamions"),
+      "tonnageTotal" = COALESCE($16, "tonnageTotal"),
+      "qtfs" = COALESCE($17, "qtfs"),
+      "tonnage" = COALESCE($18, "tonnage"),
+      "resteAPayer" = COALESCE($19, "resteAPayer"),
+      "prixTransport" = COALESCE($20, "prixTransport"),
+      "totalTransport" = COALESCE($21, "totalTransport"),
+      "telChauffeur" = COALESCE($22, "telChauffeur"),
+      "prixVoyage" = COALESCE($23, "prixVoyage"),
+      "totalPalemarr" = COALESCE($24, "totalPalemarr")
      WHERE id = $1`,
     [
       id,
@@ -158,6 +192,17 @@ async function updateOperation(id, body, actor) {
         ? body.supplierLoadingId || null
         : prev.supplierLoadingId || null,
       body.notes !== undefined ? body.notes?.trim() || null : null,
+      body.soldeAnterieur !== undefined ? num(body.soldeAnterieur) : null,
+      body.nombreCamions !== undefined ? num(body.nombreCamions) : null,
+      body.tonnageTotal !== undefined ? num(body.tonnageTotal) : null,
+      body.qtfs !== undefined ? num(body.qtfs) : null,
+      body.tonnage !== undefined ? num(body.tonnage) : null,
+      body.resteAPayer !== undefined ? num(body.resteAPayer) : null,
+      body.prixTransport !== undefined ? num(body.prixTransport) : null,
+      body.totalTransport !== undefined ? num(body.totalTransport) : null,
+      body.telChauffeur !== undefined ? body.telChauffeur?.trim() || null : null,
+      body.prixVoyage !== undefined ? num(body.prixVoyage) : null,
+      body.totalPalemarr !== undefined ? num(body.totalPalemarr) : null,
     ],
   );
 
