@@ -17,25 +17,40 @@ function mapRow(row) {
   if (!row) return null;
   const j = rowToJson(row);
   j.quantite = num(j.quantite);
-  j.soldeAnterieur = num(j.soldeAnterieur);
-  j.nombreCamions = num(j.nombreCamions);
-  j.tonnageTotal = num(j.tonnageTotal);
-  j.qtfs = num(j.qtfs);
-  j.tonnage = num(j.tonnage);
-  j.resteAPayer = num(j.resteAPayer);
-  j.prixTransport = num(j.prixTransport);
-  j.totalTransport = num(j.totalTransport);
-  j.prixVoyage = num(j.prixVoyage);
-  j.totalPalemarr = num(j.totalPalemarr);
+  if (j.qtes != null) j.qtes = num(j.qtes);
+  if (j.tonnage != null) j.tonnage = num(j.tonnage);
+  if (j.prixTrans != null) j.prixTrans = num(j.prixTrans);
+  if (j.paiement != null) j.paiement = num(j.paiement);
+  if (j.soldeAnterieur != null) j.soldeAnterieur = num(j.soldeAnterieur);
+  if (j.nombreCamions != null) j.nombreCamions = num(j.nombreCamions);
+  if (j.tonnageTotal != null) j.tonnageTotal = num(j.tonnageTotal);
+  if (j.qtfs != null) j.qtfs = num(j.qtfs);
+  if (j.resteAPayer != null) j.resteAPayer = num(j.resteAPayer);
+  if (j.prixTransport != null) j.prixTransport = num(j.prixTransport);
+  if (j.totalTransport != null) j.totalTransport = num(j.totalTransport);
+  if (j.prixVoyage != null) j.prixVoyage = num(j.prixVoyage);
+  if (j.totalPalemarr != null) j.totalPalemarr = num(j.totalPalemarr);
   if (j.created_at && !j.createdAt) j.createdAt = j.created_at;
   return j;
+}
+
+function optionalNum(v) {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  const n = num(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function ensureSchema() {
   if (schemaReady) return;
   await query(`
     ALTER TABLE ${TABLE}
-      ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID
+      ADD COLUMN IF NOT EXISTS "supplierLoadingId" UUID,
+      ADD COLUMN IF NOT EXISTS qtes NUMERIC(12, 2),
+      ADD COLUMN IF NOT EXISTS tonnage NUMERIC(12, 2),
+      ADD COLUMN IF NOT EXISTS "telChauffeur" VARCHAR(40),
+      ADD COLUMN IF NOT EXISTS "prixTrans" NUMERIC(14, 2),
+      ADD COLUMN IF NOT EXISTS paiement NUMERIC(14, 2)
   `);
   schemaReady = true;
 }
@@ -92,10 +107,11 @@ async function createOperation(body, actor) {
   await query(
     `INSERT INTO ${TABLE}
       (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
-       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId", notes, utilisateur,
-       "soldeAnterieur", "nombreCamions", "tonnageTotal", "qtfs", "tonnage", "resteAPayer",
-       "prixTransport", "totalTransport", "telChauffeur", "prixVoyage", "totalPalemarr")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+       "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId",
+       qtes, tonnage, "telChauffeur", "prixTrans", paiement, notes, utilisateur,
+       "soldeAnterieur", "nombreCamions", "tonnageTotal", "qtfs", "resteAPayer",
+       "prixTransport", "totalTransport", "prixVoyage", "totalPalemarr")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
     [
       id,
       dateOnly(body.date),
@@ -109,17 +125,20 @@ async function createOperation(body, actor) {
       normalizeImmat(body.camionImmatriculation),
       body.referenceAtc?.trim() || null,
       body.supplierLoadingId || null,
+      optionalNum(body.qtes) ?? q,
+      optionalNum(body.tonnage),
+      body.telChauffeur?.trim() || null,
+      optionalNum(body.prixTrans),
+      optionalNum(body.paiement),
       body.notes?.trim() || null,
       body.utilisateur?.trim() || actor?.login || 'Système',
       num(body.soldeAnterieur) || 0,
       num(body.nombreCamions) || 0,
       num(body.tonnageTotal) || 0,
       num(body.qtfs) || 0,
-      num(body.tonnage) || 0,
       num(body.resteAPayer) || 0,
       num(body.prixTransport) || 0,
       num(body.totalTransport) || 0,
-      body.telChauffeur?.trim() || null,
       num(body.prixVoyage) || 0,
       num(body.totalPalemarr) || 0,
     ],
@@ -146,6 +165,35 @@ async function updateOperation(id, body, actor) {
     throw HttpError(400, 'Indiquez un client (fiche ou nom libre).');
   }
 
+  const nextQtes =
+    body.qtes !== undefined
+      ? optionalNum(body.qtes)
+      : prev.qtes != null
+        ? num(prev.qtes)
+        : null;
+  const nextTonnage =
+    body.tonnage !== undefined
+      ? optionalNum(body.tonnage)
+      : prev.tonnage != null
+        ? num(prev.tonnage)
+        : null;
+  const nextTel =
+    body.telChauffeur !== undefined
+      ? body.telChauffeur?.trim() || null
+      : prev.telChauffeur || null;
+  const nextPrix =
+    body.prixTrans !== undefined
+      ? optionalNum(body.prixTrans)
+      : prev.prixTrans != null
+        ? num(prev.prixTrans)
+        : null;
+  const nextPaiement =
+    body.paiement !== undefined
+      ? optionalNum(body.paiement)
+      : prev.paiement != null
+        ? num(prev.paiement)
+        : null;
+
   await query(
     `UPDATE ${TABLE} SET
       date = COALESCE($2, date),
@@ -159,18 +207,21 @@ async function updateOperation(id, body, actor) {
       "camionImmatriculation" = COALESCE($10, "camionImmatriculation"),
       "referenceAtc" = COALESCE($11, "referenceAtc"),
       "supplierLoadingId" = $12,
-      notes = COALESCE($13, notes),
-      "soldeAnterieur" = COALESCE($14, "soldeAnterieur"),
-      "nombreCamions" = COALESCE($15, "nombreCamions"),
-      "tonnageTotal" = COALESCE($16, "tonnageTotal"),
-      "qtfs" = COALESCE($17, "qtfs"),
-      "tonnage" = COALESCE($18, "tonnage"),
-      "resteAPayer" = COALESCE($19, "resteAPayer"),
-      "prixTransport" = COALESCE($20, "prixTransport"),
-      "totalTransport" = COALESCE($21, "totalTransport"),
-      "telChauffeur" = COALESCE($22, "telChauffeur"),
-      "prixVoyage" = COALESCE($23, "prixVoyage"),
-      "totalPalemarr" = COALESCE($24, "totalPalemarr")
+      qtes = $13,
+      tonnage = $14,
+      "telChauffeur" = $15,
+      "prixTrans" = $16,
+      paiement = $17,
+      notes = COALESCE($18, notes),
+      "soldeAnterieur" = COALESCE($19, "soldeAnterieur"),
+      "nombreCamions" = COALESCE($20, "nombreCamions"),
+      "tonnageTotal" = COALESCE($21, "tonnageTotal"),
+      "qtfs" = COALESCE($22, "qtfs"),
+      "resteAPayer" = COALESCE($23, "resteAPayer"),
+      "prixTransport" = COALESCE($24, "prixTransport"),
+      "totalTransport" = COALESCE($25, "totalTransport"),
+      "prixVoyage" = COALESCE($26, "prixVoyage"),
+      "totalPalemarr" = COALESCE($27, "totalPalemarr")
      WHERE id = $1`,
     [
       id,
@@ -191,16 +242,19 @@ async function updateOperation(id, body, actor) {
       body.supplierLoadingId !== undefined
         ? body.supplierLoadingId || null
         : prev.supplierLoadingId || null,
+      nextQtes,
+      nextTonnage,
+      nextTel,
+      nextPrix,
+      nextPaiement,
       body.notes !== undefined ? body.notes?.trim() || null : null,
       body.soldeAnterieur !== undefined ? num(body.soldeAnterieur) : null,
       body.nombreCamions !== undefined ? num(body.nombreCamions) : null,
       body.tonnageTotal !== undefined ? num(body.tonnageTotal) : null,
       body.qtfs !== undefined ? num(body.qtfs) : null,
-      body.tonnage !== undefined ? num(body.tonnage) : null,
       body.resteAPayer !== undefined ? num(body.resteAPayer) : null,
       body.prixTransport !== undefined ? num(body.prixTransport) : null,
       body.totalTransport !== undefined ? num(body.totalTransport) : null,
-      body.telChauffeur !== undefined ? body.telChauffeur?.trim() || null : null,
       body.prixVoyage !== undefined ? num(body.prixVoyage) : null,
       body.totalPalemarr !== undefined ? num(body.totalPalemarr) : null,
     ],

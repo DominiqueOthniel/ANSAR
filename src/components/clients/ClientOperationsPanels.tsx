@@ -56,6 +56,7 @@ import {
   findSupplierLoadingForOrder,
   formatSupplierLoadingBonOption,
   getActiveLoadingAssignments,
+  isLoadingOpenForSelection,
   isSupplierLoadingAvailableForOrder,
   validateLoadingAssignmentRows,
   loadingAllowsTransportTruck,
@@ -258,12 +259,15 @@ export function ClientOperationsPanels({
       stableSort(
         supplierLoadings.filter(
           (l) =>
+            isLoadingOpenForSelection(l, {
+              keepLoadingId: orderForm.supplierLoadingId || undefined,
+            }) &&
             canLinkClientOrderToLoading(l.statut) &&
             isSupplierLoadingAvailableForOrder(l, editingOrder?.id),
         ),
         (a, b) => b.dateChargement.localeCompare(a.dateChargement),
       ),
-    [supplierLoadings, editingOrder?.id],
+    [supplierLoadings, editingOrder?.id, orderForm.supplierLoadingId],
   );
 
   const recalcMontant = (quantite?: number, prixUnitaire?: number) =>
