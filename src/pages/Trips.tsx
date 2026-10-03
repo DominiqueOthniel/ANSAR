@@ -542,13 +542,13 @@ export default function Trips() {
       return;
     }
 
-    if (!formData.dateDepart) {
-      toast.error('Veuillez sélectionner la date de départ');
+    if (!formData.dateArrivee) {
+      toast.error("Veuillez sélectionner la date d'arrivée");
       return;
     }
 
     if (
-      formData.dateArrivee &&
+      formData.dateDepart &&
       parseDateMs(formData.dateArrivee) < parseDateMs(formData.dateDepart)
     ) {
       toast.error("La date d'arrivée ne peut pas être antérieure à la date de départ");
@@ -1862,27 +1862,27 @@ export default function Trips() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="dateDepart">Date de départ *</Label>
+                    <Label htmlFor="dateDepart">Date de départ (optionnel)</Label>
                     <Input
                       id="dateDepart"
                       type="date"
                       value={formData.dateDepart}
+                      max={formData.dateArrivee || undefined}
                       onChange={(e) => setFormData({ ...formData, dateDepart: e.target.value })}
-                      required
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Si non renseignée, seule l'arrivée sera enregistrée.
+                    </p>
                   </div>
                   <div>
-                    <Label htmlFor="dateArrivee">Date d&apos;arrivée (optionnel)</Label>
+                    <Label htmlFor="dateArrivee">Date d&apos;arrivée *</Label>
                     <Input
                       id="dateArrivee"
                       type="date"
                       value={formData.dateArrivee}
-                      min={formData.dateDepart || undefined}
                       onChange={(e) => setFormData({ ...formData, dateArrivee: e.target.value })}
+                      required
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Renseignée à la clôture du trajet ou saisie manuellement.
-                    </p>
                   </div>
                 </div>
 

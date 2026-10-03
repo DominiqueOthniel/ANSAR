@@ -66,11 +66,11 @@ export class Trip {
   @Column({ type: 'uuid' })
   chauffeurId: string;
 
-  @Column({ type: 'date' })
-  dateDepart: string;
-
   @Column({ type: 'date', nullable: true })
-  dateArrivee?: string;
+  dateDepart?: string;
+
+  @Column({ type: 'date' })
+  dateArrivee: string;
 
   @Column({ type: 'decimal', precision: 15, scale: 2 })
   recette: number;

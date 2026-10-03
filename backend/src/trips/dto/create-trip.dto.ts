@@ -49,12 +49,12 @@ export class CreateTripDto {
   @IsString()
   chauffeurId: string;
 
-  @IsString()
-  dateDepart: string;
-
   @IsOptional()
   @IsString()
-  dateArrivee?: string;
+  dateDepart?: string;
+
+  @IsString()
+  dateArrivee: string;
 
   @IsNumber()
   recette: number;
