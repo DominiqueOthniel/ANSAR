@@ -30,7 +30,7 @@ import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { EMOJI } from '@/lib/emoji-palette';
-import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
+import { frCollator, parseDateMs, stableSort, formatDateLocal } from '@/lib/list-sort';
 import { ListSortSelect } from '@/components/ListSortSelect';
 import {
   buildStopsForPersist,
@@ -1456,10 +1456,10 @@ export default function Trips() {
           };
           return statuts[t.statut] || t.statut;
         }},
-        { header: 'Départ', value: (t) => new Date(t.dateDepart).toLocaleDateString('fr-FR') },
+        { header: 'Départ', value: (t) => formatDateLocal(t.dateDepart) || '-' },
         {
           header: 'Arrivée',
-          value: (t) => (t.dateArrivee ? new Date(t.dateArrivee).toLocaleDateString('fr-FR') : '-'),
+          value: (t) => formatDateLocal(t.dateArrivee) || '-',
         },
         { 
           header: 'Recette (FCFA)', 
@@ -2417,12 +2417,9 @@ export default function Trips() {
                     </TableCell>
                     <TableCell>{getDriverLabel(trip.chauffeurId)}</TableCell>
                     <TableCell>{getStatusBadge(trip.statut)}</TableCell>
-                    <TableCell>{new Date(trip.dateDepart).toLocaleDateString('fr-FR')}</TableCell>
+                    <TableCell>{formatDateLocal(trip.dateDepart) || <span className="text-muted-foreground text-xs">Non défini</span>}</TableCell>
                     <TableCell>
-                      {trip.dateArrivee 
-                        ? new Date(trip.dateArrivee).toLocaleDateString('fr-FR') 
-                        : <span className="text-muted-foreground text-xs">À définir</span>
-                      }
+                      {formatDateLocal(trip.dateArrivee) || <span className="text-muted-foreground text-xs">À définir</span>}
                     </TableCell>
                     <TableCell className="text-right">
                       {(() => {
@@ -2858,15 +2855,13 @@ export default function Trips() {
                     <div>
                       <span className="text-muted-foreground">Départ</span>
                       <p className="font-semibold">
-                        {new Date(trip.dateDepart).toLocaleDateString('fr-FR')}
+                        {formatDateLocal(trip.dateDepart) || 'Non défini'}
                       </p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Arrivée</span>
                       <p className="font-semibold">
-                        {trip.dateArrivee
-                          ? new Date(trip.dateArrivee).toLocaleDateString('fr-FR')
-                          : 'À définir'}
+                        {formatDateLocal(trip.dateArrivee) || 'À définir'}
                       </p>
                     </div>
                     <div>
@@ -2954,9 +2949,7 @@ export default function Trips() {
                             </Badge>
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
-                            {row.date
-                              ? new Date(row.date).toLocaleDateString('fr-FR')
-                              : '—'}
+                            {formatDateLocal(row.date) || '—'}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {row.quantite != null
@@ -3032,7 +3025,7 @@ export default function Trips() {
                         {tripExpenses.map((expense) => (
                           <TableRow key={expense.id}>
                             <TableCell>
-                              {new Date(expense.date).toLocaleDateString('fr-FR')}
+                              {formatDateLocal(expense.date)}
                             </TableCell>
                             <TableCell className="font-medium">{expense.categorie}</TableCell>
                             <TableCell>{expense.sousCategorie || '-'}</TableCell>

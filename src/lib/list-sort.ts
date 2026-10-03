@@ -27,3 +27,27 @@ export function compareAsc(a: number, b: number): number {
 export function compareDesc(a: number, b: number): number {
   return b - a;
 }
+
+/**
+ * Formate une date ISO (YYYY-MM-DD) en format français (JJ/MM/AAAA)
+ * sans problème de timezone (évite le décalage d'un jour).
+ * @param dateString Date au format ISO (YYYY-MM-DD)
+ * @returns Date formatée en français ou chaîne vide si invalide
+ */
+export function formatDateLocal(dateString: string | undefined | null): string {
+  if (!dateString?.trim()) return '';
+  
+  const parts = dateString.split('T')[0].split('-');
+  if (parts.length !== 3) return dateString;
+  
+  const [year, month, day] = parts;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  
+  if (isNaN(date.getTime())) return dateString;
+  
+  return date.toLocaleDateString('fr-FR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+}
