@@ -23,6 +23,7 @@ import {
   computeHubRemainder,
   defaultHubForEntryMode,
   formatLoadingEntryModeFr,
+  normalizeLoadingEntryMode,
   type LoadingEntryMode,
 } from '@/lib/hub-transit';
 import {
@@ -190,6 +191,10 @@ export default function Chargements() {
   const [reassignClientId, setReassignClientId] = useState('');
   const [reassignOrderId, setReassignOrderId] = useState('');
   const [reassignQty, setReassignQty] = useState<number | undefined>(undefined);
+
+  const [truckLinkDialogOpen, setTruckLinkDialogOpen] = useState(false);
+  const [truckLinkLoading, setTruckLinkLoading] = useState<SupplierLoading | null>(null);
+  const [truckLinkCamionId, setTruckLinkCamionId] = useState('');
 
   const fournisseurs = useMemo(
     () =>
@@ -516,6 +521,42 @@ export default function Chargements() {
       await deleteSupplierLoading(l.id);
       toast.success('Bon supprimé.');
     });
+
+  const openTruckLink = (l: SupplierLoading) => {
+    setTruckLinkLoading(l);
+    setTruckLinkCamionId(l.camionId ?? '');
+    setTruckLinkDialogOpen(true);
+  };
+
+  const submitTruckLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!truckLinkLoading) return;
+    const loading = truckLinkLoading;
+    const mode = normalizeLoadingEntryMode(loading.modeEntree);
+    const nextCamionId = truckLinkCamionId || null;
+    const patch: {
+      camionId: string | null;
+      modeEntree?: LoadingEntryMode;
+    } = { camionId: nextCamionId };
+    if (nextCamionId) {
+      if (mode === 'bon_simple' || mode === 'camion') {
+        patch.modeEntree = 'camion_ansar';
+      }
+    } else if (mode === 'camion_ansar') {
+      patch.modeEntree = 'bon_simple';
+    }
+    void withGuard(async () => {
+      await updateSupplierLoading(loading.id, patch);
+      toast.success(
+        nextCamionId
+          ? 'Bon lié au camion.'
+          : 'Camion détaché du bon.',
+      );
+      setTruckLinkDialogOpen(false);
+      setTruckLinkLoading(null);
+      setTruckLinkCamionId('');
+    });
+  };
 
   const openAssign = (l: SupplierLoading) => {
     setAssignLoading(l);
@@ -1661,6 +1702,15 @@ export default function Chargements() {
                             <Button
                               size="sm"
                               variant="outline"
+                              onClick={() => openTruckLink(l)}
+                              title={l.camionId ? 'Changer / détacher le camion' : 'Lier à un camion'}
+                              className="shrink-0"
+                            >
+                              <Truck className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => openAssign(l)}
                               title="Affecter aux commandes"
                               className="shrink-0"
@@ -1711,6 +1761,89 @@ export default function Chargements() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={truckLinkDialogOpen}
+        onOpenChange={(open) => {
+          setTruckLinkDialogOpen(open);
+          if (!open) {
+            setTruckLinkLoading(null);
+            setTruckLinkCamionId('');
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Lier un camion
+              {truckLinkLoading
+                ? ` — ${truckLinkLoading.numeroBon?.trim() || truckLinkLoading.designation}`
+                : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {truckLinkLoading && (
+            <form onSubmit={submitTruckLink} className="space-y-4">
+              <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                <p className="font-medium">
+                  {truckLinkLoading.numeroBon?.trim()
+                    ? `Bon ${truckLinkLoading.numeroBon.trim()}`
+                    : truckLinkLoading.designation}
+                </p>
+                <p className="text-muted-foreground">
+                  {truckLinkLoading.fournisseurNom || 'Fournisseur'}
+                  {truckLinkLoading.quantite != null
+                    ? ` · ${truckLinkLoading.quantite}${
+                        truckLinkLoading.unite ? ` ${truckLinkLoading.unite}` : ''
+                      }`
+                    : ''}
+                  {' · '}
+                  {formatLoadingEntryModeFr(truckLinkLoading.modeEntree)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Statut : {formatSupplierLoadingStatusFr(truckLinkLoading.statut)}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Camion SIA-ANSAR</Label>
+                <Select
+                  value={truckLinkCamionId || '__none__'}
+                  onValueChange={(v) =>
+                    setTruckLinkCamionId(v === '__none__' ? '' : v)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir un camion…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Aucun (détacher)</SelectItem>
+                    {activeTrucks.map((truck) => (
+                      <SelectItem key={truck.id} value={truck.id}>
+                        {truckMissionLabel(truck)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Le bon sera visible sur la fiche du camion choisi.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setTruckLinkDialogOpen(false)}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Enregistrer
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
