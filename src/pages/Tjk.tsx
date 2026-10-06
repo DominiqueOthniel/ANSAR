@@ -140,6 +140,18 @@ function withQuantiteSynced(prev: FormState, quantite: number | undefined): Form
   };
 }
 
+function withPrixTonnageSynced(
+  prev: FormState,
+  prixTonnage: number | undefined,
+): FormState {
+  const montant = tjkMontantFromPrixTonnage(prev.tonnage, prixTonnage);
+  return {
+    ...prev,
+    prixTonnage,
+    prixTrans: montant ?? prev.prixTrans,
+  };
+}
+
 function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormState {
   const poids = dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
   const quantite =
@@ -485,7 +497,7 @@ export default function Tjk() {
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
       qtfs: qtesVal,
-      // Aligne l’ancien champ prixTransport sur Prix TRANS (un seul montant saisi).
+      // Aligne l’ancien champ prixTransport sur le montant final (un seul montant saisi).
       prixTransport:
         form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
           ? Number(form.prixTrans)
@@ -667,7 +679,7 @@ export default function Tjk() {
     },
     { header: 'Tel chauf', value: (op: TjkOperation) => op.telChauffeur || '' },
     {
-      header: 'Prix TRANS',
+      header: 'Montant',
       value: (op: TjkOperation) =>
         (op.prixTrans ?? op.prixTransport) != null
           ? (op.prixTrans ?? op.prixTransport)!.toLocaleString('fr-FR')
@@ -949,7 +961,11 @@ export default function Tjk() {
                           value={form.tjkDestinationId || '__none__'}
                           onValueChange={(v) => {
                             if (v === '__none__') {
-                              setForm((f) => ({ ...f, tjkDestinationId: '' }));
+                              setForm((f) => ({
+                                ...f,
+                                tjkDestinationId: '',
+                                prixTonnage: undefined,
+                              }));
                               return;
                             }
                             const dest = destinations.find((d) => d.id === v);
@@ -970,8 +986,8 @@ export default function Tjk() {
                         </Select>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Une destination enregistrée préremplit les montants forfaitaires du
-                        formulaire.
+                        Une destination enregistrée calcule le tonnage et le montant
+                        (prix tonnage × tonnage).
                       </p>
                     </div>
 
@@ -1030,31 +1046,51 @@ export default function Tjk() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="tjk-prix">Prix TRANS</Label>
+                        <Label htmlFor="tjk-prix-tonnage">Prix du tonnage</Label>
                         <NumberInput
-                          id="tjk-prix"
+                          id="tjk-prix-tonnage"
+                          value={form.prixTonnage}
+                          onChange={(prixTonnage) =>
+                            setForm((f) => withPrixTonnageSynced(f, prixTonnage))
+                          }
+                          min={0}
+                          allowEmpty
+                          placeholder="FCFA / t"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="tjk-montant">Montant final</Label>
+                        <NumberInput
+                          id="tjk-montant"
                           value={form.prixTrans}
                           onChange={(prixTrans) =>
                             setForm((f) => ({ ...f, prixTrans }))
                           }
                           min={0}
                           allowEmpty
-                          placeholder="FCFA"
+                          placeholder="Auto (tonnage × prix)"
                         />
+                        {form.tonnage != null && form.prixTonnage != null && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {form.tonnage.toLocaleString('fr-FR')} t ×{' '}
+                            {form.prixTonnage.toLocaleString('fr-FR')} FCFA/t
+                          </p>
+                        )}
                       </div>
-                      <div>
-                        <Label htmlFor="tjk-paiement">Paiement</Label>
-                        <NumberInput
-                          id="tjk-paiement"
-                          value={form.paiement}
-                          onChange={(paiement) =>
-                            setForm((f) => ({ ...f, paiement }))
-                          }
-                          min={0}
-                          allowEmpty
-                          placeholder="FCFA"
-                        />
-                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="tjk-paiement">Paiement</Label>
+                      <NumberInput
+                        id="tjk-paiement"
+                        value={form.paiement}
+                        onChange={(paiement) =>
+                          setForm((f) => ({ ...f, paiement }))
+                        }
+                        min={0}
+                        allowEmpty
+                        placeholder="FCFA"
+                      />
                     </div>
 
                     <div>
@@ -1095,7 +1131,7 @@ export default function Tjk() {
             <div>
               <CardTitle className="text-base">Destinations TJK</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Montants forfaitaires appliqués automatiquement dans le formulaire d’opération.
+                Montant = prix tonnage × tonnage, appliqué automatiquement à l’opération.
               </p>
             </div>
             <Button type="button" size="sm" variant="secondary" onClick={openCreateDest}>
@@ -1394,7 +1430,7 @@ export default function Tjk() {
               </p>
             </div>
             <div className="rounded-md border bg-background p-3">
-              <p className="text-muted-foreground text-xs">Prix TRANS total</p>
+              <p className="text-muted-foreground text-xs">Montant total</p>
               <p className="font-semibold tabular-nums">
                 {listSummary.prixTransTotal.toLocaleString('fr-FR')}
               </p>
@@ -1426,7 +1462,7 @@ export default function Tjk() {
                   <TableHead className="text-right">Qtes</TableHead>
                   <TableHead className="text-right">Tonnage</TableHead>
                   <TableHead>Tel chauf</TableHead>
-                  <TableHead className="text-right">Prix TRANS</TableHead>
+                  <TableHead className="text-right">Montant</TableHead>
                   <TableHead className="text-right">Paiement</TableHead>
                   <TableHead>Client</TableHead>
                   {canManageFleet && (
