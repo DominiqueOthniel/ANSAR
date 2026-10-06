@@ -11,7 +11,7 @@ const fournisseurs: ThirdParty[] = [
 ];
 
 describe('supplier-ledger', () => {
-  it('calcule solde = débit − crédit (achat puis paiement)', () => {
+  it('calcule solde = débit − crédit et n’utilise jamais le client', () => {
     const loadings: SupplierLoading[] = [
       {
         id: 'l1',
@@ -21,7 +21,8 @@ describe('supplier-ledger', () => {
         quantite: 100,
         montantBon: 458600,
         dateChargement: '2026-10-05',
-        statut: 'affecte',
+        statut: 'en_attente_affectation',
+        // Affectations clients présentes mais ignorées par le suivi fournisseurs.
         assignments: [{ id: 'a1', clientOrderId: 'o1', clientNom: 'KIRIKOU' }],
       } as SupplierLoading,
     ];
@@ -45,7 +46,8 @@ describe('supplier-ledger', () => {
     });
     expect(rows).toHaveLength(2);
     expect(rows[0].debit).toBe(458600);
-    expect(rows[0].noms).toBe('KIRIKOU');
+    expect(rows[0].fournisseurNom).toBe('CIMAF');
+    expect(JSON.stringify(rows)).not.toContain('KIRIKOU');
     expect(rows[1].credit).toBe(200000);
     expect(rows[1].solde).toBe(258600);
     const sum = summarizeSupplierLedger(rows);

@@ -1,4 +1,6 @@
-/** Grand livre / suivi fournisseurs — style Excel (DATE, NOMS, QLTI, QTES…). */
+/**
+ * Suivi fournisseurs — achats de bons ANSA'R chez ses fournisseurs (pas les clients).
+ */
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
@@ -9,8 +11,22 @@ import { ExportButtons } from '@/components/ExportButtons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -24,12 +40,19 @@ import {
   summarizeSupplierLedger,
   type SupplierLedgerRow,
 } from '@/lib/supplier-ledger';
+import {
+  computeLineAmount,
+  getArticleSupplierUnitPrice,
+  listArticlesForSupplier,
+} from '@/lib/article-pricing';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, stableSort } from '@/lib/list-sort';
-import { BookOpen, Loader2, RotateCcw, Search } from 'lucide-react';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
+import { BookOpen, Loader2, Plus, RotateCcw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ALL = '__all__';
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 function formatFcfa(n: number): string {
   return Math.round(n).toLocaleString('fr-FR');
@@ -52,6 +75,36 @@ function qltiTone(qlti: string): string {
   return 'bg-muted text-foreground';
 }
 
+type AchatForm = {
+  fournisseurId: string;
+  dateChargement: string;
+  articleId: string;
+  designation: string;
+  quantite: number | undefined;
+  unite: string;
+  prixUnitaire: number | undefined;
+  montantBon: number | undefined;
+  montantTouched: boolean;
+  numeroBon: string;
+  camionId: string;
+  notes: string;
+};
+
+const emptyAchatForm = (): AchatForm => ({
+  fournisseurId: '',
+  dateChargement: todayIso(),
+  articleId: '',
+  designation: '',
+  quantite: undefined,
+  unite: '',
+  prixUnitaire: undefined,
+  montantBon: undefined,
+  montantTouched: false,
+  numeroBon: '',
+  camionId: '',
+  notes: '',
+});
+
 export default function SuiviFournisseurs() {
   const {
     thirdParties,
@@ -60,6 +113,7 @@ export default function SuiviFournisseurs() {
     invoices,
     articles,
     trucks,
+    createSupplierLoading,
     updateSupplierLoading,
   } = useApp();
   const { isSubmitting, withGuard } = useSubmitGuard();
@@ -69,6 +123,8 @@ export default function SuiviFournisseurs() {
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [showRetracted, setShowRetracted] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState<AchatForm>(emptyAchatForm);
 
   const fournisseurs = useMemo(
     () =>
@@ -77,6 +133,20 @@ export default function SuiviFournisseurs() {
         (a, b) => frCollator.compare(a.nom, b.nom),
       ),
     [thirdParties],
+  );
+
+  const ansarTrucks = useMemo(
+    () =>
+      stableSort(
+        trucks.filter((t) => t.flotte !== 'tjk'),
+        (a, b) => frCollator.compare(truckMissionLabel(a), truckMissionLabel(b)),
+      ),
+    [trucks],
+  );
+
+  const articlesForSupplier = useMemo(
+    () => listArticlesForSupplier(articles, form.fournisseurId),
+    [articles, form.fournisseurId],
   );
 
   const rows = useMemo(
@@ -112,7 +182,6 @@ export default function SuiviFournisseurs() {
     if (!q) return rows;
     return rows.filter(
       (r) =>
-        r.noms.toLowerCase().includes(q) ||
         r.fournisseurNom.toLowerCase().includes(q) ||
         r.qlti.toLowerCase().includes(q) ||
         r.atc.toLowerCase().includes(q) ||
@@ -123,11 +192,78 @@ export default function SuiviFournisseurs() {
 
   const summary = useMemo(() => summarizeSupplierLedger(filtered), [filtered]);
 
+  const syncMontant = (next: Partial<AchatForm>, prev: AchatForm): AchatForm => {
+    const merged = { ...prev, ...next };
+    const art = merged.articleId
+      ? articles.find((a) => a.id === merged.articleId)
+      : undefined;
+    const pu =
+      next.prixUnitaire !== undefined
+        ? next.prixUnitaire
+        : merged.prixUnitaire ??
+          (merged.fournisseurId
+            ? getArticleSupplierUnitPrice(art, merged.fournisseurId)
+            : undefined);
+    const montantCalc = computeLineAmount(merged.quantite, pu);
+    return {
+      ...merged,
+      prixUnitaire: pu,
+      montantBon: merged.montantTouched
+        ? merged.montantBon
+        : (montantCalc ?? merged.montantBon),
+    };
+  };
+
+  const openCreate = () => {
+    setForm({
+      ...emptyAchatForm(),
+      fournisseurId: fournisseurId || '',
+    });
+    setDialogOpen(true);
+  };
+
+  const handleSaveAchat = () =>
+    withGuard(async () => {
+      if (!form.fournisseurId) {
+        toast.error('Choisissez un fournisseur.');
+        return;
+      }
+      if (!form.designation.trim()) {
+        toast.error('Qualité / désignation requise.');
+        return;
+      }
+      if (!form.dateChargement) {
+        toast.error('Date d’achat requise.');
+        return;
+      }
+      try {
+        await createSupplierLoading({
+          fournisseurId: form.fournisseurId,
+          numeroBon: form.numeroBon.trim() || undefined,
+          articleId: form.articleId || undefined,
+          designation: form.designation.trim(),
+          quantite: form.quantite,
+          unite: form.unite.trim() || undefined,
+          montantBon: form.montantBon,
+          dateChargement: form.dateChargement,
+          modeEntree: 'bon_simple',
+          camionId: form.camionId || null,
+          notes: form.notes.trim() || undefined,
+          statut: 'en_attente_affectation',
+        });
+        toast.success('Achat de bon enregistré.');
+        setDialogOpen(false);
+        setForm(emptyAchatForm());
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur enregistrement.');
+      }
+    });
+
   const retractAchat = (row: SupplierLedgerRow) => {
     if (!row.loadingId || row.retracted) return;
     if (
       !confirm(
-        `Rétracter l’achat de bon « ${row.atc || row.qlti || row.noms} » ?\nLe débit disparaîtra du suivi.`,
+        `Rétracter l’achat « ${row.atc || row.qlti || row.fournisseurNom} » ?\nLe débit disparaîtra du suivi.`,
       )
     ) {
       return;
@@ -135,7 +271,7 @@ export default function SuiviFournisseurs() {
     void withGuard(async () => {
       try {
         await updateSupplierLoading(row.loadingId!, { statut: 'annule' });
-        toast.success('Achat rétracté (bon annulé).');
+        toast.success('Achat rétracté.');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur rétractation.');
       }
@@ -144,11 +280,7 @@ export default function SuiviFournisseurs() {
 
   const exportColumns = [
     { header: 'DATE', value: (r: SupplierLedgerRow) => formatDateFr(r.date) },
-    {
-      header: 'NOMS',
-      value: (r: SupplierLedgerRow) =>
-        r.noms || (fournisseurId ? '' : r.fournisseurNom) || '',
-    },
+    { header: 'FOURNISSEUR', value: (r: SupplierLedgerRow) => r.fournisseurNom },
     { header: 'QLTI', value: (r: SupplierLedgerRow) => r.qlti },
     {
       header: 'QTES',
@@ -172,18 +304,18 @@ export default function SuiviFournisseurs() {
       header: 'SOLDE',
       value: (r: SupplierLedgerRow) => formatFcfa(r.solde),
     },
-    { header: 'ATC', value: (r: SupplierLedgerRow) => r.atc },
+    { header: 'N° BON', value: (r: SupplierLedgerRow) => r.atc },
     { header: 'IMMATRICULATION', value: (r: SupplierLedgerRow) => r.immatriculation },
     { header: 'OBS', value: (r: SupplierLedgerRow) => r.obs },
   ];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   return (
     <div className="space-y-6 p-1">
       <PageHeader
-        title="Suivi fournisseurs"
-        description="Achats de bons (débit) et paiements (crédit), solde courant — rétractables."
+        title="Achats fournisseurs"
+        description="Renseigner les bons achetés par ANSA'R chez ses fournisseurs. Débit = achats, crédit = paiements. Aucun client."
         icon={BookOpen}
         gradient="from-orange-500/20 via-amber-500/10 to-transparent"
         iconColor="from-orange-600 via-amber-600 to-yellow-700"
@@ -192,24 +324,25 @@ export default function SuiviFournisseurs() {
             <ExportButtons
               onExcel={() =>
                 exportToExcel({
-                  title: 'Suivi fournisseurs',
-                  fileName: `suivi_fournisseurs_${today}.xlsx`,
+                  title: 'Achats fournisseurs',
+                  fileName: `achats_fournisseurs_${today}.xlsx`,
                   columns: exportColumns,
                   rows: filtered,
                 })
               }
               onPdf={() =>
                 exportToPrintablePDF({
-                  title: 'Suivi fournisseurs',
-                  fileName: `suivi_fournisseurs_${today}.pdf`,
+                  title: 'Achats fournisseurs',
+                  fileName: `achats_fournisseurs_${today}.pdf`,
                   headerColor: '#ea580c',
                   columns: exportColumns,
                   rows: filtered,
                 })
               }
             />
-            <Button asChild variant="outline" size="sm">
-              <Link to="/chargements">Chargements</Link>
+            <Button type="button" size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1" />
+              Nouvel achat
             </Button>
           </div>
         }
@@ -233,7 +366,7 @@ export default function SuiviFournisseurs() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Rechercher noms, qualité, ATC, immat…"
+                placeholder="Rechercher fournisseur, qualité, n° bon, immat…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -267,21 +400,21 @@ export default function SuiviFournisseurs() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3">
-              <p className="text-muted-foreground text-xs">QTES</p>
+              <p className="text-muted-foreground text-xs">QTES achetées</p>
               <p className="font-semibold tabular-nums">
                 {summary.qtes.toLocaleString('fr-FR')}
               </p>
             </div>
             <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3">
-              <p className="text-muted-foreground text-xs">DEBIT</p>
+              <p className="text-muted-foreground text-xs">DEBIT (achats)</p>
               <p className="font-semibold tabular-nums">{formatFcfa(summary.debit)}</p>
             </div>
             <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3">
-              <p className="text-muted-foreground text-xs">CREDIT</p>
+              <p className="text-muted-foreground text-xs">CREDIT (paiements)</p>
               <p className="font-semibold tabular-nums">{formatFcfa(summary.credit)}</p>
             </div>
             <div className="rounded-md border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-3">
-              <p className="text-muted-foreground text-xs">SOLDE</p>
+              <p className="text-muted-foreground text-xs">SOLDE dû fournisseurs</p>
               <p className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
                 {formatFcfa(summary.solde)}
               </p>
@@ -293,14 +426,14 @@ export default function SuiviFournisseurs() {
               <TableHeader>
                 <TableRow>
                   <TableHead>DATE</TableHead>
-                  <TableHead>NOMS</TableHead>
+                  <TableHead>FOURNISSEUR</TableHead>
                   <TableHead>QLTI</TableHead>
                   <TableHead className="text-right">QTES</TableHead>
                   <TableHead className="text-right">PX UNI</TableHead>
                   <TableHead className="text-right">DEBIT</TableHead>
                   <TableHead className="text-right">CREDIT</TableHead>
                   <TableHead className="text-right">SOLDE</TableHead>
-                  <TableHead>ATC</TableHead>
+                  <TableHead>N° BON</TableHead>
                   <TableHead>IMMATRICULATION</TableHead>
                   <TableHead>OBS</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -313,11 +446,15 @@ export default function SuiviFournisseurs() {
                       colSpan={12}
                       className="text-center text-muted-foreground py-10"
                     >
-                      Aucune ligne. Les achats viennent des{' '}
-                      <Link to="/chargements" className="underline">
-                        Chargements
-                      </Link>
-                      , les crédits des dépenses / factures fournisseur.
+                      Aucun achat. Cliquez sur{' '}
+                      <button
+                        type="button"
+                        className="underline font-medium text-foreground"
+                        onClick={openCreate}
+                      >
+                        Nouvel achat
+                      </button>{' '}
+                      pour renseigner un bon acheté chez un fournisseur.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -330,9 +467,12 @@ export default function SuiviFournisseurs() {
                         {formatDateFr(r.date)}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {r.noms ||
-                          (!fournisseurId ? r.fournisseurNom : '') ||
-                          (r.kind === 'paiement' ? '—' : '—')}
+                        <Link
+                          to={`/tiers?id=${r.fournisseurId}`}
+                          className="hover:underline text-primary"
+                        >
+                          {r.fournisseurNom || '—'}
+                        </Link>
                       </TableCell>
                       <TableCell>
                         {r.qlti ? (
@@ -342,6 +482,8 @@ export default function SuiviFournisseurs() {
                           >
                             {r.qlti}
                           </Badge>
+                        ) : r.kind === 'paiement' ? (
+                          <span className="text-muted-foreground text-xs">Paiement</span>
                         ) : (
                           '—'
                         )}
@@ -398,6 +540,236 @@ export default function SuiviFournisseurs() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setForm(emptyAchatForm());
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nouvel achat de bon fournisseur</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveAchat();
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              Enregistre un bon acheté par ANSA'R chez un fournisseur. Pas d’affectation
+              client ici — cela se fait plus tard dans Chargements si besoin.
+            </p>
+            <div className="space-y-1">
+              <Label>Fournisseur *</Label>
+              <ThirdPartyPicker
+                options={fournisseurs}
+                value={form.fournisseurId}
+                onValueChange={(id) =>
+                  setForm((f) =>
+                    syncMontant(
+                      {
+                        fournisseurId: id,
+                        articleId: '',
+                        montantTouched: false,
+                      },
+                      f,
+                    ),
+                  )
+                }
+                placeholder="Choisir un fournisseur…"
+                searchPlaceholder="Nom fournisseur…"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="achat-date">Date d’achat *</Label>
+                <Input
+                  id="achat-date"
+                  type="date"
+                  required
+                  value={form.dateChargement}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, dateChargement: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="achat-bon">N° bon</Label>
+                <Input
+                  id="achat-bon"
+                  value={form.numeroBon}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, numeroBon: e.target.value }))
+                  }
+                  placeholder="Ex. ATC / n° fournisseur"
+                />
+              </div>
+            </div>
+            {articlesForSupplier.length > 0 && (
+              <div className="space-y-1">
+                <Label>Article catalogue</Label>
+                <Select
+                  value={form.articleId || '__none__'}
+                  onValueChange={(v) => {
+                    if (v === '__none__') {
+                      setForm((f) =>
+                        syncMontant({ articleId: '', montantTouched: false }, f),
+                      );
+                      return;
+                    }
+                    const art = articles.find((a) => a.id === v);
+                    setForm((f) =>
+                      syncMontant(
+                        {
+                          articleId: v,
+                          designation: art?.libelle ?? f.designation,
+                          unite: art?.unite ?? f.unite,
+                          montantTouched: false,
+                        },
+                        f,
+                      ),
+                    );
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Saisie libre</SelectItem>
+                    {articlesForSupplier.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.libelle}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label htmlFor="achat-qlti">Qualité / désignation *</Label>
+              <Input
+                id="achat-qlti"
+                required
+                value={form.designation}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, designation: e.target.value }))
+                }
+                placeholder="Ex. 42.5R, CPJ 45…"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="achat-qte">Quantité</Label>
+                <NumberInput
+                  id="achat-qte"
+                  value={form.quantite}
+                  allowEmpty
+                  min={0}
+                  onChange={(quantite) =>
+                    setForm((f) => syncMontant({ quantite, montantTouched: false }, f))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="achat-unite">Unité</Label>
+                <Input
+                  id="achat-unite"
+                  value={form.unite}
+                  onChange={(e) => setForm((f) => ({ ...f, unite: e.target.value }))}
+                  placeholder="sacs, t…"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="achat-pu">Prix unitaire</Label>
+                <NumberInput
+                  id="achat-pu"
+                  value={form.prixUnitaire}
+                  allowEmpty
+                  min={0}
+                  onChange={(prixUnitaire) =>
+                    setForm((f) =>
+                      syncMontant({ prixUnitaire, montantTouched: false }, f),
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="achat-montant">Montant (débit) FCFA</Label>
+              <NumberInput
+                id="achat-montant"
+                value={form.montantBon}
+                allowEmpty
+                min={0}
+                onChange={(montantBon) =>
+                  setForm((f) => ({
+                    ...f,
+                    montantBon,
+                    montantTouched: true,
+                  }))
+                }
+              />
+              {form.quantite != null && form.prixUnitaire != null && (
+                <p className="text-xs text-muted-foreground">
+                  Calcul auto : {form.quantite.toLocaleString('fr-FR')} ×{' '}
+                  {formatFcfa(form.prixUnitaire)}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>Camion ANSA'R (optionnel)</Label>
+              <Select
+                value={form.camionId || '__none__'}
+                onValueChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    camionId: v === '__none__' ? '' : v,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Aucun" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Aucun</SelectItem>
+                  {ansarTrucks.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {truckMissionLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="achat-notes">Observations</Label>
+              <Input
+                id="achat-notes"
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Annuler
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Enregistrer l’achat
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
