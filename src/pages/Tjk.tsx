@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ListSortSelect } from '@/components/ListSortSelect';
-import { ClipboardList, Plus, Edit, Trash2, Search, Loader2, Wallet } from 'lucide-react';
+import { ClipboardList, Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
@@ -94,20 +94,14 @@ type FormState = {
   prixTrans: number | undefined;
   paiement: number | undefined;
   notes: string;
-};
-
-type FinanceFormState = {
+  /** Infos financières (toutes optionnelles). */
   soldeAnterieur: number | undefined;
   nombreCamions: number | undefined;
   tonnageTotal: number | undefined;
-  /** Ancien champ « QTFS », affiché Qtes. */
-  qtes: number | undefined;
-  tonnage: number | undefined;
   resteAPayer: number | undefined;
   prixTransport: number | undefined;
   totalTransport: number | undefined;
   prixVoyage: number | undefined;
-  /** Ancien champ « Total Palemarr », affiché Total paiement. */
   totalPaiement: number | undefined;
 };
 
@@ -129,35 +123,15 @@ const emptyForm = (): FormState => ({
   prixTrans: undefined,
   paiement: undefined,
   notes: '',
-});
-
-const emptyFinanceForm = (): FinanceFormState => ({
   soldeAnterieur: undefined,
   nombreCamions: undefined,
   tonnageTotal: undefined,
-  qtes: undefined,
-  tonnage: undefined,
   resteAPayer: undefined,
   prixTransport: undefined,
   totalTransport: undefined,
   prixVoyage: undefined,
   totalPaiement: undefined,
 });
-
-function financeFromOperation(op: TjkOperation): FinanceFormState {
-  return {
-    soldeAnterieur: op.soldeAnterieur,
-    nombreCamions: op.nombreCamions,
-    tonnageTotal: op.tonnageTotal,
-    qtes: op.qtfs ?? op.qtes,
-    tonnage: op.tonnage,
-    resteAPayer: op.resteAPayer,
-    prixTransport: op.prixTransport ?? op.prixTrans,
-    totalTransport: op.totalTransport,
-    prixVoyage: op.prixVoyage,
-    totalPaiement: op.totalPalemarr ?? op.paiement,
-  };
-}
 
 export default function Tjk() {
   const { thirdParties, merchandiseQualities, supplierLoadings, updateSupplierLoading } = useApp();
@@ -168,9 +142,6 @@ export default function Tjk() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TjkOperation | null>(null);
-  const [financeDialogOpen, setFinanceDialogOpen] = useState(false);
-  const [financeOp, setFinanceOp] = useState<TjkOperation | null>(null);
-  const [financeForm, setFinanceForm] = useState<FinanceFormState>(emptyFinanceForm());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
@@ -341,75 +312,22 @@ export default function Tjk() {
       camionImmatriculation: op.camionImmatriculation || '',
       referenceAtc: op.referenceAtc || '',
       supplierLoadingId: op.supplierLoadingId || '',
-      qtes: op.qtes ?? op.quantite,
+      qtes: op.qtes ?? op.qtfs ?? op.quantite,
       tonnage: op.tonnage,
       telChauffeur: op.telChauffeur || '',
-      prixTrans: op.prixTrans,
+      prixTrans: op.prixTrans ?? op.prixTransport,
       paiement: op.paiement,
       notes: op.notes || '',
+      soldeAnterieur: op.soldeAnterieur,
+      nombreCamions: op.nombreCamions,
+      tonnageTotal: op.tonnageTotal,
+      resteAPayer: op.resteAPayer,
+      prixTransport: op.prixTransport ?? op.prixTrans,
+      totalTransport: op.totalTransport,
+      prixVoyage: op.prixVoyage,
+      totalPaiement: op.totalPalemarr,
     });
     setDialogOpen(true);
-  };
-
-  const openFinance = (op: TjkOperation) => {
-    setFinanceOp(op);
-    setFinanceForm(financeFromOperation(op));
-    setFinanceDialogOpen(true);
-  };
-
-  const openFinancePicker = () => {
-    if (operations.length === 0) {
-      toast.error('Créez d’abord une opération TJK.');
-      return;
-    }
-    const first = sorted[0] ?? operations[0];
-    openFinance(first);
-  };
-
-  const handleFinanceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!financeOp) return;
-    const payload = {
-      soldeAnterieur: financeForm.soldeAnterieur,
-      nombreCamions: financeForm.nombreCamions,
-      tonnageTotal: financeForm.tonnageTotal,
-      qtfs: financeForm.qtes,
-      qtes:
-        financeForm.qtes != null && Number.isFinite(Number(financeForm.qtes))
-          ? Number(financeForm.qtes)
-          : financeOp.qtes,
-      tonnage:
-        financeForm.tonnage != null && Number.isFinite(Number(financeForm.tonnage))
-          ? Number(financeForm.tonnage)
-          : null,
-      resteAPayer: financeForm.resteAPayer,
-      prixTransport: financeForm.prixTransport,
-      prixTrans:
-        financeForm.prixTransport != null &&
-        Number.isFinite(Number(financeForm.prixTransport))
-          ? Number(financeForm.prixTransport)
-          : financeOp.prixTrans,
-      totalTransport: financeForm.totalTransport,
-      prixVoyage: financeForm.prixVoyage,
-      totalPalemarr: financeForm.totalPaiement,
-      paiement:
-        financeForm.totalPaiement != null &&
-        Number.isFinite(Number(financeForm.totalPaiement))
-          ? Number(financeForm.totalPaiement)
-          : financeOp.paiement,
-    };
-    await withGuard(async () => {
-      try {
-        await updateTjkOperation(financeOp.id, payload);
-        await loadAll();
-        setFinanceDialogOpen(false);
-        setFinanceOp(null);
-        setFinanceForm(emptyFinanceForm());
-        toast.success('Informations financières enregistrées.');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erreur enregistrement.');
-      }
-    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -485,6 +403,20 @@ export default function Tjk() {
           : null,
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
+      soldeAnterieur: form.soldeAnterieur,
+      nombreCamions: form.nombreCamions,
+      tonnageTotal: form.tonnageTotal,
+      qtfs: qtesVal,
+      resteAPayer: form.resteAPayer,
+      prixTransport:
+        form.prixTransport != null && Number.isFinite(Number(form.prixTransport))
+          ? Number(form.prixTransport)
+          : form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
+            ? Number(form.prixTrans)
+            : null,
+      totalTransport: form.totalTransport,
+      prixVoyage: form.prixVoyage,
+      totalPalemarr: form.totalPaiement,
     };
 
     await withGuard(async () => {
@@ -701,16 +633,7 @@ export default function Tjk() {
               }
             />
             {canManageFleet && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={openFinancePicker}
-                >
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Infos financières
-                </Button>
-                <Dialog
+              <Dialog
                 open={dialogOpen}
                 onOpenChange={(open) => {
                   setDialogOpen(open);
@@ -1014,6 +937,131 @@ export default function Tjk() {
                       </div>
                     </div>
 
+                    <div className="border-t pt-4 space-y-4">
+                      <div>
+                        <h3 className="font-medium text-sm">Informations financières</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Remplissage optionnel.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-solde-anterieur">Solde antérieur</Label>
+                          <NumberInput
+                            id="tjk-solde-anterieur"
+                            value={form.soldeAnterieur}
+                            onChange={(soldeAnterieur) =>
+                              setForm((f) => ({ ...f, soldeAnterieur }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 1000000"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="tjk-nombre-camions">Nombre de camions</Label>
+                          <NumberInput
+                            id="tjk-nombre-camions"
+                            value={form.nombreCamions}
+                            onChange={(nombreCamions) =>
+                              setForm((f) => ({ ...f, nombreCamions }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 2"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-tonnage-total">Tonnage total</Label>
+                          <NumberInput
+                            id="tjk-tonnage-total"
+                            value={form.tonnageTotal}
+                            onChange={(tonnageTotal) =>
+                              setForm((f) => ({ ...f, tonnageTotal }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 2048"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="tjk-reste-a-payer">Reste à payer</Label>
+                          <NumberInput
+                            id="tjk-reste-a-payer"
+                            value={form.resteAPayer}
+                            onChange={(resteAPayer) =>
+                              setForm((f) => ({ ...f, resteAPayer }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 6000000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-prix-transport">Prix transport</Label>
+                          <NumberInput
+                            id="tjk-prix-transport"
+                            value={form.prixTransport}
+                            onChange={(prixTransport) =>
+                              setForm((f) => ({ ...f, prixTransport }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 784000"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="tjk-total-transport">Total transport</Label>
+                          <NumberInput
+                            id="tjk-total-transport"
+                            value={form.totalTransport}
+                            onChange={(totalTransport) =>
+                              setForm((f) => ({ ...f, totalTransport }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 11788000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="tjk-prix-voyage">Prix voyage</Label>
+                          <NumberInput
+                            id="tjk-prix-voyage"
+                            value={form.prixVoyage}
+                            onChange={(prixVoyage) =>
+                              setForm((f) => ({ ...f, prixVoyage }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 28683600"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="tjk-total-paiement">Total paiement</Label>
+                          <NumberInput
+                            id="tjk-total-paiement"
+                            value={form.totalPaiement}
+                            onChange={(totalPaiement) =>
+                              setForm((f) => ({ ...f, totalPaiement }))
+                            }
+                            min={0}
+                            allowEmpty
+                            placeholder="Ex. 10000000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <Label htmlFor="tjk-notes">Notes</Label>
                       <Input
@@ -1041,7 +1089,6 @@ export default function Tjk() {
                   </form>
                 </DialogContent>
               </Dialog>
-              </>
             )}
           </div>
         }
@@ -1249,15 +1296,6 @@ export default function Tjk() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              onClick={() => openFinance(op)}
-                              title="Infos financières"
-                            >
-                              <Wallet className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
                               onClick={() => openEdit(op)}
                               title="Modifier"
                             >
@@ -1284,204 +1322,6 @@ export default function Tjk() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog
-        open={financeDialogOpen}
-        onOpenChange={(open) => {
-          setFinanceDialogOpen(open);
-          if (!open) {
-            setFinanceOp(null);
-            setFinanceForm(emptyFinanceForm());
-          }
-        }}
-      >
-        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Informations financières</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleFinanceSubmit} className="space-y-4">
-            <div>
-              <Label>Opération *</Label>
-              <Select
-                value={financeOp?.id || ''}
-                onValueChange={(id) => {
-                  const op = operations.find((o) => o.id === id);
-                  if (op) openFinance(op);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choisir une opération…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {stableSort([...operations], (a, b) => parseDateMs(b.date) - parseDateMs(a.date)).map(
-                    (op) => (
-                      <SelectItem key={op.id} value={op.id}>
-                        {new Date(op.date).toLocaleDateString('fr-FR')} ·{' '}
-                        {formatTjkCamionLabel(op)} · {formatTjkClientLabel(op)}
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fin-solde">Solde antérieur</Label>
-                <NumberInput
-                  id="fin-solde"
-                  value={financeForm.soldeAnterieur}
-                  onChange={(soldeAnterieur) =>
-                    setFinanceForm((f) => ({ ...f, soldeAnterieur }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 1000000"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fin-nbre-cam">Nombre de camions</Label>
-                <NumberInput
-                  id="fin-nbre-cam"
-                  value={financeForm.nombreCamions}
-                  onChange={(nombreCamions) =>
-                    setFinanceForm((f) => ({ ...f, nombreCamions }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 2"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fin-tonnage-total">Tonnage total</Label>
-                <NumberInput
-                  id="fin-tonnage-total"
-                  value={financeForm.tonnageTotal}
-                  onChange={(tonnageTotal) =>
-                    setFinanceForm((f) => ({ ...f, tonnageTotal }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 2048"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fin-qtes">Qtes</Label>
-                <NumberInput
-                  id="fin-qtes"
-                  value={financeForm.qtes}
-                  onChange={(qtes) => setFinanceForm((f) => ({ ...f, qtes }))}
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 540"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fin-tonnage">Tonnage</Label>
-                <NumberInput
-                  id="fin-tonnage"
-                  value={financeForm.tonnage}
-                  onChange={(tonnage) => setFinanceForm((f) => ({ ...f, tonnage }))}
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 27"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fin-reste">Reste à payer</Label>
-                <NumberInput
-                  id="fin-reste"
-                  value={financeForm.resteAPayer}
-                  onChange={(resteAPayer) =>
-                    setFinanceForm((f) => ({ ...f, resteAPayer }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 6000000"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fin-prix-trans">Prix transport</Label>
-                <NumberInput
-                  id="fin-prix-trans"
-                  value={financeForm.prixTransport}
-                  onChange={(prixTransport) =>
-                    setFinanceForm((f) => ({ ...f, prixTransport }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 784000"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fin-total-trans">Total transport</Label>
-                <NumberInput
-                  id="fin-total-trans"
-                  value={financeForm.totalTransport}
-                  onChange={(totalTransport) =>
-                    setFinanceForm((f) => ({ ...f, totalTransport }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 11788000"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fin-prix-voyage">Prix voyage</Label>
-                <NumberInput
-                  id="fin-prix-voyage"
-                  value={financeForm.prixVoyage}
-                  onChange={(prixVoyage) =>
-                    setFinanceForm((f) => ({ ...f, prixVoyage }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 28683600"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fin-total-paiement">Total paiement</Label>
-                <NumberInput
-                  id="fin-total-paiement"
-                  value={financeForm.totalPaiement}
-                  onChange={(totalPaiement) =>
-                    setFinanceForm((f) => ({ ...f, totalPaiement }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="Ex. 10000000"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setFinanceDialogOpen(false)}
-              >
-                Annuler
-              </Button>
-              <Button type="submit" disabled={isSubmitting || !financeOp}>
-                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Enregistrer
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

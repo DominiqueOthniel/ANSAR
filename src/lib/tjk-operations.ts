@@ -33,11 +33,9 @@ export interface TjkOperation {
   nombreCamions?: number;
   tonnageTotal?: number;
   qtfs?: number;
-  tonnage?: number;
   resteAPayer?: number;
   prixTransport?: number;
   totalTransport?: number;
-  telChauffeur?: string;
   prixVoyage?: number;
   totalPalemarr?: number;
 }
@@ -94,11 +92,9 @@ export function normalizeTjkOperation(r: Record<string, unknown>): TjkOperation 
     nombreCamions: r.nombreCamions ? parseNum(r.nombreCamions) : undefined,
     tonnageTotal: r.tonnageTotal ? parseNum(r.tonnageTotal) : undefined,
     qtfs: r.qtfs ? parseNum(r.qtfs) : undefined,
-    tonnage: r.tonnage ? parseNum(r.tonnage) : undefined,
     resteAPayer: r.resteAPayer ? parseNum(r.resteAPayer) : undefined,
     prixTransport: r.prixTransport ? parseNum(r.prixTransport) : undefined,
     totalTransport: r.totalTransport ? parseNum(r.totalTransport) : undefined,
-    telChauffeur: r.telChauffeur ? String(r.telChauffeur) : undefined,
     prixVoyage: r.prixVoyage ? parseNum(r.prixVoyage) : undefined,
     totalPalemarr: r.totalPalemarr ? parseNum(r.totalPalemarr) : undefined,
   };
@@ -214,11 +210,9 @@ export async function createTjkOperation(
     nombreCamions: (payload as any).nombreCamions,
     tonnageTotal: (payload as any).tonnageTotal,
     qtfs: (payload as any).qtfs,
-    tonnage: (payload as any).tonnage,
     resteAPayer: (payload as any).resteAPayer,
     prixTransport: (payload as any).prixTransport,
     totalTransport: (payload as any).totalTransport,
-    telChauffeur: (payload as any).telChauffeur?.trim() || undefined,
     prixVoyage: (payload as any).prixVoyage,
     totalPalemarr: (payload as any).totalPalemarr,
   };
@@ -331,8 +325,6 @@ export async function updateTjkOperation(
         ? (payload as any).tonnageTotal
         : prev.tonnageTotal,
     qtfs: (payload as any).qtfs !== undefined ? (payload as any).qtfs : prev.qtfs,
-    tonnage:
-      (payload as any).tonnage !== undefined ? (payload as any).tonnage : prev.tonnage,
     resteAPayer:
       (payload as any).resteAPayer !== undefined
         ? (payload as any).resteAPayer
@@ -345,10 +337,6 @@ export async function updateTjkOperation(
       (payload as any).totalTransport !== undefined
         ? (payload as any).totalTransport
         : prev.totalTransport,
-    telChauffeur:
-      (payload as any).telChauffeur !== undefined
-        ? (payload as any).telChauffeur?.trim() || undefined
-        : prev.telChauffeur,
     prixVoyage:
       (payload as any).prixVoyage !== undefined
         ? (payload as any).prixVoyage
