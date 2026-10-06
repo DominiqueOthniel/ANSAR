@@ -18,6 +18,11 @@ export class CreateTjkDestinationDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  prixTonnage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   prixTrans?: number;
 
   @IsOptional()

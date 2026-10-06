@@ -16,6 +16,9 @@ export class TjkDestination {
   poidsUniteKg: number | null;
 
   @Column({ type: 'decimal', precision: 14, scale: 2, nullable: true })
+  prixTonnage: number | null;
+
+  @Column({ type: 'decimal', precision: 14, scale: 2, nullable: true })
   prixTrans: number | null;
 
   @Column({ type: 'decimal', precision: 14, scale: 2, nullable: true })

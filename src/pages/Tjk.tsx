@@ -60,6 +60,7 @@ import {
 } from '@/lib/tjk-destinations';
 import {
   TJK_DEFAULT_UNIT_WEIGHT_KG,
+  tjkMontantFromPrixTonnage,
   tjkQuantiteToQtesTonnage,
 } from '@/lib/tjk-quantities';
 
@@ -95,6 +96,8 @@ type FormState = {
   tjkDestinationId: string;
   /** Poids unitaire (kg) pour le calcul automatique du tonnage. */
   poidsUniteKg: number;
+  /** Prix au tonnage de la destination (FCFA/t) — recalcule le montant. */
+  prixTonnage: number | undefined;
   quantite: number | undefined;
   unite: string;
   qualite: string;
@@ -115,19 +118,26 @@ type DestFormState = {
   libelle: string;
   quantiteDefaut: number | undefined;
   poidsUniteKg: number | undefined;
-  prixTrans: number | undefined;
+  prixTonnage: number | undefined;
 };
 
 const emptyDestForm = (): DestFormState => ({
   libelle: '',
   quantiteDefaut: undefined,
   poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
-  prixTrans: undefined,
+  prixTonnage: undefined,
 });
 
 function withQuantiteSynced(prev: FormState, quantite: number | undefined): FormState {
   const { qtes, tonnage } = tjkQuantiteToQtesTonnage(quantite, prev.poidsUniteKg);
-  return { ...prev, quantite, qtes, tonnage };
+  const montant = tjkMontantFromPrixTonnage(tonnage, prev.prixTonnage);
+  return {
+    ...prev,
+    quantite,
+    qtes,
+    tonnage,
+    prixTrans: montant ?? prev.prixTrans,
+  };
 }
 
 function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormState {
@@ -138,15 +148,23 @@ function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormSt
       : dest.quantiteDefaut != null && dest.quantiteDefaut > 0
         ? dest.quantiteDefaut
         : prev.quantite;
+  const prixTonnage = dest.prixTonnage;
   const base: FormState = {
     ...prev,
     tjkDestinationId: dest.id,
     destination: dest.libelle,
     poidsUniteKg: poids,
-    prixTrans: dest.prixTrans ?? dest.prixTransport ?? prev.prixTrans,
+    prixTonnage,
     quantite,
   };
-  return withQuantiteSynced(base, quantite);
+  const synced = withQuantiteSynced(base, quantite);
+  if (synced.prixTrans == null && (dest.prixTrans != null || dest.prixTransport != null)) {
+    return {
+      ...synced,
+      prixTrans: dest.prixTrans ?? dest.prixTransport,
+    };
+  }
+  return synced;
 }
 
 const emptyForm = (): FormState => ({
@@ -155,6 +173,7 @@ const emptyForm = (): FormState => ({
   clientNom: '',
   tjkDestinationId: '',
   poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
+  prixTonnage: undefined,
   quantite: undefined,
   unite: '',
   qualite: '',
@@ -359,12 +378,15 @@ export default function Tjk() {
   const openEdit = (op: TjkOperation) => {
     setEditing(op);
     const matched = findTjkDestinationByLibelle(destinations, op.destination || '');
-    setForm({
+    const poids = matched?.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
+    const prixTonnage = matched?.prixTonnage;
+    const base: FormState = {
       date: op.date.split('T')[0] || op.date,
       clientId: op.clientId || '',
       clientNom: op.clientNom || '',
       tjkDestinationId: matched?.id || '',
-      poidsUniteKg: matched?.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
+      poidsUniteKg: poids,
+      prixTonnage,
       quantite: op.quantite,
       unite: op.unite || '',
       qualite: op.qualite || '',
@@ -379,7 +401,13 @@ export default function Tjk() {
       prixTrans: op.prixTrans ?? op.prixTransport,
       paiement: op.paiement ?? op.totalPalemarr,
       notes: op.notes || '',
-    });
+    };
+    // Recalcule qtes/tonnage/montant si prix tonnage connu.
+    setForm(
+      prixTonnage != null
+        ? withQuantiteSynced(base, op.quantite)
+        : base,
+    );
     setDialogOpen(true);
   };
 
@@ -537,7 +565,7 @@ export default function Tjk() {
       libelle: dest.libelle,
       quantiteDefaut: dest.quantiteDefaut,
       poidsUniteKg: dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
-      prixTrans: dest.prixTrans ?? dest.prixTransport,
+      prixTonnage: dest.prixTonnage,
     });
     setDestDialogOpen(true);
   };
@@ -549,13 +577,16 @@ export default function Tjk() {
       toast.error('Indiquez le nom de la destination.');
       return;
     }
+    const poids = destForm.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
+    const { tonnage } = tjkQuantiteToQtesTonnage(destForm.quantiteDefaut, poids);
+    const montant = tjkMontantFromPrixTonnage(tonnage, destForm.prixTonnage);
     const payload = {
       libelle,
       quantiteDefaut: destForm.quantiteDefaut,
-      poidsUniteKg: destForm.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
-      prixTrans: destForm.prixTrans,
-      // Garde la cohérence avec l’ancien champ doublon côté API.
-      prixTransport: destForm.prixTrans,
+      poidsUniteKg: poids,
+      prixTonnage: destForm.prixTonnage,
+      prixTrans: montant ?? null,
+      prixTransport: montant ?? null,
     };
     await withGuard(async () => {
       try {
@@ -907,6 +938,7 @@ export default function Tjk() {
                             ...f,
                             destination: e.target.value,
                             tjkDestinationId: '',
+                            prixTonnage: undefined,
                           }))
                         }
                         required
@@ -1074,7 +1106,8 @@ export default function Tjk() {
           <CardContent>
             {sortedDestinations.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Aucune destination enregistrée. Créez-en une pour préremplir le Prix TRANS.
+                Aucune destination enregistrée. Créez-en une avec un prix au tonnage
+                (montant calculé automatiquement).
               </p>
             ) : (
               <div className="rounded-md border overflow-x-auto">
@@ -1084,12 +1117,21 @@ export default function Tjk() {
                       <TableHead>Destination</TableHead>
                       <TableHead className="text-right">Qté défaut</TableHead>
                       <TableHead className="text-right">Poids unité (kg)</TableHead>
-                      <TableHead className="text-right">Prix TRANS</TableHead>
+                      <TableHead className="text-right">Prix tonnage</TableHead>
+                      <TableHead className="text-right">Tonnage</TableHead>
+                      <TableHead className="text-right">Montant</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedDestinations.map((d) => (
+                    {sortedDestinations.map((d) => {
+                      const poids = d.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
+                      const { tonnage } = tjkQuantiteToQtesTonnage(d.quantiteDefaut, poids);
+                      const montant =
+                        tjkMontantFromPrixTonnage(tonnage, d.prixTonnage) ??
+                        d.prixTrans ??
+                        d.prixTransport;
+                      return (
                       <TableRow key={d.id}>
                         <TableCell className="font-medium">{d.libelle}</TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -1098,12 +1140,18 @@ export default function Tjk() {
                             : '—'}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {(d.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG).toLocaleString('fr-FR')}
+                          {poids.toLocaleString('fr-FR')}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {(d.prixTrans ?? d.prixTransport) != null
-                            ? (d.prixTrans ?? d.prixTransport)!.toLocaleString('fr-FR')
+                          {d.prixTonnage != null
+                            ? d.prixTonnage.toLocaleString('fr-FR')
                             : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {tonnage != null ? tonnage.toLocaleString('fr-FR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {montant != null ? montant.toLocaleString('fr-FR') : '—'}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -1129,7 +1177,8 @@ export default function Tjk() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -1191,16 +1240,46 @@ export default function Tjk() {
               </div>
             </div>
             <div>
-              <Label htmlFor="dest-prix-trans">Prix TRANS</Label>
+              <Label htmlFor="dest-prix-tonnage">Prix du tonnage</Label>
               <NumberInput
-                id="dest-prix-trans"
-                value={destForm.prixTrans}
-                onChange={(prixTrans) => setDestForm((f) => ({ ...f, prixTrans }))}
+                id="dest-prix-tonnage"
+                value={destForm.prixTonnage}
+                onChange={(prixTonnage) => setDestForm((f) => ({ ...f, prixTonnage }))}
                 min={0}
                 allowEmpty
-                placeholder="FCFA"
+                placeholder="FCFA / t"
               />
             </div>
+            {(() => {
+              const poids = destForm.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
+              const { tonnage } = tjkQuantiteToQtesTonnage(destForm.quantiteDefaut, poids);
+              const montant = tjkMontantFromPrixTonnage(tonnage, destForm.prixTonnage);
+              return (
+                <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                  <p className="text-muted-foreground text-xs">Calcul automatique</p>
+                  <p>
+                    Tonnage :{' '}
+                    <span className="font-semibold tabular-nums">
+                      {tonnage != null ? `${tonnage.toLocaleString('fr-FR')} t` : '—'}
+                    </span>
+                    <span className="text-muted-foreground text-xs ml-1">
+                      (qté × {poids} kg / 1000)
+                    </span>
+                  </p>
+                  <p>
+                    Montant final :{' '}
+                    <span className="font-semibold tabular-nums text-sky-700 dark:text-sky-300">
+                      {montant != null
+                        ? `${montant.toLocaleString('fr-FR')} FCFA`
+                        : '—'}
+                    </span>
+                    <span className="text-muted-foreground text-xs ml-1">
+                      (tonnage × prix tonnage)
+                    </span>
+                  </p>
+                </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"

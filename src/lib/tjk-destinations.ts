@@ -11,6 +11,9 @@ export interface TjkDestination {
   libelle: string;
   quantiteDefaut?: number;
   poidsUniteKg?: number;
+  /** Prix au tonnage (FCFA / t). */
+  prixTonnage?: number;
+  /** Montant final (tonnage défaut × prix tonnage), ou ancien forfait. */
   prixTrans?: number;
   prixTransport?: number;
   totalTransport?: number;
@@ -35,6 +38,7 @@ export function normalizeTjkDestination(r: Record<string, unknown>): TjkDestinat
     libelle: String(r.libelle ?? '').trim(),
     quantiteDefaut: parseNum(r.quantiteDefaut),
     poidsUniteKg: parseNum(r.poidsUniteKg),
+    prixTonnage: parseNum(r.prixTonnage),
     prixTrans: parseNum(r.prixTrans),
     prixTransport: parseNum(r.prixTransport),
     totalTransport: parseNum(r.totalTransport),
@@ -102,6 +106,7 @@ export async function createTjkDestination(
     libelle: payload.libelle.trim(),
     quantiteDefaut: payload.quantiteDefaut ?? undefined,
     poidsUniteKg: payload.poidsUniteKg ?? undefined,
+    prixTonnage: payload.prixTonnage ?? undefined,
     prixTrans: payload.prixTrans ?? undefined,
     prixTransport: payload.prixTransport ?? undefined,
     totalTransport: payload.totalTransport ?? undefined,
@@ -139,6 +144,8 @@ export async function updateTjkDestination(
       payload.quantiteDefaut !== undefined ? payload.quantiteDefaut ?? undefined : prev.quantiteDefaut,
     poidsUniteKg:
       payload.poidsUniteKg !== undefined ? payload.poidsUniteKg ?? undefined : prev.poidsUniteKg,
+    prixTonnage:
+      payload.prixTonnage !== undefined ? payload.prixTonnage ?? undefined : prev.prixTonnage,
     prixTrans: payload.prixTrans !== undefined ? payload.prixTrans ?? undefined : prev.prixTrans,
     prixTransport:
       payload.prixTransport !== undefined ? payload.prixTransport ?? undefined : prev.prixTransport,

@@ -14,3 +14,21 @@ export function tjkQuantiteToQtesTonnage(
   const tonnage = Math.round(((q * kg) / 1000) * 1000) / 1000;
   return { qtes: q, tonnage };
 }
+
+/** Montant final = tonnage × prix du tonnage (FCFA). */
+export function tjkMontantFromPrixTonnage(
+  tonnage: number | undefined,
+  prixTonnage: number | undefined,
+): number | undefined {
+  if (
+    tonnage == null ||
+    prixTonnage == null ||
+    !Number.isFinite(Number(tonnage)) ||
+    !Number.isFinite(Number(prixTonnage)) ||
+    Number(tonnage) < 0 ||
+    Number(prixTonnage) < 0
+  ) {
+    return undefined;
+  }
+  return Math.round(Number(tonnage) * Number(prixTonnage));
+}

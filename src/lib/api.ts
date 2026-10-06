@@ -446,6 +446,9 @@ export interface TjkDestinationPayload {
   libelle: string;
   quantiteDefaut?: number | null;
   poidsUniteKg?: number | null;
+  /** Prix au tonnage (FCFA / t) — le montant final est dérivé. */
+  prixTonnage?: number | null;
+  /** Montant final calculé (tonnage × prix tonnage), conservé pour compat. */
   prixTrans?: number | null;
   prixTransport?: number | null;
   totalTransport?: number | null;

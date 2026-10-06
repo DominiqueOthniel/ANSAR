@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tjkQuantiteToQtesTonnage } from './tjk-quantities';
+import { tjkMontantFromPrixTonnage, tjkQuantiteToQtesTonnage } from './tjk-quantities';
 
 describe('tjkQuantiteToQtesTonnage', () => {
   it('aligne qtes sur la quantité et calcule le tonnage (sacs 50 kg)', () => {
@@ -11,5 +11,11 @@ describe('tjkQuantiteToQtesTonnage', () => {
       qtes: undefined,
       tonnage: undefined,
     });
+  });
+});
+
+describe('tjkMontantFromPrixTonnage', () => {
+  it('calcule le montant final', () => {
+    expect(tjkMontantFromPrixTonnage(27, 29000)).toBe(783000);
   });
 });
