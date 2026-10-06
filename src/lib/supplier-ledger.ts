@@ -1,42 +1,38 @@
 /**
- * Achats de bons ANSA'R ↔ fournisseurs (pas les clients).
- * Colonnes Excel : DATE · FOURNISSEUR · QLTI · QTES · PX UNI · DEBIT · CREDIT · SOLDE · N° BON · IMMAT · OBS
+ * Récap des achats de bons = mouvements de Chargements (supplier_loadings).
+ * Source unique : création des bons. Aucune dépense / facture / client.
  */
 
 import type {
   Article,
-  Expense,
-  Invoice,
   SupplierLoading,
   ThirdParty,
   Truck,
 } from '@/contexts/AppContext';
 import { getArticleSupplierUnitPrice } from '@/lib/article-pricing';
 import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
+import { formatSupplierLoadingStatusFr } from '@/lib/supplier-loadings';
+import { formatLoadingEntryModeFr } from '@/lib/hub-transit';
 
-export type SupplierLedgerKind = 'achat' | 'paiement' | 'retrait';
-
-export interface SupplierLedgerRow {
+export interface SupplierLoadingRecapRow {
   id: string;
-  kind: SupplierLedgerKind;
+  loadingId: string;
   date: string;
-  /** Nom du fournisseur (jamais un client). */
   fournisseurId: string;
   fournisseurNom: string;
   qlti: string;
   qtes: number | undefined;
+  unite: string;
   pxUni: number | undefined;
-  debit: number;
-  credit: number;
-  solde: number;
-  /** N° bon / ATC. */
-  atc: string;
+  /** Valeur du bon (montant achat). */
+  montant: number;
+  numeroBon: string;
   immatriculation: string;
+  modeEntree: string;
+  statut: string;
+  statutLabel: string;
   obs: string;
-  loadingId?: string;
-  expenseId?: string;
-  invoiceId?: string;
-  retracted?: boolean;
+  retracted: boolean;
 }
 
 function dateKey(d: string | undefined): string {
@@ -65,10 +61,9 @@ function truckImmat(camionId: string | undefined, trucks: Truck[]): string {
   return (t.immatriculation || t.nom || '').trim();
 }
 
-export function buildSupplierLedgerRows(params: {
+/** Une ligne = un bon créé dans Chargements. */
+export function buildSupplierLoadingRecapRows(params: {
   loadings: SupplierLoading[];
-  expenses: Expense[];
-  invoices: Invoice[];
   articles: Article[];
   trucks: Truck[];
   fournisseurs: ThirdParty[];
@@ -76,11 +71,9 @@ export function buildSupplierLedgerRows(params: {
   fournisseurId?: string;
   dateFrom?: string;
   dateTo?: string;
-}): SupplierLedgerRow[] {
+}): SupplierLoadingRecapRow[] {
   const {
     loadings,
-    expenses,
-    invoices,
     articles,
     trucks,
     fournisseurs,
@@ -90,11 +83,10 @@ export function buildSupplierLedgerRows(params: {
     dateTo,
   } = params;
 
-  const resolveFournisseurNom = (id: string, fallback?: string) =>
+  const resolveNom = (id: string, fallback?: string) =>
     fallback?.trim() || fournisseurs.find((f) => f.id === id)?.nom?.trim() || '';
 
-  type Draft = Omit<SupplierLedgerRow, 'solde'>;
-  const drafts: Draft[] = [];
+  const rows: SupplierLoadingRecapRow[] = [];
 
   for (const l of loadings) {
     if (fournisseurId && l.fournisseurId !== fournisseurId) continue;
@@ -105,112 +97,70 @@ export function buildSupplierLedgerRows(params: {
     if (dateTo && d > dateTo) continue;
     const montant =
       l.montantBon != null && Number.isFinite(l.montantBon) ? l.montantBon : 0;
-    drafts.push({
-      id: `achat-${l.id}`,
-      kind: retracted ? 'retrait' : 'achat',
+
+    rows.push({
+      id: l.id,
+      loadingId: l.id,
       date: d,
       fournisseurId: l.fournisseurId,
-      fournisseurNom: resolveFournisseurNom(l.fournisseurId, l.fournisseurNom),
+      fournisseurNom: resolveNom(l.fournisseurId, l.fournisseurNom),
       qlti: l.designation?.trim() || '',
       qtes: l.quantite,
+      unite: l.unite?.trim() || '',
       pxUni: pxUniForLoading(l, articles),
-      debit: retracted ? 0 : montant,
-      credit: 0,
-      atc: l.numeroBon?.trim() || '',
+      montant: retracted ? 0 : montant,
+      numeroBon: l.numeroBon?.trim() || '',
       immatriculation: truckImmat(l.camionId, trucks),
+      modeEntree: formatLoadingEntryModeFr(l.modeEntree),
+      statut: l.statut,
+      statutLabel: formatSupplierLoadingStatusFr(l.statut),
       obs: retracted
-        ? [l.notes?.trim(), 'Rétracté'].filter(Boolean).join(' · ')
+        ? [l.notes?.trim(), 'Rétracté / annulé'].filter(Boolean).join(' · ')
         : l.notes?.trim() || '',
-      loadingId: l.id,
       retracted,
     });
   }
 
-  const expenseIdsPaidByInvoice = new Set(
-    invoices
-      .filter((inv) => inv.expenseId && (inv.montantPaye ?? 0) > 0)
-      .map((inv) => inv.expenseId!),
-  );
-
-  for (const e of expenses) {
-    if (!e.fournisseurId) continue;
-    if (fournisseurId && e.fournisseurId !== fournisseurId) continue;
-    const d = dateKey(e.date);
-    if (dateFrom && d < dateFrom) continue;
-    if (dateTo && d > dateTo) continue;
-    if (expenseIdsPaidByInvoice.has(e.id)) continue;
-    const credit = Number(e.montant) || 0;
-    if (credit <= 0) continue;
-    drafts.push({
-      id: `paiement-exp-${e.id}`,
-      kind: 'paiement',
-      date: d,
-      fournisseurId: e.fournisseurId,
-      fournisseurNom: resolveFournisseurNom(e.fournisseurId),
-      qlti: '',
-      qtes: e.quantite,
-      pxUni: e.prixUnitaire,
-      debit: 0,
-      credit,
-      atc: '',
-      immatriculation: truckImmat(e.camionId, trucks),
-      obs: [e.categorie, e.description].filter(Boolean).join(' · '),
-      expenseId: e.id,
-    });
-  }
-
-  for (const inv of invoices) {
-    if (!inv.expenseId) continue;
-    const paye = Number(inv.montantPaye) || 0;
-    if (paye <= 0) continue;
-    const exp = expenses.find((e) => e.id === inv.expenseId);
-    if (!exp?.fournisseurId) continue;
-    if (fournisseurId && exp.fournisseurId !== fournisseurId) continue;
-    const d = dateKey(inv.datePaiement || inv.dateCreation);
-    if (dateFrom && d < dateFrom) continue;
-    if (dateTo && d > dateTo) continue;
-    drafts.push({
-      id: `paiement-inv-${inv.id}`,
-      kind: 'paiement',
-      date: d,
-      fournisseurId: exp.fournisseurId,
-      fournisseurNom: resolveFournisseurNom(exp.fournisseurId),
-      qlti: '',
-      qtes: undefined,
-      pxUni: undefined,
-      debit: 0,
-      credit: paye,
-      atc: inv.numero?.trim() || '',
-      immatriculation: truckImmat(exp.camionId, trucks),
-      obs:
-        [inv.modePaiement, inv.notes].filter(Boolean).join(' · ') ||
-        'Paiement fournisseur',
-      expenseId: exp.id,
-      invoiceId: inv.id,
-    });
-  }
-
-  const sorted = stableSort(drafts, (a, b) => {
-    const dd = parseDateMs(a.date) - parseDateMs(b.date);
+  return stableSort(rows, (a, b) => {
+    const dd = parseDateMs(b.date) - parseDateMs(a.date);
     if (dd !== 0) return dd;
-    if (a.kind !== b.kind) {
-      if (a.kind === 'achat' || a.kind === 'retrait') return -1;
-      if (b.kind === 'achat' || b.kind === 'retrait') return 1;
-    }
-    return frCollator.compare(a.id, b.id);
-  });
-
-  let solde = 0;
-  return sorted.map((row) => {
-    solde += row.debit - row.credit;
-    return { ...row, solde };
+    return frCollator.compare(a.numeroBon || a.qlti, b.numeroBon || b.qlti);
   });
 }
 
-export function summarizeSupplierLedger(rows: SupplierLedgerRow[]) {
-  const qtes = rows.reduce((s, r) => s + (Number(r.qtes) || 0), 0);
-  const debit = rows.reduce((s, r) => s + (Number(r.debit) || 0), 0);
-  const credit = rows.reduce((s, r) => s + (Number(r.credit) || 0), 0);
-  const solde = rows.length ? rows[rows.length - 1].solde : 0;
-  return { qtes, debit, credit, solde, n: rows.length };
+export function summarizeSupplierLoadingRecap(rows: SupplierLoadingRecapRow[]) {
+  const actifs = rows.filter((r) => !r.retracted);
+  const qtes = actifs.reduce((s, r) => s + (Number(r.qtes) || 0), 0);
+  const montant = actifs.reduce((s, r) => s + (Number(r.montant) || 0), 0);
+  return { n: actifs.length, qtes, montant };
+}
+
+/** @deprecated Alias — ancien grand livre (dépenses/factures). */
+export type SupplierLedgerRow = SupplierLoadingRecapRow & {
+  kind?: string;
+  debit?: number;
+  credit?: number;
+  solde?: number;
+  atc?: string;
+  loadingId?: string;
+};
+
+export function buildSupplierLedgerRows(params: {
+  loadings: SupplierLoading[];
+  expenses?: unknown[];
+  invoices?: unknown[];
+  articles: Article[];
+  trucks: Truck[];
+  fournisseurs: ThirdParty[];
+  includeRetracted?: boolean;
+  fournisseurId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}): SupplierLoadingRecapRow[] {
+  return buildSupplierLoadingRecapRows(params);
+}
+
+export function summarizeSupplierLedger(rows: SupplierLoadingRecapRow[]) {
+  const s = summarizeSupplierLoadingRecap(rows);
+  return { qtes: s.qtes, debit: s.montant, credit: 0, solde: s.montant, n: s.n };
 }
