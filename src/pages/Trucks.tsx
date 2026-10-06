@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Filter, Eye, Truck as TruckIcon, Link2, Search, X, Route, DollarSign, FileDown, FileText, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Filter, Eye, Truck as TruckIcon, Link2, Search, X, Route, DollarSign, FileDown, FileText, Loader2, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isTruckInUse,
@@ -253,6 +253,15 @@ export default function Trucks({ flotteScope = 'ansar' }: { flotteScope?: TruckF
     () => allTrucks.filter((t) => (t.flotte || 'ansar') === flotteScope),
     [allTrucks, flotteScope],
   );
+  /** Nombre de bons non annulés rattachés à chaque camion. */
+  const bonsCountByTruckId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of supplierLoadings) {
+      if (!l.camionId || l.statut === 'annule') continue;
+      map.set(l.camionId, (map.get(l.camionId) ?? 0) + 1);
+    }
+    return map;
+  }, [supplierLoadings]);
   const isTjk = flotteScope === 'tjk';
   const pageTitle = isTjk ? 'Camions TJK' : 'Camions SIA-ANSAR';
   const pageDescription = isTjk
@@ -1252,6 +1261,7 @@ export default function Trucks({ flotteScope = 'ansar' }: { flotteScope?: TruckF
                 <TableHead>Statut</TableHead>
                 <TableHead>Chauffeur attitré</TableHead>
                 <TableHead>Propriétaire</TableHead>
+                <TableHead className="whitespace-normal min-w-[5rem]">Bons</TableHead>
                 <TableHead className="whitespace-normal min-w-[7rem]">Trajets</TableHead>
                 <TableHead>Mise en circulation</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -1260,7 +1270,7 @@ export default function Trucks({ flotteScope = 'ansar' }: { flotteScope?: TruckF
             <TableBody>
               {sortedTrucks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                     {isLoading ? (
                       <span className="inline-flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1328,6 +1338,24 @@ export default function Trucks({ flotteScope = 'ansar' }: { flotteScope?: TruckF
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const n = bonsCountByTruckId.get(truck.id) ?? 0;
+                      return (
+                        <div className="flex items-center gap-2 text-sm">
+                          <ClipboardList className="h-4 w-4 text-sky-600 shrink-0" />
+                          <span>
+                            <span className="font-semibold tabular-nums text-sky-700 dark:text-sky-400">
+                              {n}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-1">
+                              bon{n !== 1 ? 's' : ''}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {(() => {
