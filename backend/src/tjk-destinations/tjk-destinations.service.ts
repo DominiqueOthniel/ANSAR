@@ -49,6 +49,7 @@ export class TjkDestinationsService {
       libelle,
       quantiteDefaut: dto.quantiteDefaut ?? null,
       poidsUniteKg: dto.poidsUniteKg ?? 50,
+      prixTonnage: dto.prixTonnage ?? null,
       prixTrans: dto.prixTrans ?? null,
       prixTransport: dto.prixTransport ?? null,
       totalTransport: dto.totalTransport ?? null,
@@ -86,6 +87,7 @@ export class TjkDestinationsService {
       libelle,
       quantiteDefaut: dto.quantiteDefaut !== undefined ? dto.quantiteDefaut ?? null : existing.quantiteDefaut,
       poidsUniteKg: dto.poidsUniteKg !== undefined ? dto.poidsUniteKg ?? null : existing.poidsUniteKg,
+      prixTonnage: dto.prixTonnage !== undefined ? dto.prixTonnage ?? null : existing.prixTonnage,
       prixTrans: dto.prixTrans !== undefined ? dto.prixTrans ?? null : existing.prixTrans,
       prixTransport:
         dto.prixTransport !== undefined ? dto.prixTransport ?? null : existing.prixTransport,

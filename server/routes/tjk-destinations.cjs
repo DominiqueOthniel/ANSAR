@@ -13,6 +13,7 @@ async function ensureSchema() {
       libelle VARCHAR(255) NOT NULL,
       "quantiteDefaut" NUMERIC(12, 2),
       "poidsUniteKg" NUMERIC(8, 3) DEFAULT 50,
+      "prixTonnage" NUMERIC(14, 2),
       "prixTrans" NUMERIC(14, 2),
       "prixTransport" NUMERIC(14, 2),
       "totalTransport" NUMERIC(14, 2),
@@ -20,6 +21,10 @@ async function ensureSchema() {
       "totalPaiement" NUMERIC(14, 2),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+  await query(`
+    ALTER TABLE tjk_destinations
+      ADD COLUMN IF NOT EXISTS "prixTonnage" NUMERIC(14, 2)
   `);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS tjk_destinations_libelle_lower_idx
@@ -41,6 +46,7 @@ const base = createTableApi({
   numericKeys: [
     'quantiteDefaut',
     'poidsUniteKg',
+    'prixTonnage',
     'prixTrans',
     'prixTransport',
     'totalTransport',
