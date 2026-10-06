@@ -66,10 +66,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
-import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, Truck, MapPin, RefreshCw, Container, Package, CheckCircle, Clock, Layers } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Link2, Loader2, Ban, Train, Truck, MapPin, RefreshCw, Container, Package, CheckCircle, Clock, Layers, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportButtons } from '@/components/ExportButtons';
 import { exportToExcelWithDetails, exportToPrintablePDFWithDetails } from '@/lib/export-utils';
+import {
+  buildLoadingReceiptPdfInnerHtml,
+  loadingReceiptPrintTitle,
+} from '@/lib/loading-receipt-pdf-html';
+import { openPdfPrintWindow } from '@/lib/pdf-print';
 import { EMOJI } from '@/lib/emoji-palette';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import { truckMissionLabel } from '@/lib/trip-mission-context';
@@ -990,6 +995,27 @@ export default function Chargements() {
     toast.success('Export PDF — enregistrez via la fenêtre d’impression');
   };
 
+  const handlePrintBonReceipt = (l: SupplierLoading) => {
+    try {
+      openPdfPrintWindow({
+        title: loadingReceiptPrintTitle(l),
+        variant: 'invoice',
+        accentColor: '#0f766e',
+        bodyHtml: buildLoadingReceiptPdfInnerHtml({
+          loading: l,
+          truckLabel: l.camionId
+            ? truckLabelById.get(l.camionId) ?? 'Camion SIA-ANSAR'
+            : null,
+          resolveClientName: (id) => clientsById.get(id),
+        }),
+      });
+      toast.success('Reçu ouvert — Imprimer / Enregistrer en PDF');
+    } catch (error) {
+      console.error('Erreur impression bon:', error);
+      toast.error('Impossible de générer le reçu');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1686,6 +1712,15 @@ export default function Chargements() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex flex-wrap justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePrintBonReceipt(l)}
+                          title="Imprimer le reçu"
+                          className="shrink-0"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
                         {l.statut !== 'annule' && (
                           <>
                             {l.statut === 'en_transit' && (
