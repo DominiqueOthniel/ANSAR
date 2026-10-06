@@ -50,6 +50,18 @@ import {
   refreshTjkOperationsFromApi,
   updateTjkOperation,
 } from '@/lib/tjk-operations';
+import {
+  type TjkDestination,
+  createTjkDestination,
+  deleteTjkDestination,
+  findTjkDestinationByLibelle,
+  refreshTjkDestinationsFromApi,
+  updateTjkDestination,
+} from '@/lib/tjk-destinations';
+import {
+  TJK_DEFAULT_UNIT_WEIGHT_KG,
+  tjkQuantiteToQtesTonnage,
+} from '@/lib/tjk-quantities';
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date (récent → ancien)' },
@@ -80,6 +92,9 @@ type FormState = {
   date: string;
   clientId: string;
   clientNom: string;
+  tjkDestinationId: string;
+  /** Poids unitaire (kg) pour le calcul automatique du tonnage. */
+  poidsUniteKg: number;
   quantite: number | undefined;
   unite: string;
   qualite: string;
@@ -105,10 +120,62 @@ type FormState = {
   totalPaiement: number | undefined;
 };
 
+type DestFormState = {
+  libelle: string;
+  quantiteDefaut: number | undefined;
+  poidsUniteKg: number | undefined;
+  prixTrans: number | undefined;
+  prixTransport: number | undefined;
+  totalTransport: number | undefined;
+  prixVoyage: number | undefined;
+  totalPaiement: number | undefined;
+};
+
+const emptyDestForm = (): DestFormState => ({
+  libelle: '',
+  quantiteDefaut: undefined,
+  poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
+  prixTrans: undefined,
+  prixTransport: undefined,
+  totalTransport: undefined,
+  prixVoyage: undefined,
+  totalPaiement: undefined,
+});
+
+function withQuantiteSynced(prev: FormState, quantite: number | undefined): FormState {
+  const { qtes, tonnage } = tjkQuantiteToQtesTonnage(quantite, prev.poidsUniteKg);
+  return { ...prev, quantite, qtes, tonnage };
+}
+
+function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormState {
+  const poids = dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
+  const quantite =
+    prev.quantite != null && prev.quantite > 0
+      ? prev.quantite
+      : dest.quantiteDefaut != null && dest.quantiteDefaut > 0
+        ? dest.quantiteDefaut
+        : prev.quantite;
+  const base: FormState = {
+    ...prev,
+    tjkDestinationId: dest.id,
+    destination: dest.libelle,
+    poidsUniteKg: poids,
+    prixTrans: dest.prixTrans ?? prev.prixTrans,
+    prixTransport: dest.prixTransport ?? dest.prixTrans ?? prev.prixTransport,
+    totalTransport: dest.totalTransport ?? prev.totalTransport,
+    prixVoyage: dest.prixVoyage ?? prev.prixVoyage,
+    totalPaiement: dest.totalPaiement ?? prev.totalPaiement,
+    quantite,
+  };
+  return withQuantiteSynced(base, quantite);
+}
+
 const emptyForm = (): FormState => ({
   date: todayIso(),
   clientId: '',
   clientNom: '',
+  tjkDestinationId: '',
+  poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
   quantite: undefined,
   unite: '',
   qualite: '',
@@ -147,6 +214,10 @@ export default function Tjk() {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [listSort, setListSort] = useState<string>('date_desc');
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [destinations, setDestinations] = useState<TjkDestination[]>([]);
+  const [destDialogOpen, setDestDialogOpen] = useState(false);
+  const [editingDest, setEditingDest] = useState<TjkDestination | null>(null);
+  const [destForm, setDestForm] = useState<DestFormState>(emptyDestForm);
 
   const clients = useMemo(
     () =>
@@ -163,6 +234,15 @@ export default function Tjk() {
         frCollator.compare(a.libelle, b.libelle),
       ),
     [merchandiseQualities],
+  );
+
+  const sortedDestinations = useMemo(
+    () =>
+      stableSort(
+        destinations.filter((d) => d.libelle.trim()),
+        (a, b) => frCollator.compare(a.libelle, b.libelle),
+      ),
+    [destinations],
   );
 
   const tjkLoadings = useMemo(
@@ -200,27 +280,34 @@ export default function Tjk() {
       bon.quantite != null && bon.quantite > 0
         ? Math.max(0, bon.quantite - used)
         : undefined;
-    return {
-      ...prev,
-      supplierLoadingId: loadingId,
-      referenceAtc: bon.numeroBon?.trim() || prev.referenceAtc,
-      qualite: bon.designation?.trim() || prev.qualite,
-      unite: bon.unite?.trim() || prev.unite,
-      quantite:
-        prev.quantite != null && prev.quantite > 0
-          ? prev.quantite
-          : reste != null && reste > 0
-            ? reste
-            : prev.quantite,
-      date: bon.dateChargement || prev.date,
-    };
+    const quantite =
+      prev.quantite != null && prev.quantite > 0
+        ? prev.quantite
+        : reste != null && reste > 0
+          ? reste
+          : prev.quantite;
+    return withQuantiteSynced(
+      {
+        ...prev,
+        supplierLoadingId: loadingId,
+        referenceAtc: bon.numeroBon?.trim() || prev.referenceAtc,
+        qualite: bon.designation?.trim() || prev.qualite,
+        unite: bon.unite?.trim() || prev.unite,
+        date: bon.dateChargement || prev.date,
+      },
+      quantite,
+    );
   };
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const rows = await refreshTjkOperationsFromApi();
+      const [rows, destRows] = await Promise.all([
+        refreshTjkOperationsFromApi(),
+        refreshTjkDestinationsFromApi(),
+      ]);
       setOperations(rows);
+      setDestinations(destRows);
     } catch (e) {
       console.error(e);
       toast.error('Impossible de charger les opérations TJK.');
@@ -300,10 +387,13 @@ export default function Tjk() {
 
   const openEdit = (op: TjkOperation) => {
     setEditing(op);
+    const matched = findTjkDestinationByLibelle(destinations, op.destination || '');
     setForm({
       date: op.date.split('T')[0] || op.date,
       clientId: op.clientId || '',
       clientNom: op.clientNom || '',
+      tjkDestinationId: matched?.id || '',
+      poidsUniteKg: matched?.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
       quantite: op.quantite,
       unite: op.unite || '',
       qualite: op.qualite || '',
@@ -467,6 +557,77 @@ export default function Tjk() {
       await deleteTjkOperation(id);
       await loadAll();
       toast.success('Opération supprimée.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur suppression.');
+    }
+  };
+
+  const resetDestForm = () => {
+    setDestForm(emptyDestForm());
+    setEditingDest(null);
+  };
+
+  const openCreateDest = () => {
+    resetDestForm();
+    setDestDialogOpen(true);
+  };
+
+  const openEditDest = (dest: TjkDestination) => {
+    setEditingDest(dest);
+    setDestForm({
+      libelle: dest.libelle,
+      quantiteDefaut: dest.quantiteDefaut,
+      poidsUniteKg: dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
+      prixTrans: dest.prixTrans,
+      prixTransport: dest.prixTransport,
+      totalTransport: dest.totalTransport,
+      prixVoyage: dest.prixVoyage,
+      totalPaiement: dest.totalPaiement,
+    });
+    setDestDialogOpen(true);
+  };
+
+  const handleDestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const libelle = destForm.libelle.trim();
+    if (!libelle) {
+      toast.error('Indiquez le nom de la destination.');
+      return;
+    }
+    const payload = {
+      libelle,
+      quantiteDefaut: destForm.quantiteDefaut,
+      poidsUniteKg: destForm.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
+      prixTrans: destForm.prixTrans,
+      prixTransport: destForm.prixTransport,
+      totalTransport: destForm.totalTransport,
+      prixVoyage: destForm.prixVoyage,
+      totalPaiement: destForm.totalPaiement,
+    };
+    await withGuard(async () => {
+      try {
+        if (editingDest) {
+          await updateTjkDestination(editingDest.id, payload);
+          toast.success('Destination mise à jour.');
+        } else {
+          await createTjkDestination(payload);
+          toast.success('Destination enregistrée.');
+        }
+        setDestinations(await refreshTjkDestinationsFromApi());
+        setDestDialogOpen(false);
+        resetDestForm();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur enregistrement.');
+      }
+    });
+  };
+
+  const handleDestDelete = async (id: string) => {
+    if (!confirm('Supprimer cette destination TJK ?')) return;
+    try {
+      await deleteTjkDestination(id);
+      setDestinations(await refreshTjkDestinationsFromApi());
+      toast.success('Destination supprimée.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur suppression.');
     }
@@ -774,7 +935,9 @@ export default function Tjk() {
                         <NumberInput
                           id="tjk-qty"
                           value={form.quantite}
-                          onChange={(quantite) => setForm((f) => ({ ...f, quantite }))}
+                          onChange={(quantite) =>
+                            setForm((f) => withQuantiteSynced(f, quantite))
+                          }
                           min={0}
                           allowEmpty
                           placeholder="Ex. 200"
@@ -817,17 +980,50 @@ export default function Tjk() {
                       )}
                     </div>
 
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="tjk-dest">Destination *</Label>
                       <Input
                         id="tjk-dest"
                         value={form.destination}
                         onChange={(e) =>
-                          setForm((f) => ({ ...f, destination: e.target.value }))
+                          setForm((f) => ({
+                            ...f,
+                            destination: e.target.value,
+                            tjkDestinationId: '',
+                          }))
                         }
                         required
                         placeholder="Ville / site"
                       />
+                      {sortedDestinations.length > 0 && (
+                        <Select
+                          value={form.tjkDestinationId || '__none__'}
+                          onValueChange={(v) => {
+                            if (v === '__none__') {
+                              setForm((f) => ({ ...f, tjkDestinationId: '' }));
+                              return;
+                            }
+                            const dest = destinations.find((d) => d.id === v);
+                            if (dest) setForm((f) => mergeDestinationIntoForm(dest, f));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choisir une destination enregistrée…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Saisie libre</SelectItem>
+                            {sortedDestinations.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.libelle}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Une destination enregistrée préremplit les montants forfaitaires du
+                        formulaire.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -879,8 +1075,11 @@ export default function Tjk() {
                           onChange={(qtes) => setForm((f) => ({ ...f, qtes }))}
                           min={0}
                           allowEmpty
-                          placeholder="Par défaut = quantité"
+                          placeholder="Calculé depuis la quantité"
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Calcul automatique = quantité (modifiable).
+                        </p>
                       </div>
                       <div>
                         <Label htmlFor="tjk-tonnage">Tonnage</Label>
@@ -890,8 +1089,11 @@ export default function Tjk() {
                           onChange={(tonnage) => setForm((f) => ({ ...f, tonnage }))}
                           min={0}
                           allowEmpty
-                          placeholder="Ex. 28"
+                          placeholder="Calculé (sacs × kg / 1000)"
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {form.poidsUniteKg} kg/unité → tonnage auto depuis la quantité.
+                        </p>
                       </div>
                     </div>
 
@@ -1093,6 +1295,242 @@ export default function Tjk() {
           </div>
         }
       />
+
+      {canManageFleet && (
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Destinations TJK</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Montants forfaitaires appliqués automatiquement dans le formulaire d’opération.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={openCreateDest}>
+              <Plus className="h-4 w-4 mr-1" />
+              Nouvelle destination
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {sortedDestinations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucune destination enregistrée. Créez-en une pour préremplir Prix TRANS, transport,
+                voyage, etc.
+              </p>
+            ) : (
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Destination</TableHead>
+                      <TableHead className="text-right">Qté défaut</TableHead>
+                      <TableHead className="text-right">Poids unité (kg)</TableHead>
+                      <TableHead className="text-right">Prix TRANS</TableHead>
+                      <TableHead className="text-right">Prix transport</TableHead>
+                      <TableHead className="text-right">Total transport</TableHead>
+                      <TableHead className="text-right">Prix voyage</TableHead>
+                      <TableHead className="text-right">Total paiement</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedDestinations.map((d) => (
+                      <TableRow key={d.id}>
+                        <TableCell className="font-medium">{d.libelle}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.quantiteDefaut != null
+                            ? d.quantiteDefaut.toLocaleString('fr-FR')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {(d.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG).toLocaleString('fr-FR')}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.prixTrans != null ? d.prixTrans.toLocaleString('fr-FR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.prixTransport != null
+                            ? d.prixTransport.toLocaleString('fr-FR')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.totalTransport != null
+                            ? d.totalTransport.toLocaleString('fr-FR')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.prixVoyage != null ? d.prixVoyage.toLocaleString('fr-FR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {d.totalPaiement != null
+                            ? d.totalPaiement.toLocaleString('fr-FR')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDest(d)}
+                              title="Modifier"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive"
+                              onClick={() => void handleDestDelete(d.id)}
+                              title="Supprimer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog
+        open={destDialogOpen}
+        onOpenChange={(open) => {
+          setDestDialogOpen(open);
+          if (!open) resetDestForm();
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingDest ? 'Modifier la destination' : 'Nouvelle destination TJK'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleDestSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="dest-libelle">Nom de la destination *</Label>
+              <Input
+                id="dest-libelle"
+                value={destForm.libelle}
+                onChange={(e) => setDestForm((f) => ({ ...f, libelle: e.target.value }))}
+                placeholder="Ex. Bertoua, Yaoundé…"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dest-qte">Quantité par défaut</Label>
+                <NumberInput
+                  id="dest-qte"
+                  value={destForm.quantiteDefaut}
+                  onChange={(quantiteDefaut) =>
+                    setDestForm((f) => ({ ...f, quantiteDefaut }))
+                  }
+                  min={0}
+                  allowEmpty
+                  placeholder="Ex. 540"
+                />
+              </div>
+              <div>
+                <Label htmlFor="dest-poids">Poids unité (kg)</Label>
+                <NumberInput
+                  id="dest-poids"
+                  value={destForm.poidsUniteKg}
+                  onChange={(poidsUniteKg) =>
+                    setDestForm((f) => ({ ...f, poidsUniteKg }))
+                  }
+                  min={0}
+                  allowEmpty
+                  placeholder="50"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dest-prix-trans">Prix TRANS</Label>
+                <NumberInput
+                  id="dest-prix-trans"
+                  value={destForm.prixTrans}
+                  onChange={(prixTrans) => setDestForm((f) => ({ ...f, prixTrans }))}
+                  min={0}
+                  allowEmpty
+                  placeholder="FCFA"
+                />
+              </div>
+              <div>
+                <Label htmlFor="dest-prix-transport">Prix transport</Label>
+                <NumberInput
+                  id="dest-prix-transport"
+                  value={destForm.prixTransport}
+                  onChange={(prixTransport) =>
+                    setDestForm((f) => ({ ...f, prixTransport }))
+                  }
+                  min={0}
+                  allowEmpty
+                  placeholder="FCFA"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dest-total-transport">Total transport</Label>
+                <NumberInput
+                  id="dest-total-transport"
+                  value={destForm.totalTransport}
+                  onChange={(totalTransport) =>
+                    setDestForm((f) => ({ ...f, totalTransport }))
+                  }
+                  min={0}
+                  allowEmpty
+                  placeholder="FCFA"
+                />
+              </div>
+              <div>
+                <Label htmlFor="dest-prix-voyage">Prix voyage</Label>
+                <NumberInput
+                  id="dest-prix-voyage"
+                  value={destForm.prixVoyage}
+                  onChange={(prixVoyage) => setDestForm((f) => ({ ...f, prixVoyage }))}
+                  min={0}
+                  allowEmpty
+                  placeholder="FCFA"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="dest-total-paiement">Total paiement</Label>
+              <NumberInput
+                id="dest-total-paiement"
+                value={destForm.totalPaiement}
+                onChange={(totalPaiement) =>
+                  setDestForm((f) => ({ ...f, totalPaiement }))
+                }
+                min={0}
+                allowEmpty
+                placeholder="FCFA"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDestDialogOpen(false)}
+              >
+                Annuler
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Enregistrer
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {pendingTjkBons.length > 0 && (
         <Card>

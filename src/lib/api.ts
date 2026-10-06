@@ -442,6 +442,26 @@ export const tjkOperationsApi = {
   delete: (id: string) => request<void>(`/tjk-operations/${id}`, { method: 'DELETE' }),
 };
 
+export interface TjkDestinationPayload {
+  libelle: string;
+  quantiteDefaut?: number | null;
+  poidsUniteKg?: number | null;
+  prixTrans?: number | null;
+  prixTransport?: number | null;
+  totalTransport?: number | null;
+  prixVoyage?: number | null;
+  totalPaiement?: number | null;
+}
+
+export const tjkDestinationsApi = {
+  getAll: () => request<any[]>('/tjk-destinations'),
+  create: (data: TjkDestinationPayload) =>
+    request<any>('/tjk-destinations', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<TjkDestinationPayload>) =>
+    request<any>(`/tjk-destinations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/tjk-destinations/${id}`, { method: 'DELETE' }),
+};
+
 export interface CamrailOperationPayload {
   date: string;
   camionNom?: string;
