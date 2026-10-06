@@ -21,6 +21,7 @@ import AuditLogs from "./pages/AuditLogs";
 import Articles from "./pages/Articles";
 import Chargements from "./pages/Chargements";
 import Fournisseurs from "./pages/Fournisseurs";
+import SuiviFournisseurs from "./pages/SuiviFournisseurs";
 import DepotGarouaBoulai from "./pages/DepotGarouaBoulai";
 import UsersPage from "./pages/Users";
 import NotFound from "./pages/NotFound";
@@ -65,6 +66,7 @@ const App = () => (
               <Route path="/articles" element={<ProtectedRoute><Layout><Articles /></Layout></ProtectedRoute>} />
               <Route path="/chargements" element={<ProtectedRoute><Layout><Chargements /></Layout></ProtectedRoute>} />
               <Route path="/fournisseurs" element={<ProtectedRoute><Layout><Fournisseurs /></Layout></ProtectedRoute>} />
+              <Route path="/suivi-fournisseurs" element={<ProtectedRoute><Layout><SuiviFournisseurs /></Layout></ProtectedRoute>} />
               <Route path="/envoi-colis" element={<Navigate to="/clients" replace />} />
               <Route path="/banque" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
               <Route path="/depenses" element={<ProtectedRoute><Navigate to="/caisse" replace /></ProtectedRoute>} />
