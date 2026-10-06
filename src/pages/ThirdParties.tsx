@@ -1,7 +1,15 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSubmitGuard } from '@/hooks/useSubmitGuard';
-import { useApp, ThirdParty, ThirdPartyType, Invoice } from '@/contexts/AppContext';
+import {
+  useApp,
+  ThirdParty,
+  ThirdPartyType,
+  Invoice,
+  type Truck,
+  type TruckFlotte,
+  type TruckType,
+} from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -69,6 +77,7 @@ import {
   type ClientSexe,
   type ClientSegment,
 } from '@/lib/client-profile';
+import { truckMissionLabel } from '@/lib/trip-mission-context';
 
 const THIRD_SORT_OPTIONS = [
   { value: 'nom_asc', label: 'Nom A → Z' },
@@ -130,6 +139,8 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
     createThirdParty,
     updateThirdParty,
     deleteThirdParty,
+    createTruck,
+    updateTruck,
     refreshClientOrders,
     refreshClientDeliveries,
     isLoading,
@@ -150,6 +161,12 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
   const [clientAdvancedFilters, setClientAdvancedFilters] =
     useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
   const [detailClient, setDetailClient] = useState<ThirdParty | null>(null);
+  const [detailOwner, setDetailOwner] = useState<ThirdParty | null>(null);
+  const [assignTruckId, setAssignTruckId] = useState<string>('');
+  const [newTruckImmat, setNewTruckImmat] = useState('');
+  const [newTruckNom, setNewTruckNom] = useState('');
+  const [newTruckType, setNewTruckType] = useState<TruckType>('tracteur');
+  const [newTruckFlotte, setNewTruckFlotte] = useState<TruckFlotte>('ansar');
   const [walkInClientOpen, setWalkInClientOpen] = useState(false);
   const [creditsForPlafondSheet, setCreditsForPlafondSheet] = useState<CreditLike[]>([]);
   const [detailSoldeInitial, setDetailSoldeInitial] = useState<number | null>(null);
@@ -373,6 +390,96 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
         toast.error(err instanceof Error ? err.message : 'Erreur lors de la suppression');
       }
     }
+  };
+
+  const openOwnerDetail = (owner: ThirdParty) => {
+    setDetailOwner(owner);
+    setAssignTruckId('');
+    setNewTruckImmat('');
+    setNewTruckNom('');
+    setNewTruckType('tracteur');
+    setNewTruckFlotte('ansar');
+  };
+
+  const ownerTrucks = useMemo(() => {
+    if (!detailOwner) return [] as Truck[];
+    return stableSort(
+      trucks.filter((t) => t.proprietaireId === detailOwner.id),
+      (a, b) =>
+        frCollator.compare(
+          truckMissionLabel(a) + a.immatriculation,
+          truckMissionLabel(b) + b.immatriculation,
+        ),
+    );
+  }, [detailOwner, trucks]);
+
+  const assignableTrucks = useMemo(() => {
+    if (!detailOwner) return [] as Truck[];
+    return stableSort(
+      trucks.filter((t) => t.proprietaireId !== detailOwner.id),
+      (a, b) =>
+        frCollator.compare(
+          truckMissionLabel(a) + a.immatriculation,
+          truckMissionLabel(b) + b.immatriculation,
+        ),
+    );
+  }, [detailOwner, trucks]);
+
+  const handleAssignTruckToOwner = async () => {
+    if (!detailOwner || !assignTruckId) {
+      toast.error('Choisissez un camion à attribuer.');
+      return;
+    }
+    await withGuard(async () => {
+      try {
+        await updateTruck(assignTruckId, { proprietaireId: detailOwner.id });
+        setAssignTruckId('');
+        toast.success('Camion attribué à ce propriétaire.');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur d’attribution.');
+      }
+    });
+  };
+
+  const handleDetachTruckFromOwner = async (truckId: string) => {
+    if (!detailOwner) return;
+    if (!confirm('Retirer ce camion de ce propriétaire ?')) return;
+    await withGuard(async () => {
+      try {
+        await updateTruck(truckId, { proprietaireId: '' });
+        toast.success('Camion retiré de ce propriétaire.');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur lors du retrait.');
+      }
+    });
+  };
+
+  const handleCreateTruckForOwner = async () => {
+    if (!detailOwner) return;
+    const immat = newTruckImmat.trim().toUpperCase().replace(/\s+/g, '');
+    if (!immat) {
+      toast.error('Indiquez l’immatriculation du camion.');
+      return;
+    }
+    await withGuard(async () => {
+      try {
+        await createTruck({
+          immatriculation: immat,
+          nom: newTruckNom.trim() || undefined,
+          modele: 'Non renseigné',
+          type: newTruckType,
+          statut: 'actif',
+          dateMiseEnCirculation: new Date().toISOString().split('T')[0],
+          proprietaireId: detailOwner.id,
+          flotte: newTruckFlotte,
+        });
+        setNewTruckImmat('');
+        setNewTruckNom('');
+        toast.success('Camion créé et attribué.');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erreur création camion.');
+      }
+    });
   };
 
   const clientHasOrderLink = (tp: ThirdParty) =>
@@ -1819,7 +1926,7 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                           })()}
                         </div>
                       )}
-                      {thirdParty.type === 'proprietaire' && trucksCount > 0 && (
+                      {thirdParty.type === 'proprietaire' && (
                         <Badge variant="outline" className="ml-2">
                           {trucksCount} camion{trucksCount > 1 ? 's' : ''}
                         </Badge>
@@ -1844,7 +1951,9 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         );
                       })()}
                     </div>
-                    {(thirdParty.type === 'client' || canManageFleet) && (
+                    {(thirdParty.type === 'client' ||
+                      thirdParty.type === 'proprietaire' ||
+                      canManageFleet) && (
                     <div className="flex flex-wrap gap-1 justify-end">
                       {thirdParty.type === 'client' && (
                         <Button
@@ -1855,6 +1964,17 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         >
                           <PanelRight className="h-4 w-4 sm:mr-1" />
                           <span className="hidden sm:inline">Détails</span>
+                        </Button>
+                      )}
+                      {thirdParty.type === 'proprietaire' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openOwnerDetail(thirdParty)}
+                          className="opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity duration-300"
+                        >
+                          <Truck className="h-4 w-4 sm:mr-1" />
+                          <span className="hidden sm:inline">Camions</span>
                         </Button>
                       )}
                       {canManageFleet && (
@@ -1906,6 +2026,30 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
                         <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <span className="text-muted-foreground">Plafond encours clients :</span>
                         <span className="font-medium">{formatFcfa(Math.round(thirdParty.plafondCredit))}</span>
+                      </div>
+                    )}
+                    {thirdParty.type === 'proprietaire' && trucksCount > 0 && (
+                      <div className="pt-1 space-y-1">
+                        {trucks
+                          .filter((t) => t.proprietaireId === thirdParty.id)
+                          .slice(0, 3)
+                          .map((t) => (
+                            <div
+                              key={t.id}
+                              className="flex items-center gap-2 text-sm text-muted-foreground"
+                            >
+                              <Truck className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">
+                                {truckMissionLabel(t)}
+                                {t.immatriculation ? ` · ${t.immatriculation}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        {trucksCount > 3 && (
+                          <p className="text-xs text-muted-foreground">
+                            +{trucksCount - 3} autre{trucksCount - 3 > 1 ? 's' : ''}
+                          </p>
+                        )}
                       </div>
                     )}
                     {thirdParty.notes && (
@@ -2111,6 +2255,231 @@ export default function ThirdParties({ scope = 'all' }: { scope?: ThirdPartiesSc
               clientLabel="Client comptoir"
             />
           </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={!!detailOwner}
+        onOpenChange={(open) => {
+          if (!open) setDetailOwner(null);
+        }}
+      >
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+          {detailOwner && detailOwner.type === 'proprietaire' && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="pr-8">{detailOwner.nom}</SheetTitle>
+                <SheetDescription>
+                  Attribuez des camions à ce propriétaire depuis Tiers (flotte Ansar ou TJK).
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="mt-6 space-y-6">
+                <div className="space-y-2 text-sm">
+                  {detailOwner.telephone && (
+                    <p>
+                      <span className="text-muted-foreground">Tél. </span>
+                      {detailOwner.telephone}
+                    </p>
+                  )}
+                  {detailOwner.email && (
+                    <p className="break-all">
+                      <span className="text-muted-foreground">Email </span>
+                      {detailOwner.email}
+                    </p>
+                  )}
+                  {canManageFleet && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleEdit(detailOwner)}
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Modifier la fiche
+                    </Button>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold text-sm">Camions attribués</h3>
+                    <Badge variant="outline">
+                      {ownerTrucks.length} camion{ownerTrucks.length > 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  {ownerTrucks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Aucun camion pour l’instant. Attribuez un véhicule existant ou créez-en un.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {ownerTrucks.map((t) => (
+                        <li
+                          key={t.id}
+                          className="flex items-center justify-between gap-2 rounded-md border p-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">
+                              {truckMissionLabel(t)}
+                              {t.immatriculation ? ` · ${t.immatriculation}` : ''}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {(t.flotte || 'ansar') === 'tjk' ? 'Flotte TJK' : 'Flotte Ansar'}
+                              {' · '}
+                              {t.type}
+                              {' · '}
+                              {t.statut}
+                            </p>
+                          </div>
+                          {canManageFleet && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={isSubmitting}
+                              onClick={() => void handleDetachTruckFromOwner(t.id)}
+                              title="Retirer de ce propriétaire"
+                            >
+                              Retirer
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {canManageFleet && (
+                  <>
+                    <Separator />
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-sm">Attribuer un camion existant</h3>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Select
+                          value={assignTruckId || '__none__'}
+                          onValueChange={(v) =>
+                            setAssignTruckId(v === '__none__' ? '' : v)
+                          }
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Choisir un camion…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Choisir…</SelectItem>
+                            {assignableTrucks.map((t) => {
+                              const otherOwner = t.proprietaireId
+                                ? thirdParties.find((tp) => tp.id === t.proprietaireId)?.nom
+                                : undefined;
+                              return (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {truckMissionLabel(t)}
+                                  {t.immatriculation ? ` · ${t.immatriculation}` : ''}
+                                  {(t.flotte || 'ansar') === 'tjk' ? ' (TJK)' : ''}
+                                  {otherOwner ? ` · chez ${otherOwner}` : ''}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          disabled={isSubmitting || !assignTruckId}
+                          onClick={() => void handleAssignTruckToOwner()}
+                        >
+                          {isSubmitting && (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          )}
+                          Attribuer
+                        </Button>
+                      </div>
+                      {assignableTrucks.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Aucun autre camion disponible. Créez-en un ci-dessous.
+                        </p>
+                      )}
+                    </div>
+
+                    <Separator />
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-sm">Nouveau camion pour ce propriétaire</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="owner-truck-immat">Immatriculation *</Label>
+                          <Input
+                            id="owner-truck-immat"
+                            value={newTruckImmat}
+                            onChange={(e) => setNewTruckImmat(e.target.value)}
+                            placeholder="LTTR128BD"
+                            className="uppercase"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="owner-truck-nom">Nom court</Label>
+                          <Input
+                            id="owner-truck-nom"
+                            value={newTruckNom}
+                            onChange={(e) => setNewTruckNom(e.target.value)}
+                            placeholder="M1, TF…"
+                          />
+                        </div>
+                        <div>
+                          <Label>Type</Label>
+                          <Select
+                            value={newTruckType}
+                            onValueChange={(v) => setNewTruckType(v as TruckType)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="tracteur">Tracteur</SelectItem>
+                              <SelectItem value="remorqueuse">Remorqueuse</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Flotte</Label>
+                          <Select
+                            value={newTruckFlotte}
+                            onValueChange={(v) => setNewTruckFlotte(v as TruckFlotte)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ansar">Ansar</SelectItem>
+                              <SelectItem value="tjk">TJK</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => void handleCreateTruckForOwner()}
+                      >
+                        {isSubmitting && (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        )}
+                        <Plus className="h-4 w-4 mr-2" />
+                        Créer et attribuer
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Le camion apparaît aussi dans{' '}
+                        <Link to="/camions" className="underline underline-offset-2">
+                          Camions
+                        </Link>
+                        .
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </SheetContent>
       </Sheet>
     </div>
