@@ -109,15 +109,6 @@ type FormState = {
   prixTrans: number | undefined;
   paiement: number | undefined;
   notes: string;
-  /** Infos financières (toutes optionnelles). */
-  soldeAnterieur: number | undefined;
-  nombreCamions: number | undefined;
-  tonnageTotal: number | undefined;
-  resteAPayer: number | undefined;
-  prixTransport: number | undefined;
-  totalTransport: number | undefined;
-  prixVoyage: number | undefined;
-  totalPaiement: number | undefined;
 };
 
 type DestFormState = {
@@ -125,10 +116,6 @@ type DestFormState = {
   quantiteDefaut: number | undefined;
   poidsUniteKg: number | undefined;
   prixTrans: number | undefined;
-  prixTransport: number | undefined;
-  totalTransport: number | undefined;
-  prixVoyage: number | undefined;
-  totalPaiement: number | undefined;
 };
 
 const emptyDestForm = (): DestFormState => ({
@@ -136,10 +123,6 @@ const emptyDestForm = (): DestFormState => ({
   quantiteDefaut: undefined,
   poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
   prixTrans: undefined,
-  prixTransport: undefined,
-  totalTransport: undefined,
-  prixVoyage: undefined,
-  totalPaiement: undefined,
 });
 
 function withQuantiteSynced(prev: FormState, quantite: number | undefined): FormState {
@@ -160,11 +143,7 @@ function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormSt
     tjkDestinationId: dest.id,
     destination: dest.libelle,
     poidsUniteKg: poids,
-    prixTrans: dest.prixTrans ?? prev.prixTrans,
-    prixTransport: dest.prixTransport ?? dest.prixTrans ?? prev.prixTransport,
-    totalTransport: dest.totalTransport ?? prev.totalTransport,
-    prixVoyage: dest.prixVoyage ?? prev.prixVoyage,
-    totalPaiement: dest.totalPaiement ?? prev.totalPaiement,
+    prixTrans: dest.prixTrans ?? dest.prixTransport ?? prev.prixTrans,
     quantite,
   };
   return withQuantiteSynced(base, quantite);
@@ -190,14 +169,6 @@ const emptyForm = (): FormState => ({
   prixTrans: undefined,
   paiement: undefined,
   notes: '',
-  soldeAnterieur: undefined,
-  nombreCamions: undefined,
-  tonnageTotal: undefined,
-  resteAPayer: undefined,
-  prixTransport: undefined,
-  totalTransport: undefined,
-  prixVoyage: undefined,
-  totalPaiement: undefined,
 });
 
 export default function Tjk() {
@@ -406,16 +377,8 @@ export default function Tjk() {
       tonnage: op.tonnage,
       telChauffeur: op.telChauffeur || '',
       prixTrans: op.prixTrans ?? op.prixTransport,
-      paiement: op.paiement,
+      paiement: op.paiement ?? op.totalPalemarr,
       notes: op.notes || '',
-      soldeAnterieur: op.soldeAnterieur,
-      nombreCamions: op.nombreCamions,
-      tonnageTotal: op.tonnageTotal,
-      resteAPayer: op.resteAPayer,
-      prixTransport: op.prixTransport ?? op.prixTrans,
-      totalTransport: op.totalTransport,
-      prixVoyage: op.prixVoyage,
-      totalPaiement: op.totalPalemarr,
     });
     setDialogOpen(true);
   };
@@ -493,20 +456,16 @@ export default function Tjk() {
           : null,
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
-      soldeAnterieur: form.soldeAnterieur,
-      nombreCamions: form.nombreCamions,
-      tonnageTotal: form.tonnageTotal,
       qtfs: qtesVal,
-      resteAPayer: form.resteAPayer,
+      // Aligne l’ancien champ prixTransport sur Prix TRANS (un seul montant saisi).
       prixTransport:
-        form.prixTransport != null && Number.isFinite(Number(form.prixTransport))
-          ? Number(form.prixTransport)
-          : form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
-            ? Number(form.prixTrans)
-            : null,
-      totalTransport: form.totalTransport,
-      prixVoyage: form.prixVoyage,
-      totalPalemarr: form.totalPaiement,
+        form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
+          ? Number(form.prixTrans)
+          : null,
+      totalPalemarr:
+        form.paiement != null && Number.isFinite(Number(form.paiement))
+          ? Number(form.paiement)
+          : null,
     };
 
     await withGuard(async () => {
@@ -578,11 +537,7 @@ export default function Tjk() {
       libelle: dest.libelle,
       quantiteDefaut: dest.quantiteDefaut,
       poidsUniteKg: dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
-      prixTrans: dest.prixTrans,
-      prixTransport: dest.prixTransport,
-      totalTransport: dest.totalTransport,
-      prixVoyage: dest.prixVoyage,
-      totalPaiement: dest.totalPaiement,
+      prixTrans: dest.prixTrans ?? dest.prixTransport,
     });
     setDestDialogOpen(true);
   };
@@ -599,10 +554,8 @@ export default function Tjk() {
       quantiteDefaut: destForm.quantiteDefaut,
       poidsUniteKg: destForm.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG,
       prixTrans: destForm.prixTrans,
-      prixTransport: destForm.prixTransport,
-      totalTransport: destForm.totalTransport,
-      prixVoyage: destForm.prixVoyage,
-      totalPaiement: destForm.totalPaiement,
+      // Garde la cohérence avec l’ancien champ doublon côté API.
+      prixTransport: destForm.prixTrans,
     };
     await withGuard(async () => {
       try {
@@ -674,7 +627,7 @@ export default function Tjk() {
     {
       header: 'Qtes',
       value: (op: TjkOperation) =>
-        (op.qtes ?? op.quantite).toLocaleString('fr-FR'),
+        (op.qtes ?? op.qtfs ?? op.quantite).toLocaleString('fr-FR'),
     },
     {
       header: 'Tonnage',
@@ -685,60 +638,15 @@ export default function Tjk() {
     {
       header: 'Prix TRANS',
       value: (op: TjkOperation) =>
-        op.prixTrans != null ? op.prixTrans.toLocaleString('fr-FR') : '',
+        (op.prixTrans ?? op.prixTransport) != null
+          ? (op.prixTrans ?? op.prixTransport)!.toLocaleString('fr-FR')
+          : '',
     },
     {
       header: 'Paiement',
       value: (op: TjkOperation) =>
-        op.paiement != null ? op.paiement.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Solde antérieur',
-      value: (op: TjkOperation) =>
-        op.soldeAnterieur ? op.soldeAnterieur.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Nbre Camions',
-      value: (op: TjkOperation) =>
-        op.nombreCamions ? op.nombreCamions.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Tonnage Total',
-      value: (op: TjkOperation) =>
-        op.tonnageTotal ? op.tonnageTotal.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Qtes',
-      value: (op: TjkOperation) =>
-        (op.qtfs ?? op.qtes ?? op.quantite)?.toLocaleString('fr-FR') ?? '',
-    },
-    {
-      header: 'Reste à Payer',
-      value: (op: TjkOperation) =>
-        op.resteAPayer ? op.resteAPayer.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Prix Transport',
-      value: (op: TjkOperation) =>
-        (op.prixTransport ?? op.prixTrans)
-          ? (op.prixTransport ?? op.prixTrans)!.toLocaleString('fr-FR')
-          : '',
-    },
-    {
-      header: 'Total Transport',
-      value: (op: TjkOperation) =>
-        op.totalTransport ? op.totalTransport.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Prix Voyage',
-      value: (op: TjkOperation) =>
-        op.prixVoyage ? op.prixVoyage.toLocaleString('fr-FR') : '',
-    },
-    {
-      header: 'Total paiement',
-      value: (op: TjkOperation) =>
-        (op.totalPalemarr ?? op.paiement)
-          ? (op.totalPalemarr ?? op.paiement)!.toLocaleString('fr-FR')
+        (op.paiement ?? op.totalPalemarr) != null
+          ? (op.paiement ?? op.totalPalemarr)!.toLocaleString('fr-FR')
           : '',
     },
     { header: 'Notes', value: (op: TjkOperation) => op.notes || '' },
@@ -942,6 +850,15 @@ export default function Tjk() {
                           allowEmpty
                           placeholder="Ex. 200"
                         />
+                        {form.quantite != null && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Qtes {form.qtes?.toLocaleString('fr-FR') ?? '—'} · Tonnage{' '}
+                            {form.tonnage != null
+                              ? `${form.tonnage.toLocaleString('fr-FR')} t`
+                              : '—'}{' '}
+                            (auto, {form.poidsUniteKg} kg/u)
+                          </p>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="tjk-unite">Unité</Label>
@@ -1066,37 +983,6 @@ export default function Tjk() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="tjk-qtes">Qtes</Label>
-                        <NumberInput
-                          id="tjk-qtes"
-                          value={form.qtes}
-                          onChange={(qtes) => setForm((f) => ({ ...f, qtes }))}
-                          min={0}
-                          allowEmpty
-                          placeholder="Calculé depuis la quantité"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Calcul automatique = quantité (modifiable).
-                        </p>
-                      </div>
-                      <div>
-                        <Label htmlFor="tjk-tonnage">Tonnage</Label>
-                        <NumberInput
-                          id="tjk-tonnage"
-                          value={form.tonnage}
-                          onChange={(tonnage) => setForm((f) => ({ ...f, tonnage }))}
-                          min={0}
-                          allowEmpty
-                          placeholder="Calculé (sacs × kg / 1000)"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {form.poidsUniteKg} kg/unité → tonnage auto depuis la quantité.
-                        </p>
-                      </div>
-                    </div>
-
                     <div>
                       <Label htmlFor="tjk-tel">Tel chauf</Label>
                       <Input
@@ -1136,131 +1022,6 @@ export default function Tjk() {
                           allowEmpty
                           placeholder="FCFA"
                         />
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4 space-y-4">
-                      <div>
-                        <h3 className="font-medium text-sm">Informations financières</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Remplissage optionnel.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="tjk-solde-anterieur">Solde antérieur</Label>
-                          <NumberInput
-                            id="tjk-solde-anterieur"
-                            value={form.soldeAnterieur}
-                            onChange={(soldeAnterieur) =>
-                              setForm((f) => ({ ...f, soldeAnterieur }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 1000000"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="tjk-nombre-camions">Nombre de camions</Label>
-                          <NumberInput
-                            id="tjk-nombre-camions"
-                            value={form.nombreCamions}
-                            onChange={(nombreCamions) =>
-                              setForm((f) => ({ ...f, nombreCamions }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 2"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="tjk-tonnage-total">Tonnage total</Label>
-                          <NumberInput
-                            id="tjk-tonnage-total"
-                            value={form.tonnageTotal}
-                            onChange={(tonnageTotal) =>
-                              setForm((f) => ({ ...f, tonnageTotal }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 2048"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="tjk-reste-a-payer">Reste à payer</Label>
-                          <NumberInput
-                            id="tjk-reste-a-payer"
-                            value={form.resteAPayer}
-                            onChange={(resteAPayer) =>
-                              setForm((f) => ({ ...f, resteAPayer }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 6000000"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="tjk-prix-transport">Prix transport</Label>
-                          <NumberInput
-                            id="tjk-prix-transport"
-                            value={form.prixTransport}
-                            onChange={(prixTransport) =>
-                              setForm((f) => ({ ...f, prixTransport }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 784000"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="tjk-total-transport">Total transport</Label>
-                          <NumberInput
-                            id="tjk-total-transport"
-                            value={form.totalTransport}
-                            onChange={(totalTransport) =>
-                              setForm((f) => ({ ...f, totalTransport }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 11788000"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="tjk-prix-voyage">Prix voyage</Label>
-                          <NumberInput
-                            id="tjk-prix-voyage"
-                            value={form.prixVoyage}
-                            onChange={(prixVoyage) =>
-                              setForm((f) => ({ ...f, prixVoyage }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 28683600"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="tjk-total-paiement">Total paiement</Label>
-                          <NumberInput
-                            id="tjk-total-paiement"
-                            value={form.totalPaiement}
-                            onChange={(totalPaiement) =>
-                              setForm((f) => ({ ...f, totalPaiement }))
-                            }
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 10000000"
-                          />
-                        </div>
                       </div>
                     </div>
 
@@ -1313,8 +1074,7 @@ export default function Tjk() {
           <CardContent>
             {sortedDestinations.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Aucune destination enregistrée. Créez-en une pour préremplir Prix TRANS, transport,
-                voyage, etc.
+                Aucune destination enregistrée. Créez-en une pour préremplir le Prix TRANS.
               </p>
             ) : (
               <div className="rounded-md border overflow-x-auto">
@@ -1325,10 +1085,6 @@ export default function Tjk() {
                       <TableHead className="text-right">Qté défaut</TableHead>
                       <TableHead className="text-right">Poids unité (kg)</TableHead>
                       <TableHead className="text-right">Prix TRANS</TableHead>
-                      <TableHead className="text-right">Prix transport</TableHead>
-                      <TableHead className="text-right">Total transport</TableHead>
-                      <TableHead className="text-right">Prix voyage</TableHead>
-                      <TableHead className="text-right">Total paiement</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1345,24 +1101,8 @@ export default function Tjk() {
                           {(d.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG).toLocaleString('fr-FR')}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {d.prixTrans != null ? d.prixTrans.toLocaleString('fr-FR') : '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {d.prixTransport != null
-                            ? d.prixTransport.toLocaleString('fr-FR')
-                            : '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {d.totalTransport != null
-                            ? d.totalTransport.toLocaleString('fr-FR')
-                            : '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {d.prixVoyage != null ? d.prixVoyage.toLocaleString('fr-FR') : '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {d.totalPaiement != null
-                            ? d.totalPaiement.toLocaleString('fr-FR')
+                          {(d.prixTrans ?? d.prixTransport) != null
+                            ? (d.prixTrans ?? d.prixTransport)!.toLocaleString('fr-FR')
                             : '—'}
                         </TableCell>
                         <TableCell className="text-right">
@@ -1450,66 +1190,12 @@ export default function Tjk() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="dest-prix-trans">Prix TRANS</Label>
-                <NumberInput
-                  id="dest-prix-trans"
-                  value={destForm.prixTrans}
-                  onChange={(prixTrans) => setDestForm((f) => ({ ...f, prixTrans }))}
-                  min={0}
-                  allowEmpty
-                  placeholder="FCFA"
-                />
-              </div>
-              <div>
-                <Label htmlFor="dest-prix-transport">Prix transport</Label>
-                <NumberInput
-                  id="dest-prix-transport"
-                  value={destForm.prixTransport}
-                  onChange={(prixTransport) =>
-                    setDestForm((f) => ({ ...f, prixTransport }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="FCFA"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="dest-total-transport">Total transport</Label>
-                <NumberInput
-                  id="dest-total-transport"
-                  value={destForm.totalTransport}
-                  onChange={(totalTransport) =>
-                    setDestForm((f) => ({ ...f, totalTransport }))
-                  }
-                  min={0}
-                  allowEmpty
-                  placeholder="FCFA"
-                />
-              </div>
-              <div>
-                <Label htmlFor="dest-prix-voyage">Prix voyage</Label>
-                <NumberInput
-                  id="dest-prix-voyage"
-                  value={destForm.prixVoyage}
-                  onChange={(prixVoyage) => setDestForm((f) => ({ ...f, prixVoyage }))}
-                  min={0}
-                  allowEmpty
-                  placeholder="FCFA"
-                />
-              </div>
-            </div>
             <div>
-              <Label htmlFor="dest-total-paiement">Total paiement</Label>
+              <Label htmlFor="dest-prix-trans">Prix TRANS</Label>
               <NumberInput
-                id="dest-total-paiement"
-                value={destForm.totalPaiement}
-                onChange={(totalPaiement) =>
-                  setDestForm((f) => ({ ...f, totalPaiement }))
-                }
+                id="dest-prix-trans"
+                value={destForm.prixTrans}
+                onChange={(prixTrans) => setDestForm((f) => ({ ...f, prixTrans }))}
                 min={0}
                 allowEmpty
                 placeholder="FCFA"
