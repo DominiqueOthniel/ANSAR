@@ -225,6 +225,9 @@ export function formatSupplierLoadingBonOption(l: {
   assignments?: AssignmentQtyRow[];
 }): string {
   const head = l.numeroBon?.trim() ? `Bon ${l.numeroBon.trim()} — ` : '';
+  const date = l.dateChargement
+    ? ` · ${new Date(l.dateChargement + (l.dateChargement.includes('T') ? '' : 'T12:00:00')).toLocaleDateString('fr-FR')}`
+    : '';
   const qty =
     l.quantite != null && l.quantite > 0
       ? ` · ${l.quantite}${l.unite ? ` ${l.unite}` : ''}`
@@ -239,5 +242,5 @@ export function formatSupplierLoadingBonOption(l: {
     l.hubArrivee?.trim() || l.modeEntree === 'rail'
       ? ` · ${l.hubArrivee?.trim() || 'CAMRAIL'}`
       : '';
-  return `${head}${l.designation}${qty}${rest} — ${formatSupplierLoadingStatusFr(l.statut)}${four}${hub}`;
+  return `${head}${l.designation}${date}${qty}${rest} — ${formatSupplierLoadingStatusFr(l.statut)}${four}${hub}`;
 }

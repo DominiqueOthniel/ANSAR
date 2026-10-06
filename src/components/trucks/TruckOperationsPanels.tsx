@@ -23,7 +23,9 @@ import {
 } from '@/components/ui/select';
 import { ThirdPartyPicker } from '@/components/ThirdPartyPicker';
 import {
+  formatSupplierLoadingBonOption,
   formatSupplierLoadingStatusFr,
+  getLoadingRemainderQty,
   type SupplierLoadingStatus,
 } from '@/lib/supplier-loadings';
 import {
@@ -35,6 +37,7 @@ import {
   DELIVERY_EXIT_MODE_OPTIONS,
   deliveryLieuForExitMode,
   formatDeliveryExitModeFr,
+  formatLoadingEntryModeFr,
   type ClientDeliveryExitMode,
 } from '@/lib/hub-transit';
 import {
@@ -658,23 +661,29 @@ export function TruckOperationsPanels({ truckId, defaultChauffeurId }: Props) {
 
       {/* Dialog lier bon */}
       <Dialog open={linkLoadingOpen} onOpenChange={setLinkLoadingOpen}>
-        <DialogContent className="w-[95vw] max-w-md">
+        <DialogContent className="w-[95vw] max-w-lg">
           <DialogHeader>
             <DialogTitle>Lier un bon existant</DialogTitle>
           </DialogHeader>
           <form onSubmit={submitLinkLoading} className="space-y-3">
             <div>
               <Label>Bon disponible</Label>
-              <Select value={linkLoadingId || '__none__'} onValueChange={(v) => setLinkLoadingId(v === '__none__' ? '' : v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Choisir…" />
+              <Select
+                value={linkLoadingId || '__none__'}
+                onValueChange={(v) => setLinkLoadingId(v === '__none__' ? '' : v)}
+              >
+                <SelectTrigger className="mt-1 h-auto min-h-10 py-2 text-left whitespace-normal">
+                  <SelectValue placeholder="Choisir un bon…" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-[min(95vw,32rem)]">
                   <SelectItem value="__none__">—</SelectItem>
                   {linkableLoadings.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {(l.numeroBon || l.designation) +
-                        (l.fournisseurNom ? ` · ${l.fournisseurNom}` : '')}
+                    <SelectItem
+                      key={l.id}
+                      value={l.id}
+                      className="whitespace-normal h-auto py-2 leading-snug"
+                    >
+                      {formatSupplierLoadingBonOption(l)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -683,6 +692,46 @@ export function TruckOperationsPanels({ truckId, defaultChauffeurId }: Props) {
                 <p className="text-xs text-muted-foreground mt-1">Aucun bon libre à rattacher.</p>
               )}
             </div>
+            {(() => {
+              const selected = linkableLoadings.find((l) => l.id === linkLoadingId);
+              if (!selected) return null;
+              const reste = getLoadingRemainderQty(selected.quantite, selected.assignments);
+              return (
+                <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1.5">
+                  <p className="font-medium">
+                    {selected.numeroBon?.trim()
+                      ? `Bon ${selected.numeroBon.trim()}`
+                      : selected.designation}
+                  </p>
+                  <p className="text-muted-foreground">{selected.designation}</p>
+                  <p className="text-muted-foreground">
+                    {selected.fournisseurNom || 'Fournisseur'}
+                    {' · '}
+                    {new Date(
+                      selected.dateChargement.includes('T')
+                        ? selected.dateChargement
+                        : `${selected.dateChargement}T12:00:00`,
+                    ).toLocaleDateString('fr-FR')}
+                  </p>
+                  <p>
+                    {selected.quantite != null
+                      ? `${selected.quantite}${selected.unite ? ` ${selected.unite}` : ''}`
+                      : 'Qté non définie'}
+                    {reste != null
+                      ? ` · reste ${reste}${selected.unite ? ` ${selected.unite}` : ''}`
+                      : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatSupplierLoadingStatusFr(selected.statut)}
+                    {' · '}
+                    {formatLoadingEntryModeFr(selected.modeEntree)}
+                    {selected.hubArrivee?.trim()
+                      ? ` · Hub ${selected.hubArrivee.trim()}`
+                      : ''}
+                  </p>
+                </div>
+              );
+            })()}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setLinkLoadingOpen(false)}>
                 Annuler
