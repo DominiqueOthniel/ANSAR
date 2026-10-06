@@ -94,17 +94,15 @@ type FormState = {
   prixTrans: number | undefined;
   paiement: number | undefined;
   notes: string;
+  /** Infos financières (toutes optionnelles). */
   soldeAnterieur: number | undefined;
   nombreCamions: number | undefined;
   tonnageTotal: number | undefined;
-  qtfs: number | undefined;
-  tonnage: number | undefined;
   resteAPayer: number | undefined;
   prixTransport: number | undefined;
   totalTransport: number | undefined;
-  telChauffeur: string;
   prixVoyage: number | undefined;
-  totalPalemarr: number | undefined;
+  totalPaiement: number | undefined;
 };
 
 const emptyForm = (): FormState => ({
@@ -128,14 +126,11 @@ const emptyForm = (): FormState => ({
   soldeAnterieur: undefined,
   nombreCamions: undefined,
   tonnageTotal: undefined,
-  qtfs: undefined,
-  tonnage: undefined,
   resteAPayer: undefined,
   prixTransport: undefined,
   totalTransport: undefined,
-  telChauffeur: '',
   prixVoyage: undefined,
-  totalPalemarr: undefined,
+  totalPaiement: undefined,
 });
 
 export default function Tjk() {
@@ -317,23 +312,20 @@ export default function Tjk() {
       camionImmatriculation: op.camionImmatriculation || '',
       referenceAtc: op.referenceAtc || '',
       supplierLoadingId: op.supplierLoadingId || '',
-      qtes: op.qtes ?? op.quantite,
+      qtes: op.qtes ?? op.qtfs ?? op.quantite,
       tonnage: op.tonnage,
       telChauffeur: op.telChauffeur || '',
-      prixTrans: op.prixTrans,
+      prixTrans: op.prixTrans ?? op.prixTransport,
       paiement: op.paiement,
       notes: op.notes || '',
       soldeAnterieur: op.soldeAnterieur,
       nombreCamions: op.nombreCamions,
       tonnageTotal: op.tonnageTotal,
-      qtfs: op.qtfs,
-      tonnage: op.tonnage,
       resteAPayer: op.resteAPayer,
-      prixTransport: op.prixTransport,
+      prixTransport: op.prixTransport ?? op.prixTrans,
       totalTransport: op.totalTransport,
-      telChauffeur: op.telChauffeur || '',
       prixVoyage: op.prixVoyage,
-      totalPalemarr: op.totalPalemarr,
+      totalPaiement: op.totalPalemarr,
     });
     setDialogOpen(true);
   };
@@ -414,14 +406,17 @@ export default function Tjk() {
       soldeAnterieur: form.soldeAnterieur,
       nombreCamions: form.nombreCamions,
       tonnageTotal: form.tonnageTotal,
-      qtfs: form.qtfs,
-      tonnage: form.tonnage,
+      qtfs: qtesVal,
       resteAPayer: form.resteAPayer,
-      prixTransport: form.prixTransport,
+      prixTransport:
+        form.prixTransport != null && Number.isFinite(Number(form.prixTransport))
+          ? Number(form.prixTransport)
+          : form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
+            ? Number(form.prixTrans)
+            : null,
       totalTransport: form.totalTransport,
-      telChauffeur: form.telChauffeur.trim() || undefined,
       prixVoyage: form.prixVoyage,
-      totalPalemarr: form.totalPalemarr,
+      totalPalemarr: form.totalPaiement,
     };
 
     await withGuard(async () => {
@@ -552,8 +547,9 @@ export default function Tjk() {
         op.tonnageTotal ? op.tonnageTotal.toLocaleString('fr-FR') : '',
     },
     {
-      header: 'QTFS',
-      value: (op: TjkOperation) => (op.qtfs ? op.qtfs.toLocaleString('fr-FR') : ''),
+      header: 'Qtes',
+      value: (op: TjkOperation) =>
+        (op.qtfs ?? op.qtes ?? op.quantite)?.toLocaleString('fr-FR') ?? '',
     },
     {
       header: 'Reste à Payer',
@@ -563,7 +559,9 @@ export default function Tjk() {
     {
       header: 'Prix Transport',
       value: (op: TjkOperation) =>
-        op.prixTransport ? op.prixTransport.toLocaleString('fr-FR') : '',
+        (op.prixTransport ?? op.prixTrans)
+          ? (op.prixTransport ?? op.prixTrans)!.toLocaleString('fr-FR')
+          : '',
     },
     {
       header: 'Total Transport',
@@ -576,9 +574,11 @@ export default function Tjk() {
         op.prixVoyage ? op.prixVoyage.toLocaleString('fr-FR') : '',
     },
     {
-      header: 'Total Palemarr',
+      header: 'Total paiement',
       value: (op: TjkOperation) =>
-        op.totalPalemarr ? op.totalPalemarr.toLocaleString('fr-FR') : '',
+        (op.totalPalemarr ?? op.paiement)
+          ? (op.totalPalemarr ?? op.paiement)!.toLocaleString('fr-FR')
+          : '',
     },
     { header: 'Notes', value: (op: TjkOperation) => op.notes || '' },
   ];
@@ -937,20 +937,13 @@ export default function Tjk() {
                       </div>
                     </div>
 
-                    <div>
-                      <Label htmlFor="tjk-tel-chauffeur">Téléphone chauffeur</Label>
-                      <Input
-                        id="tjk-tel-chauffeur"
-                        value={form.telChauffeur}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, telChauffeur: e.target.value }))
-                        }
-                        placeholder="+225..."
-                      />
-                    </div>
-
                     <div className="border-t pt-4 space-y-4">
-                      <h3 className="font-medium text-sm">Informations financières</h3>
+                      <div>
+                        <h3 className="font-medium text-sm">Informations financières</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Remplissage optionnel.
+                        </p>
+                      </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -966,7 +959,6 @@ export default function Tjk() {
                             placeholder="Ex. 1000000"
                           />
                         </div>
-
                         <div>
                           <Label htmlFor="tjk-nombre-camions">Nombre de camions</Label>
                           <NumberInput
@@ -996,33 +988,6 @@ export default function Tjk() {
                             placeholder="Ex. 2048"
                           />
                         </div>
-
-                        <div>
-                          <Label htmlFor="tjk-qtfs">QTFS</Label>
-                          <NumberInput
-                            id="tjk-qtfs"
-                            value={form.qtfs}
-                            onChange={(qtfs) => setForm((f) => ({ ...f, qtfs }))}
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 540"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="tjk-tonnage">Tonnage</Label>
-                          <NumberInput
-                            id="tjk-tonnage"
-                            value={form.tonnage}
-                            onChange={(tonnage) => setForm((f) => ({ ...f, tonnage }))}
-                            min={0}
-                            allowEmpty
-                            placeholder="Ex. 27"
-                          />
-                        </div>
-
                         <div>
                           <Label htmlFor="tjk-reste-a-payer">Reste à payer</Label>
                           <NumberInput
@@ -1052,7 +1017,6 @@ export default function Tjk() {
                             placeholder="Ex. 784000"
                           />
                         </div>
-
                         <div>
                           <Label htmlFor="tjk-total-transport">Total transport</Label>
                           <NumberInput
@@ -1082,14 +1046,13 @@ export default function Tjk() {
                             placeholder="Ex. 28683600"
                           />
                         </div>
-
                         <div>
-                          <Label htmlFor="tjk-total-palemarr">Total Palemarr</Label>
+                          <Label htmlFor="tjk-total-paiement">Total paiement</Label>
                           <NumberInput
-                            id="tjk-total-palemarr"
-                            value={form.totalPalemarr}
-                            onChange={(totalPalemarr) =>
-                              setForm((f) => ({ ...f, totalPalemarr }))
+                            id="tjk-total-paiement"
+                            value={form.totalPaiement}
+                            onChange={(totalPaiement) =>
+                              setForm((f) => ({ ...f, totalPaiement }))
                             }
                             min={0}
                             allowEmpty
