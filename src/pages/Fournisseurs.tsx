@@ -288,7 +288,7 @@ export default function Fournisseurs() {
             <Button variant="outline" size="sm" asChild>
               <Link to="/suivi-fournisseurs">
                 <BookOpen className="h-4 w-4 mr-1" />
-                Suivi fournisseurs
+                Achats fournisseurs
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild>

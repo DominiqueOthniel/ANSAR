@@ -1,18 +1,18 @@
 /**
- * Grand livre fournisseurs (style Excel CIMAF) :
- * DATE · NOMS · QLTI · QTES · PX UNI · DEBIT · CREDIT · SOLDE · ATC · IMMAT · OBS
+ * Achats de bons ANSA'R ↔ fournisseurs (pas les clients).
+ * Colonnes Excel : DATE · FOURNISSEUR · QLTI · QTES · PX UNI · DEBIT · CREDIT · SOLDE · N° BON · IMMAT · OBS
  */
 
 import type {
+  Article,
   Expense,
   Invoice,
   SupplierLoading,
   ThirdParty,
   Truck,
 } from '@/contexts/AppContext';
-import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 import { getArticleSupplierUnitPrice } from '@/lib/article-pricing';
-import type { Article } from '@/contexts/AppContext';
+import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
 
 export type SupplierLedgerKind = 'achat' | 'paiement' | 'retrait';
 
@@ -20,8 +20,7 @@ export interface SupplierLedgerRow {
   id: string;
   kind: SupplierLedgerKind;
   date: string;
-  /** NOMS — client / transporteur lié, sinon fournisseur. */
-  noms: string;
+  /** Nom du fournisseur (jamais un client). */
   fournisseurId: string;
   fournisseurNom: string;
   qlti: string;
@@ -30,12 +29,11 @@ export interface SupplierLedgerRow {
   debit: number;
   credit: number;
   solde: number;
+  /** N° bon / ATC. */
   atc: string;
   immatriculation: string;
   obs: string;
-  /** Id du bon si ligne achat (pour rétractation). */
   loadingId?: string;
-  /** Id dépense / facture si paiement. */
   expenseId?: string;
   invoiceId?: string;
   retracted?: boolean;
@@ -44,22 +42,6 @@ export interface SupplierLedgerRow {
 function dateKey(d: string | undefined): string {
   if (!d) return '';
   return d.split('T')[0];
-}
-
-function activeAssignments(l: SupplierLoading) {
-  return (l.assignments ?? []).filter((a) => a.orderStatus !== 'annulee');
-}
-
-function nomsFromLoading(l: SupplierLoading): string {
-  const names = [
-    ...new Set(
-      activeAssignments(l)
-        .map((a) => a.clientNom?.trim() || '')
-        .filter(Boolean),
-    ),
-  ];
-  if (names.length) return names.join(', ');
-  return l.fournisseurNom?.trim() || '';
 }
 
 function pxUniForLoading(
@@ -76,10 +58,7 @@ function pxUniForLoading(
   return undefined;
 }
 
-function truckImmat(
-  camionId: string | undefined,
-  trucks: Truck[],
-): string {
+function truckImmat(camionId: string | undefined, trucks: Truck[]): string {
   if (!camionId) return '';
   const t = trucks.find((x) => x.id === camionId);
   if (!t) return '';
@@ -93,7 +72,6 @@ export function buildSupplierLedgerRows(params: {
   articles: Article[];
   trucks: Truck[];
   fournisseurs: ThirdParty[];
-  /** Inclure les bons annulés (affichés comme rétractés, débit 0). */
   includeRetracted?: boolean;
   fournisseurId?: string;
   dateFrom?: string;
@@ -112,8 +90,8 @@ export function buildSupplierLedgerRows(params: {
     dateTo,
   } = params;
 
-  const fournisseurNom = (id: string) =>
-    fournisseurs.find((f) => f.id === id)?.nom?.trim() || '';
+  const resolveFournisseurNom = (id: string, fallback?: string) =>
+    fallback?.trim() || fournisseurs.find((f) => f.id === id)?.nom?.trim() || '';
 
   type Draft = Omit<SupplierLedgerRow, 'solde'>;
   const drafts: Draft[] = [];
@@ -125,14 +103,14 @@ export function buildSupplierLedgerRows(params: {
     const d = dateKey(l.dateChargement);
     if (dateFrom && d < dateFrom) continue;
     if (dateTo && d > dateTo) continue;
-    const montant = l.montantBon != null && Number.isFinite(l.montantBon) ? l.montantBon : 0;
+    const montant =
+      l.montantBon != null && Number.isFinite(l.montantBon) ? l.montantBon : 0;
     drafts.push({
       id: `achat-${l.id}`,
       kind: retracted ? 'retrait' : 'achat',
       date: d,
-      noms: nomsFromLoading(l),
       fournisseurId: l.fournisseurId,
-      fournisseurNom: l.fournisseurNom?.trim() || fournisseurNom(l.fournisseurId),
+      fournisseurNom: resolveFournisseurNom(l.fournisseurId, l.fournisseurNom),
       qlti: l.designation?.trim() || '',
       qtes: l.quantite,
       pxUni: pxUniForLoading(l, articles),
@@ -160,7 +138,6 @@ export function buildSupplierLedgerRows(params: {
     const d = dateKey(e.date);
     if (dateFrom && d < dateFrom) continue;
     if (dateTo && d > dateTo) continue;
-    // Évite de doubler un paiement déjà porté par une facture fournisseur.
     if (expenseIdsPaidByInvoice.has(e.id)) continue;
     const credit = Number(e.montant) || 0;
     if (credit <= 0) continue;
@@ -168,9 +145,8 @@ export function buildSupplierLedgerRows(params: {
       id: `paiement-exp-${e.id}`,
       kind: 'paiement',
       date: d,
-      noms: '',
       fournisseurId: e.fournisseurId,
-      fournisseurNom: fournisseurNom(e.fournisseurId),
+      fournisseurNom: resolveFournisseurNom(e.fournisseurId),
       qlti: '',
       qtes: e.quantite,
       pxUni: e.prixUnitaire,
@@ -197,9 +173,8 @@ export function buildSupplierLedgerRows(params: {
       id: `paiement-inv-${inv.id}`,
       kind: 'paiement',
       date: d,
-      noms: '',
       fournisseurId: exp.fournisseurId,
-      fournisseurNom: fournisseurNom(exp.fournisseurId),
+      fournisseurNom: resolveFournisseurNom(exp.fournisseurId),
       qlti: '',
       qtes: undefined,
       pxUni: undefined,
@@ -207,7 +182,9 @@ export function buildSupplierLedgerRows(params: {
       credit: paye,
       atc: inv.numero?.trim() || '',
       immatriculation: truckImmat(exp.camionId, trucks),
-      obs: [inv.modePaiement, inv.notes].filter(Boolean).join(' · ') || 'Paiement facture',
+      obs:
+        [inv.modePaiement, inv.notes].filter(Boolean).join(' · ') ||
+        'Paiement fournisseur',
       expenseId: exp.id,
       invoiceId: inv.id,
     });
@@ -216,7 +193,6 @@ export function buildSupplierLedgerRows(params: {
   const sorted = stableSort(drafts, (a, b) => {
     const dd = parseDateMs(a.date) - parseDateMs(b.date);
     if (dd !== 0) return dd;
-    // Achats avant paiements le même jour (comme Excel : soldes progressifs).
     if (a.kind !== b.kind) {
       if (a.kind === 'achat' || a.kind === 'retrait') return -1;
       if (b.kind === 'achat' || b.kind === 'retrait') return 1;
