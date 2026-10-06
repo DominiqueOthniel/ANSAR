@@ -33,6 +33,7 @@ import {
   Activity,
   ExternalLink,
   Container,
+  BookOpen,
 } from 'lucide-react';
 import { frCollator, stableSort } from '@/lib/list-sort';
 import { cn } from '@/lib/utils';
@@ -284,6 +285,12 @@ export default function Fournisseurs() {
         actions={
           <div className="flex flex-wrap gap-2">
             <ExportButtons onExcel={handleExportExcel} onPdf={handleExportPDF} size="sm" />
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/suivi-fournisseurs">
+                <BookOpen className="h-4 w-4 mr-1" />
+                Suivi fournisseurs
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild>
               <Link to="/chargements">
                 <Container className="h-4 w-4 mr-1" />

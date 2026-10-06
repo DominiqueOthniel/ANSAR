@@ -22,6 +22,7 @@ import {
   History,
   UserCircle2,
   KeyRound,
+  BookOpen,
 } from 'lucide-react';
 import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
 import { formatRoleLabel } from '@/lib/auth-users';
@@ -55,6 +56,7 @@ const navigation = [
   { name: 'Chauffeurs', href: '/chauffeurs', icon: Users,           color: 'from-cyan-500 to-sky-500' },
   { name: 'Tiers',      href: '/tiers',      icon: Building2,       color: 'from-violet-500 to-purple-500' },
   { name: 'Fournisseurs', href: '/fournisseurs', icon: Building2,   color: 'from-orange-500 to-amber-500' },
+  { name: 'Suivi fournisseurs', href: '/suivi-fournisseurs', icon: BookOpen, color: 'from-amber-500 to-yellow-500' },
   { name: 'Chargements', href: '/chargements', icon: Container,     color: 'from-lime-500 to-green-500' },
   { name: 'Articles',   href: '/articles',   icon: Boxes,           color: 'from-amber-500 to-orange-500' },
   { name: 'Caisse',     href: '/caisse',     icon: Wallet,          color: 'from-green-500 to-emerald-500' },
