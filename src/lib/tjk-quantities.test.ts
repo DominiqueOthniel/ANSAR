@@ -1,0 +1,15 @@
+import { describe, expect, it } from 'vitest';
+import { tjkQuantiteToQtesTonnage } from './tjk-quantities';
+
+describe('tjkQuantiteToQtesTonnage', () => {
+  it('aligne qtes sur la quantité et calcule le tonnage (sacs 50 kg)', () => {
+    expect(tjkQuantiteToQtesTonnage(540, 50)).toEqual({ qtes: 540, tonnage: 27 });
+  });
+
+  it('retourne undefined si quantité absente', () => {
+    expect(tjkQuantiteToQtesTonnage(undefined)).toEqual({
+      qtes: undefined,
+      tonnage: undefined,
+    });
+  });
+});

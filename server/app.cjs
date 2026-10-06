@@ -14,6 +14,7 @@ const clientOps = require('./routes/client-ops.cjs');
 const loadings = require('./routes/loadings.cjs');
 const depotGaroua = require('./routes/depot-garoua-boulai.cjs');
 const tjkOperations = require('./routes/tjk-operations.cjs');
+const tjkDestinations = require('./routes/tjk-destinations.cjs');
 const camrailOperations = require('./routes/camrail-operations.cjs');
 const admin = require('./routes/admin.cjs');
 const users = require('./routes/users.cjs');
@@ -56,6 +57,7 @@ async function handleLocal(method, path, event, origin) {
           'supplier-loadings',
           'depot-garoua-boulai',
           'tjk-operations',
+          'tjk-destinations',
           'camrail-operations',
           'audit-logs',
           'admin',
@@ -332,6 +334,28 @@ async function handleLocal(method, path, event, origin) {
     if (method === 'PATCH') return json(200, await tjkOperations.updateOperation(id, body(), actor), origin);
     if (method === 'DELETE') {
       await tjkOperations.deleteOperation(id, actor);
+      return noContent(origin);
+    }
+  }
+
+  // --- destinations TJK (montants forfaitaires) ---
+  if (path === '/api/tjk-destinations') {
+    if (method === 'GET') return json(200, await tjkDestinations.listDestinations(), origin);
+    if (method === 'POST') return json(201, await tjkDestinations.createDestination(body(), actor), origin);
+  }
+  m = path.match(/^\/api\/tjk-destinations\/([^/]+)$/);
+  if (m && UUID.test(m[1])) {
+    const id = m[1];
+    if (method === 'GET') {
+      const row = await tjkDestinations.getDestination(id);
+      if (!row) return json(404, { message: 'Destination introuvable' }, origin);
+      return json(200, row, origin);
+    }
+    if (method === 'PATCH') {
+      return json(200, await tjkDestinations.updateDestination(id, body(), actor), origin);
+    }
+    if (method === 'DELETE') {
+      await tjkDestinations.deleteDestination(id, actor);
       return noContent(origin);
     }
   }
