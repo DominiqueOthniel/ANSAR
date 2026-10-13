@@ -102,6 +102,9 @@ const SORTIE_CATEGORIES = [
   'Don',
   'Dépense du PDG',
   'Dépense du bureau',
+  'Transport',
+  'Replicat',
+  'Avance transport',
   'Autre',
 ] as const;
 
@@ -506,7 +509,7 @@ export default function Caisse() {
           categorie,
           reference,
           exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-          clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
+          clientTierId: formData.clientTierId || undefined,
           modePaiement: mode,
         };
 
@@ -552,7 +555,7 @@ export default function Caisse() {
         montant,
         utilisateur: user?.login || 'system',
         exclutRevenu: formData.type === 'entree' && formData.exclutRevenu ? true : undefined,
-        clientTierId: formData.type === 'entree' ? (formData.clientTierId || undefined) : undefined,
+        clientTierId: formData.clientTierId || undefined,
         modePaiement: mode,
         categorie,
         reference,
@@ -1024,7 +1027,6 @@ export default function Caisse() {
                                 v === 'entree'
                                   ? ''
                                   : formData.categorie || 'Carburant',
-                              clientTierId: v === 'sortie' ? '' : formData.clientTierId,
                               tripId: v === 'entree' ? '' : formData.tripId,
                             });
                           }}
@@ -1140,7 +1142,6 @@ export default function Caisse() {
                       />
                     </div>
 
-                    {formData.type === 'entree' && (
                     <div>
                       <Label>Client (optionnel)</Label>
                       <ThirdPartyPicker
@@ -1154,10 +1155,11 @@ export default function Caisse() {
                         topChoices={[{ id: '', label: 'Aucun client' }]}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Recommandé pour les versements clients. Distinct de l’utilisateur qui saisit.
+                        {formData.type === 'sortie'
+                          ? 'Attribue cette sortie à un client. Distinct de l’utilisateur qui saisit.'
+                          : 'Recommandé pour les versements clients. Distinct de l’utilisateur qui saisit.'}
                       </p>
                     </div>
-                    )}
 
                     {formData.type === 'entree' && (
                     <div className="rounded-lg border border-violet-200/80 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/25 p-3 space-y-2">
