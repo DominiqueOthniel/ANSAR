@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lettres de requête Camtel — LCCA SARL</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #444;
+      --line: #ccc;
+      --bg: #f6f5f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Times New Roman", Times, serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.45;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.25rem;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      font-family: system-ui, sans-serif;
+      font-size: 0.9rem;
+    }
+    .toolbar button {
+      border: 1px solid #222;
+      background: #222;
+      color: #fff;
+      padding: 0.45rem 0.9rem;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .wrap {
+      max-width: 820px;
+      margin: 1.5rem auto 3rem;
+      padding: 0 1rem;
+    }
+    .sheet {
+      background: #fff;
+      padding: 2.4cm 2.2cm;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+      border: 1px solid #e5e5e5;
+    }
+    h1.doc-title {
+      font-family: system-ui, sans-serif;
+      font-size: 1.05rem;
+      font-weight: 650;
+      margin: 0 0 1rem;
+      color: #333;
+    }
+    .letterhead {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      border-bottom: 2px solid #111;
+      padding-bottom: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .letterhead .brand {
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: 0.02em;
+    }
+    .letterhead .meta {
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    .letterhead .right {
+      text-align: right;
+      font-size: 0.92rem;
+    }
+    .place-date { text-align: right; margin: 1.25rem 0; }
+    .destinataire {
+      margin: 1.5rem 0 1.25rem;
+      line-height: 1.35;
+    }
+    .objet {
+      margin: 1.25rem 0;
+      font-weight: 700;
+    }
+    .ref {
+      margin: 0.35rem 0 1.25rem;
+      font-size: 0.95rem;
+    }
+    p { margin: 0.85rem 0; text-align: justify; }
+    ul { margin: 0.5rem 0 0.85rem 1.2rem; }
+    li { margin: 0.25rem 0; }
+    .signature {
+      margin-top: 2.2rem;
+      width: 55%;
+      margin-left: auto;
+      text-align: center;
+    }
+    .signature .role { margin-top: 3.2rem; font-weight: 700; }
+    .note {
+      margin-top: 1.5rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--line);
+      font-size: 0.85rem;
+      color: #555;
+      font-family: system-ui, sans-serif;
+    }
+    table.info {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.98rem;
+    }
+    table.info th, table.info td {
+      border: 1px solid #bbb;
+      padding: 0.45rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.info th {
+      width: 38%;
+      background: #f3f3f3;
+      font-weight: 650;
+    }
+    .placeholder {
+      background: #fff8d6;
+      padding: 0 0.15rem;
+    }
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none; }
+      .wrap { margin: 0; max-width: none; padding: 0; }
+      .sheet {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        margin: 0 0 1.5cm;
+        page-break-after: always;
+      }
+      .sheet:last-child { page-break-after: auto; }
+      .note { display: none; }
+      .placeholder { background: transparent; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div>
+      <strong>Lettres Camtel — LCCA SARL</strong>
+      <span style="color:#666"> · à imprimer ou exporter en PDF</span>
+    </div>
+    <button type="button" onclick="window.print()">Imprimer / PDF</button>
+  </div>
+
+  <div class="wrap">
+    <!-- LETTRE 1 -->
+    <h1 class="doc-title">1. Lettre de requête d’hébergement / bascule serveur</h1>
+    <article class="sheet">
+      <div class="letterhead">
+        <div>
+          <div class="brand">LCCA SARL</div>
+          <div class="meta">
+            LIDAF CONSULTING COORPORATION OF AFRICA<br />
+            NIU : M052318293081H<br />
+            RCCM : RC/DLA/2023/B/3599<br />
+            Douala, Cameroun<br />
+            Tél. : 695 258 918 / 674 574 133
+          </div>
+        </div>
+        <div class="right">
+          Régime fiscal : Simplifié<br />
+          CDI Douala 2<br />
+          <span class="placeholder">[Adresse e-mail à compléter]</span>
+        </div>
+      </div>
+
+      <div class="place-date">
+        Douala, le <span class="placeholder">[date]</span>
+      </div>
+
+      <div class="destinataire">
+        <strong>À</strong><br />
+        Monsieur le Directeur Général<br />
+        Cameroon Telecommunications (CAMTEL)<br />
+        <span class="placeholder">[Direction / Service destinataire — ex. Direction Commerciale Entreprises]</span><br />
+        <span class="placeholder">[Ville — Yaoundé / Douala]</span>
+      </div>
+
+      <div class="objet">
+        Objet : Requête d’hébergement et de bascule de notre solution logicielle sur l’infrastructure serveur de CAMTEL
+      </div>
+      <div class="ref">
+        N/Réf. : LCCA/REQ/CAMTEL/<span class="placeholder">[année]</span>/<span class="placeholder">[n°]</span>
+      </div>
+
+      <p>Monsieur le Directeur Général,</p>
+
+      <p>
+        La société <strong>LIDAF CONSULTING COORPORATION OF AFRICA (LCCA SARL)</strong>,
+        immatriculée sous le NIU <strong>M052318293081H</strong> et enregistrée au RCCM
+        <strong>RC/DLA/2023/B/3599</strong>, a l’honneur de solliciter auprès de Cameroon
+        Telecommunications (CAMTEL) la mise à disposition d’une solution d’hébergement
+        serveur adaptée à l’exploitation de son application métier
+        <strong>SIA-ANSAR</strong> (gestion de flotte et d’activités opérationnelles).
+      </p>
+
+      <p>
+        Notre projet est actuellement déployé sur une infrastructure externe. Afin
+        d’assurer une meilleure disponibilité, une proximité réseau nationale et une
+        conformité aux exigences de continuité de service au Cameroun, nous souhaitons
+        <strong>basculer l’hébergement de cette application sur les serveurs / services
+        d’infrastructure de CAMTEL</strong>.
+      </p>
+
+      <p>À cet effet, nous sollicitons :</p>
+      <ul>
+        <li>l’ouverture d’un dossier client entreprise auprès de CAMTEL ;</li>
+        <li>la proposition d’une offre d’hébergement adaptée
+          (<span class="placeholder">[VPS / serveur dédié / cloud / colocation — à préciser]</span>) ;</li>
+        <li>l’accompagnement technique pour la bascule (migration, DNS, accès sécurisés, sauvegardes) ;</li>
+        <li>la communication des conditions commerciales, délais de mise en service et engagements de service (SLA).</li>
+      </ul>
+
+      <p>
+        Pour les besoins d’instruction du dossier, nous joignons à la présente les pièces
+        suivantes :
+      </p>
+      <ul>
+        <li>Attestation d’immatriculation fiscale (NIU M052318293081H) ;</li>
+        <li>Attestation de conformité fiscale ;</li>
+        <li>Plan de localisation de LCCA SARL (zone Aéroport International de Douala) ;</li>
+        <li>Registre de commerce (RCCM RC/DLA/2023/B/3599) —
+          <span class="placeholder">[joindre copie si disponible]</span> ;</li>
+        <li>Pièce d’identité du gérant / signataire —
+          <span class="placeholder">[joindre]</span> ;</li>
+        <li>Fiche technique récapitulative du besoin d’hébergement (ci-jointe).</li>
+      </ul>
+
+      <p>
+        Nous restons à la disposition de vos services pour toute information complémentaire,
+        une visite technique ou un rendez-vous de cadrage.
+      </p>
+
+      <p>
+        Dans l’attente de votre réponse favorable, veuillez agréer, Monsieur le Directeur
+        Général, l’expression de notre considération distinguée.
+      </p>
+
+      <div class="signature">
+        <div>Pour LCCA SARL</div>
+        <div class="role">
+          <span class="placeholder">[Nom du signataire]</span><br />
+          <span class="placeholder">[Qualité — ex. Gérant]</span>
+        </div>
+      </div>
+
+      <div class="note">
+        Zones jaunes : à compléter avant envoi (date, e-mail, destinataire exact, type de serveur, signataire).
+      </div>
+    </article>
+
+    <!-- LETTRE 2 / FICHE -->
+    <h1 class="doc-title">2. Fiche d’informations société + besoin technique (à joindre)</h1>
+    <article class="sheet">
+      <div class="letterhead">
+        <div>
+          <div class="brand">LCCA SARL</div>
+          <div class="meta">Fiche jointe à la requête d’hébergement CAMTEL</div>
+        </div>
+        <div class="right">
+          Douala, le <span class="placeholder">[date]</span>
+        </div>
+      </div>
+
+      <p><strong>A. Identification de la société</strong></p>
+      <table class="info">
+        <tr><th>Raison sociale</th><td>LIDAF CONSULTING COORPORATION OF AFRICA</td></tr>
+        <tr><th>Sigle</th><td>LCCA SARL</td></tr>
+        <tr><th>NIU</th><td>M052318293081H</td></tr>
+        <tr><th>RCCM</th><td>RC/DLA/2023/B/3599</td></tr>
+        <tr><th>Régime fiscal</th><td>Simplifié</td></tr>
+        <tr><th>Centre des impôts</th><td>CDI Douala 2</td></tr>
+        <tr><th>Ville / Commune</th><td>Douala</td></tr>
+        <tr><th>Localisation</th><td>Zone Aéroport International de Douala (réf. plan de localisation joint : Texcaco Aéroport, proximité station Total, garage / laverie camions, mosquée Quiferou)</td></tr>
+        <tr><th>Téléphone</th><td>695 258 918 / 674 574 133</td></tr>
+        <tr><th>E-mail</th><td><span class="placeholder">[à compléter]</span></td></tr>
+        <tr><th>Interlocuteur</th><td><span class="placeholder">[Nom — ex. Fadil Garga]</span>, <span class="placeholder">[qualité]</span></td></tr>
+      </table>
+
+      <p><strong>B. Projet à héberger</strong></p>
+      <table class="info">
+        <tr><th>Nom du projet / application</th><td>SIA-ANSAR</td></tr>
+        <tr><th>Nature</th><td>Application web de gestion (flotte, opérations, caisse, facturation et modules associés)</td></tr>
+        <tr><th>Objectif de la requête</th><td>Bascule de l’hébergement vers l’infrastructure serveur CAMTEL</td></tr>
+        <tr><th>Utilisateurs</th><td><span class="placeholder">[nombre approximatif d’utilisateurs / postes]</span></td></tr>
+        <tr><th>Disponibilité souhaitée</th><td><span class="placeholder">[ex. 24h/24, 7j/7]</span></td></tr>
+      </table>
+
+      <p><strong>C. Besoin technique estimatif</strong> (à ajuster avec CAMTEL)</p>
+      <table class="info">
+        <tr><th>Type de service</th><td><span class="placeholder">[VPS / dédié / cloud / colocation]</span></td></tr>
+        <tr><th>Système d’exploitation</th><td><span class="placeholder">[ex. Linux Ubuntu LTS]</span></td></tr>
+        <tr><th>CPU / RAM / Stockage</th><td><span class="placeholder">[ex. 4 vCPU, 8 Go RAM, 100 Go SSD]</span></td></tr>
+        <tr><th>Bande passante / IP</th><td><span class="placeholder">[IP publique, débit souhaité]</span></td></tr>
+        <tr><th>Base de données</th><td><span class="placeholder">[ex. PostgreSQL]</span></td></tr>
+        <tr><th>Sauvegardes</th><td><span class="placeholder">[quotidienne / rétention souhaitée]</span></td></tr>
+        <tr><th>Nom de domaine</th><td><span class="placeholder">[domaine actuel ou à créer]</span></td></tr>
+        <tr><th>Date de bascule souhaitée</th><td><span class="placeholder">[date cible]</span></td></tr>
+      </table>
+
+      <p><strong>D. Pièces jointes</strong></p>
+      <ul>
+        <li>Attestation d’immatriculation fiscale</li>
+        <li>Attestation de conformité fiscale</li>
+        <li>Plan de localisation LCCA</li>
+        <li><span class="placeholder">[RCCM]</span></li>
+        <li><span class="placeholder">[CNI / passeport du gérant]</span></li>
+        <li>La présente fiche technique</li>
+      </ul>
+
+      <div class="signature">
+        <div>Cachet et signature</div>
+        <div class="role">
+          <span class="placeholder">[Nom]</span><br />
+          <span class="placeholder">[Qualité]</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- LETTRE 3 courte -->
+    <h1 class="doc-title">3. Version courte (si CAMTEL demande seulement une lettre d’accompagnement)</h1>
+    <article class="sheet">
+      <div class="letterhead">
+        <div>
+          <div class="brand">LCCA SARL</div>
+          <div class="meta">
+            NIU M052318293081H · RCCM RC/DLA/2023/B/3599<br />
+            Douala · Tél. 695 258 918
+          </div>
+        </div>
+        <div class="right">Douala, le <span class="placeholder">[date]</span></div>
+      </div>
+
+      <div class="destinataire">
+        <strong>À l’attention du Service Clients Entreprises</strong><br />
+        Cameroon Telecommunications (CAMTEL)
+      </div>
+
+      <div class="objet">
+        Objet : Transmission du dossier de requête d’hébergement serveur — bascule projet SIA-ANSAR
+      </div>
+
+      <p>Madame, Monsieur,</p>
+
+      <p>
+        Nous vous transmettons ci-joint le dossier de <strong>LCCA SARL</strong> en vue
+        de l’hébergement de notre application <strong>SIA-ANSAR</strong> sur l’infrastructure
+        CAMTEL, ainsi que les pièces justificatives demandées (attestations fiscales et plan
+        de localisation).
+      </p>
+
+      <p>
+        Nous vous prions de bien vouloir instruire notre demande et de nous indiquer les
+        prochaines étapes (devis, contrat, délais de mise en service).
+      </p>
+
+      <p>Veuillez agréer, Madame, Monsieur, l’expression de nos salutations distinguées.</p>
+
+      <div class="signature">
+        <div class="role">
+          <span class="placeholder">[Nom]</span><br />
+          <span class="placeholder">[Qualité]</span>
+        </div>
+      </div>
+    </article>
+  </div>
+</body>
+</html>
