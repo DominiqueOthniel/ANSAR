@@ -37,7 +37,7 @@ export class CaisseTransactionEntity {
   @Column({ name: 'exclutRevenu', type: 'boolean', default: false })
   exclutRevenu: boolean;
 
-  /** Tiers client métier rattaché au mouvement (versement / encaissement). */
+  /** Tiers client métier rattaché au mouvement (versement / encaissement, ou attribution d’une sortie). */
   @Column({ name: 'clientTierId', type: 'uuid', nullable: true })
   clientTierId?: string;
 

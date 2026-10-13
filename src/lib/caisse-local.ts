@@ -21,7 +21,7 @@ export interface CaisseTransaction {
   compteBanqueId?: string;
   bankTransactionId?: string;
   exclutRevenu?: boolean;
-  /** Tiers client métier (versement / encaissement). */
+  /** Tiers client métier (versement / encaissement, ou attribution d’une sortie). */
   clientTierId?: string;
   /** Mode de paiement (Espèces, MTN, Virement direct…). */
   modePaiement?: string;
