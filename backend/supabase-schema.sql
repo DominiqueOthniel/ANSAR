@@ -203,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_transactions_compte ON bank_transactions("co
 CREATE TABLE IF NOT EXISTS caisse_config (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   "soldeInitial" DECIMAL(15, 2) NOT NULL DEFAULT 0,
+  "categoriesDepense" TEXT,
   "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
