@@ -21,6 +21,9 @@ export const DEFAULT_SORTIE_CATEGORIES = [
   'Transport',
   'Replicat',
   'Avance transport',
+  'Achat',
+  'Prime',
+  'Retrait',
   'Autre',
 ] as const;
 
