@@ -45,6 +45,13 @@ import {
   isCaisseDepenseTransaction,
 } from '@/lib/caisse-local';
 import {
+  addCaisseCategory,
+  getCaisseCategoriesSync,
+  mergeCaisseCategoriesWithUsed,
+  persistCaisseCategories,
+  removeCaisseCategory,
+} from '@/lib/caisse-categories';
+import {
   caisseReferenceForExpense,
   linkedExpenseIdFromCaisse,
   removeLinkedExpenseForCaisseSortie,
@@ -92,21 +99,6 @@ const CAISSE_TYPE_FILTER_LABELS: Record<string, string> = {
   sortie: 'Sorties',
   financement: 'Financement (hors encaissement)',
 };
-
-const SORTIE_CATEGORIES = [
-  'Carburant',
-  'Maintenance',
-  'Péage',
-  'Assurance',
-  'Salaire',
-  'Don',
-  'Dépense du PDG',
-  'Dépense du bureau',
-  'Transport',
-  'Replicat',
-  'Avance transport',
-  'Autre',
-] as const;
 
 function matchesCaissePaymentModeFilter(
   t: Pick<CaisseTransaction, 'modePaiement'>,
@@ -223,6 +215,11 @@ export default function Caisse() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<CaisseTransaction | null>(null);
+  const [isCategoriesDialogOpen, setIsCategoriesDialogOpen] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
+  const [categoriesDepense, setCategoriesDepense] = useState<string[]>(() =>
+    getCaisseCategoriesSync(),
+  );
   const [filterType, setFilterType] = useState<string>('all');
   const [filterModePaiement, setFilterModePaiement] = useState<CaisseModeFilter>('all');
   const [filterModePaiementDetail, setFilterModePaiementDetail] = useState('all');
@@ -236,6 +233,7 @@ export default function Caisse() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const { isSubmitting, withGuard } = useSubmitGuard();
+  const { isSubmitting: isCategorySubmitting, withGuard: withCategoryGuard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     type: 'entree' as 'entree' | 'sortie',
@@ -275,17 +273,21 @@ export default function Caisse() {
     [createExpense, updateExpense, deleteExpense],
   );
 
-  const categorieOptions = useMemo(() => {
-    const fromTx = transactions
-      .map((t) => t.categorie?.trim())
-      .filter((c): c is string => Boolean(c));
-    return Array.from(new Set([...SORTIE_CATEGORIES, ...fromTx])).sort((a, b) =>
-      frCollator.compare(a, b),
-    );
-  }, [transactions]);
+  const categorieOptions = useMemo(
+    () =>
+      mergeCaisseCategoriesWithUsed(
+        categoriesDepense,
+        transactions.map((t) => t.categorie),
+      ),
+    [categoriesDepense, transactions],
+  );
 
   const refreshBankAccounts = () => {
     setBankAccounts(getBankAccounts());
+  };
+
+  const refreshCategories = () => {
+    setCategoriesDepense(getCaisseCategoriesSync());
   };
 
   useEffect(() => {
@@ -303,6 +305,7 @@ export default function Caisse() {
         if (!cancelled) {
           setTransactions(getCaisseTransactions());
           setSoldeInitial(getCaisseSoldeInitialSync());
+          setCategoriesDepense(getCaisseCategoriesSync());
         }
       } catch (e) {
         console.error(e);
@@ -334,7 +337,7 @@ export default function Caisse() {
       exclutRevenu: false,
       clientTierId: '',
       modePaiement: '',
-      categorie: type === 'sortie' || tripId ? 'Carburant' : '',
+      categorie: type === 'sortie' || tripId ? getCaisseCategoriesSync()[0] || '' : '',
       tripId,
     });
     setIsDialogOpen(true);
@@ -416,6 +419,41 @@ export default function Caisse() {
       tripId: '',
     });
     setEditingTransaction(null);
+  };
+
+  const handleAddCategory = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    await withCategoryGuard(async () => {
+      try {
+        const next = await addCaisseCategory(newCategoryLabel);
+        setCategoriesDepense(next);
+        const added = newCategoryLabel.trim().replace(/\s+/g, ' ');
+        setNewCategoryLabel('');
+        if (formData.type === 'sortie') {
+          setFormData((f) => ({ ...f, categorie: added }));
+        }
+        toast.success(`Cas de dépense « ${added} » ajouté.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Impossible d’ajouter ce cas de dépense.');
+      }
+    });
+  };
+
+  const handleRemoveCategory = async (label: string) => {
+    if (!confirm(`Retirer « ${label} » des cas de dépenses ?`)) return;
+    await withCategoryGuard(async () => {
+      try {
+        const next = await removeCaisseCategory(label);
+        setCategoriesDepense(next);
+        if (formData.categorie === label) {
+          setFormData((f) => ({ ...f, categorie: next[0] || '' }));
+        }
+        if (filterCategorie === label) setFilterCategorie('all');
+        toast.success(`« ${label} » retiré de la liste.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Impossible de retirer ce cas de dépense.');
+      }
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -616,7 +654,7 @@ export default function Caisse() {
       exclutRevenu: t.type === 'entree' && Boolean(t.exclutRevenu),
       clientTierId: t.clientTierId || '',
       modePaiement: t.modePaiement || '',
-      categorie: t.categorie || (t.type === 'sortie' ? 'Carburant' : ''),
+      categorie: t.categorie || (t.type === 'sortie' ? categoriesDepense[0] || '' : ''),
       tripId: linkedExpense?.tripId || '',
     });
     setIsDialogOpen(true);
@@ -629,6 +667,7 @@ export default function Caisse() {
       caisse: {
         soldeInitial,
         transactions,
+        categoriesDepense,
       },
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -675,9 +714,14 @@ export default function Caisse() {
         throw new Error('Fichier de backup invalide ou incompatible');
       }
 
-      const { soldeInitial: savedSolde, transactions: savedTx } = parsed.caisse;
+      const { soldeInitial: savedSolde, transactions: savedTx, categoriesDepense: savedCats } =
+        parsed.caisse;
       saveTransactions(savedTx ?? []);
       void saveSoldeInitial(savedSolde ?? 0);
+      if (Array.isArray(savedCats)) {
+        const next = await persistCaisseCategories(savedCats);
+        setCategoriesDepense(next);
+      }
       toast.success(`Caisse restaurée : ${savedTx?.length ?? 0} transaction(s) importée(s)`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors de la restauration');
@@ -1026,7 +1070,7 @@ export default function Caisse() {
                               categorie:
                                 v === 'entree'
                                   ? ''
-                                  : formData.categorie || 'Carburant',
+                                  : formData.categorie || categoriesDepense[0] || '',
                               tripId: v === 'entree' ? '' : formData.tripId,
                             });
                           }}
@@ -1054,8 +1098,20 @@ export default function Caisse() {
                     </div>
 
                     {formData.type === 'sortie' && (
-                      <div>
-                        <Label>Type de dépense *</Label>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label>Type de dépense *</Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 text-xs"
+                            onClick={() => setIsCategoriesDialogOpen(true)}
+                          >
+                            <Layers className="mr-1 h-3.5 w-3.5" />
+                            Gérer
+                          </Button>
+                        </div>
                         <Select
                           value={formData.categorie || undefined}
                           onValueChange={(categorie) =>
@@ -1066,7 +1122,7 @@ export default function Caisse() {
                             <SelectValue placeholder="Choisir une catégorie…" />
                           </SelectTrigger>
                           <SelectContent>
-                            {SORTIE_CATEGORIES.map((c) => (
+                            {categoriesDepense.map((c) => (
                               <SelectItem key={c} value={c}>
                                 {c}
                               </SelectItem>
@@ -1202,10 +1258,84 @@ export default function Caisse() {
                   </form>
                 </DialogContent>
               </Dialog>
+
+              <Dialog
+                open={isCategoriesDialogOpen}
+                onOpenChange={(open) => {
+                  setIsCategoriesDialogOpen(open);
+                  if (!open) setNewCategoryLabel('');
+                  else refreshCategories();
+                }}
+              >
+                <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Cas de dépenses</DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm text-muted-foreground">
+                    Ajoute tes propres types de sortie pour les retrouver dans le formulaire, sans
+                    intervention technique.
+                  </p>
+                  <form onSubmit={handleAddCategory} className="flex gap-2">
+                    <Input
+                      value={newCategoryLabel}
+                      onChange={(e) => setNewCategoryLabel(e.target.value)}
+                      placeholder="Ex. Péage autoroute, Avance chauffeur…"
+                      maxLength={80}
+                      disabled={isCategorySubmitting}
+                    />
+                    <Button type="submit" disabled={isCategorySubmitting || !newCategoryLabel.trim()}>
+                      {isCategorySubmitting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Plus className="mr-1 h-4 w-4" />
+                          Ajouter
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                  <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                    {categoriesDepense.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Aucun cas de dépense.</p>
+                    ) : (
+                      categoriesDepense.map((c) => (
+                        <div
+                          key={c}
+                          className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+                        >
+                          <span className="text-sm font-medium">{c}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive"
+                            onClick={() => void handleRemoveCategory(c)}
+                            disabled={isCategorySubmitting || categoriesDepense.length <= 1}
+                            aria-label={`Retirer ${c}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
               </div>
             )}
 
             <div className="flex flex-wrap gap-2 w-full">
+              {canManageTreasury && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCategoriesDialogOpen(true)}
+                  className="gap-2"
+                >
+                  <Layers className="h-4 w-4" />
+                  Cas de dépenses
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleBackupCaisse} className="gap-2">
                 <HardDrive className="h-4 w-4" />
                 Backup

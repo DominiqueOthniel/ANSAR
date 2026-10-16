@@ -3,6 +3,7 @@
  */
 
 import { caisseApi, type CaisseTransactionPayload } from '@/lib/api';
+import { setCaisseCategoriesCache } from '@/lib/caisse-categories';
 import { isPaiementVersBanque } from '@/lib/payment-modes';
 
 export { isPaiementVersBanque };
@@ -73,6 +74,7 @@ export async function refreshCaisseFromApi(): Promise<void> {
   if (!isRemoteCaisse()) return;
   const [cfg, txs] = await Promise.all([caisseApi.getConfig(), caisseApi.getTransactions()]);
   _soldeInitialCache = cfg.soldeInitial;
+  setCaisseCategoriesCache(cfg.categoriesDepense);
   _txCache = Array.isArray(txs) ? txs.map((t) => normalizeCaisseTx(t as Record<string, unknown>)) : [];
 }
 
@@ -98,7 +100,7 @@ export function getCaisseSoldeInitialSync(): number {
 
 /**
  * Toutes les transactions caisse impactent le solde espèces.
- * La banque Ansar (Afriland / CBC / UBA / CCA / Access Bank / BGFI / Crédit du Sahel / Express Exchange / SCB) est une simple traçabilité sur le mode.
+ * La banque Ansar (Afriland / CBC / UBA / CCA / Access Bank / BGFI / Crédit du Sahel / Express Exchange / SGC) est une simple traçabilité sur le mode.
  */
 export function caisseAffectsCashSolde(_t: Pick<CaisseTransaction, 'type' | 'modePaiement'>): boolean {
   return true;

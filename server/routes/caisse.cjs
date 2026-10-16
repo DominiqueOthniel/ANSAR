@@ -60,16 +60,55 @@ function mapTx(row) {
   return j;
 }
 
+function normalizeCategories(input) {
+  let source = input;
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(source)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const item of source) {
+    if (typeof item !== 'string') continue;
+    const label = item.trim().replace(/\s+/g, ' ');
+    if (!label) continue;
+    const key = label.toLocaleLowerCase('fr');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out.length > 0 ? out : null;
+}
+
 async function getConfig() {
   const c = await ensureConfig();
-  return { id: 1, soldeInitial: num(c.soldeInitial) };
+  return {
+    id: 1,
+    soldeInitial: num(c.soldeInitial),
+    categoriesDepense: normalizeCategories(c.categoriesDepense),
+  };
 }
 
 async function updateConfig(body) {
   await ensureConfig();
-  await query(`UPDATE caisse_config SET "soldeInitial" = $1, "updatedAt" = NOW() WHERE id = 1`, [
-    num(body.soldeInitial),
-  ]);
+  const categories =
+    body.categoriesDepense !== undefined
+      ? normalizeCategories(body.categoriesDepense)
+      : undefined;
+  if (categories !== undefined) {
+    await query(
+      `UPDATE caisse_config SET "soldeInitial" = $1, "categoriesDepense" = $2, "updatedAt" = NOW() WHERE id = 1`,
+      [num(body.soldeInitial), categories ? JSON.stringify(categories) : null],
+    );
+  } else {
+    await query(`UPDATE caisse_config SET "soldeInitial" = $1, "updatedAt" = NOW() WHERE id = 1`, [
+      num(body.soldeInitial),
+    ]);
+  }
   return getConfig();
 }
 

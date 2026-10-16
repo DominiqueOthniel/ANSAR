@@ -28,19 +28,50 @@ export class CaisseService {
     return row;
   }
 
-  async getConfig(): Promise<{ id: number; soldeInitial: number }> {
-    const c = await this.getOrCreateConfig();
-    return { id: c.id, soldeInitial: Number(c.soldeInitial) };
+  private normalizeCategories(input: unknown): string[] | null {
+    if (!Array.isArray(input)) return null;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of input) {
+      if (typeof item !== 'string') continue;
+      const label = item.trim().replace(/\s+/g, ' ');
+      if (!label) continue;
+      const key = label.toLocaleLowerCase('fr');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(label);
+    }
+    return out.length > 0 ? out : null;
   }
 
-  async updateConfig(dto: UpdateCaisseConfigDto): Promise<{ id: number; soldeInitial: number }> {
+  async getConfig(): Promise<{
+    id: number;
+    soldeInitial: number;
+    categoriesDepense: string[] | null;
+  }> {
+    const c = await this.getOrCreateConfig();
+    return {
+      id: c.id,
+      soldeInitial: Number(c.soldeInitial),
+      categoriesDepense: this.normalizeCategories(c.categoriesDepense),
+    };
+  }
+
+  async updateConfig(dto: UpdateCaisseConfigDto): Promise<{
+    id: number;
+    soldeInitial: number;
+    categoriesDepense: string[] | null;
+  }> {
     await this.getOrCreateConfig();
-    await this.configRepo.update(1, {
+    const patch: Partial<CaisseConfig> = {
       soldeInitial: String(dto.soldeInitial),
       updatedAt: new Date(),
-    });
-    const c = await this.getOrCreateConfig();
-    return { id: c.id, soldeInitial: Number(c.soldeInitial) };
+    };
+    if (dto.categoriesDepense !== undefined) {
+      patch.categoriesDepense = this.normalizeCategories(dto.categoriesDepense);
+    }
+    await this.configRepo.update(1, patch);
+    return this.getConfig();
   }
 
   async findAllTransactions(): Promise<CaisseTransactionEntity[]> {

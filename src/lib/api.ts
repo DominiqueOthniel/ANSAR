@@ -702,9 +702,10 @@ export interface CaisseTransactionPayload {
 }
 
 export const caisseApi = {
-  getConfig: () => request<{ id: number; soldeInitial: number }>('/caisse/config'),
-  updateConfig: (data: { soldeInitial: number }) =>
-    request<{ id: number; soldeInitial: number }>('/caisse/config', {
+  getConfig: () =>
+    request<{ id: number; soldeInitial: number; categoriesDepense?: string[] }>('/caisse/config'),
+  updateConfig: (data: { soldeInitial: number; categoriesDepense?: string[] }) =>
+    request<{ id: number; soldeInitial: number; categoriesDepense?: string[] }>('/caisse/config', {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
