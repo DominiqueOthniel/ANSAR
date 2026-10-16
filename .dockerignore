@@ -1,9 +1,17 @@
-# Contexte racine : accélère le build de l’image API (Dockerfile racine).
+# Contexte racine : builds docker/api.Dockerfile et docker/web.Dockerfile
 .git
+.github
 **/node_modules
 **/dist
 **/.env
 **/.env.*
+!**/.env.example
 **/*.log
 coverage
 .nyc_output
+*.md
+!deploy/camtel/README.md
+.cursor
+.tmp
+backend/dev.sqlite
+backend/dev.sqlite-*
