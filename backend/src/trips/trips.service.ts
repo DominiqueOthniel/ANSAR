@@ -79,14 +79,10 @@ export class TripsService {
     if (out.length === 0) {
       return { list: null, payeurId: null };
     }
+    /** Payeur optionnel : multi-clients sans obligation de désigner qui règle. */
     let payeurId: string | null = payeurParticipantId?.trim() || null;
     if (payeurId && !out.some((p) => p.id === payeurId)) {
-      throw new BadRequestException(
-        'Le client « payeur au règlement » doit être l’un des clients listés sur le trajet.',
-      );
-    }
-    if (!payeurId && out.length === 1) {
-      payeurId = out[0].id;
+      payeurId = null;
     }
     const avecMontant = out.filter(
       (p) => p.montantAttribue !== undefined && p.montantAttribue !== null,

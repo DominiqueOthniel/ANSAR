@@ -430,17 +430,11 @@ export default function Trips() {
   };
 
   const removeClientParticipantRow = (participantId: string) => {
-    setFormData((prev) => {
-      const next = prev.clientParticipants.filter((p) => p.id !== participantId);
-      let payeur = prev.payeurParticipantId;
-      if (payeur === participantId) {
-        const actifs = next.filter((p) => p.libelle.trim());
-        if (actifs.length >= 2) payeur = '';
-        else if (actifs.length === 1) payeur = actifs[0].id;
-        else payeur = '';
-      }
-      return { ...prev, clientParticipants: next, payeurParticipantId: payeur };
-    });
+    setFormData((prev) => ({
+      ...prev,
+      clientParticipants: prev.clientParticipants.filter((p) => p.id !== participantId),
+      payeurParticipantId: '',
+    }));
   };
 
   const normDate = (d: string) => (d && d.includes('T') ? d.split('T')[0] : d) || '';
@@ -629,8 +623,8 @@ export default function Trips() {
                 };
               })
             : [];
-        const payeurPayload =
-          participantsLint.length > 0 ? participantsLint[0].id : undefined;
+        /** Pas de « qui paye » : pas de payeur au règlement (multi-clients inclus). */
+        const payeurPayload = '';
         const qtySum = sumParticipantsQuantite(participantsLint);
         const firstLieu = participantsLint.find((p) => p.lieuLivraison?.trim())?.lieuLivraison;
         const clientLabel =

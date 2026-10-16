@@ -56,7 +56,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getInvoiceClientDefaultsFromTrip } from '@/lib/trip-client-participants';
 import {
   mergeTripInvoicePaymentSlices,
-  tripHasMultipleInvoicePayers,
   sumInvoicePaymentSlices,
 } from '@/lib/invoice-payment-slices';
 import {
@@ -110,7 +109,6 @@ export default function Invoices() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   /** Participant trajet (ligne client) ayant versé l’encaissement en cours — si ≥ 2 clients sur le trajet. */
-  const [paymentPayerParticipantId, setPaymentPayerParticipantId] = useState('');
   const [selectedTripId, setSelectedTripId] = useState('');
   /** Facture liée à une expédition (exclusif avec trajet). */
   const [invoiceMissionKind, setInvoiceMissionKind] = useState<'trip' | 'parcel'>('trip');
@@ -344,16 +342,6 @@ export default function Invoices() {
     setSelectedInvoice(invoice);
     const resteAPayer = Math.max(0, Number(invoice.montantTTC) - Number(invoice.montantPaye ?? 0));
     setPaymentAmount(invoice.expenseId ? resteAPayer : 0);
-    setPaymentPayerParticipantId('');
-    const trip = invoice.trajetId ? trips.find((t) => t.id === invoice.trajetId) : undefined;
-    if (trip) {
-      const parts = (trip.clientParticipants ?? []).filter((p) => p.libelle.trim());
-      if (parts.length > 0) {
-        const payeurId = trip.payeurParticipantId;
-        const def = payeurId ? parts.find((p) => p.id === payeurId) : parts[0];
-        if (def) setPaymentPayerParticipantId(def.id);
-      }
-    }
     setIsPaymentDialogOpen(true);
   };
 
@@ -389,11 +377,6 @@ export default function Invoices() {
     const tripForPay = selectedInvoice.trajetId
       ? trips.find((t) => t.id === selectedInvoice.trajetId)
       : undefined;
-    if (paymentAmount > 0 && tripHasMultipleInvoicePayers(tripForPay) && !paymentPayerParticipantId.trim()) {
-      toast.error('Sélectionnez le client qui a effectué ce paiement.');
-      return;
-    }
-
     let payeurDescription = '';
     let payeurClientTierId: string | undefined;
     let paiementsEncaissementsPayload:
@@ -404,7 +387,8 @@ export default function Invoices() {
         invoice: selectedInvoice,
         trip: tripForPay,
         additionalAmount: paymentAmount,
-        payerParticipantId: paymentPayerParticipantId.trim() || undefined,
+        /** Pas de sélection « qui paye » : défaut automatique (facture / premier client). */
+        payerParticipantId: undefined,
         thirdParties: thirdParties.map((tp) => ({ id: tp.id, nom: tp.nom })),
       });
       payeurDescription = merged.payerDescription;
@@ -495,7 +479,6 @@ export default function Invoices() {
         setIsPaymentDialogOpen(false);
         setSelectedInvoice(null);
         setPaymentAmount(0);
-        setPaymentPayerParticipantId('');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erreur lors du paiement');
       }
@@ -2994,12 +2977,7 @@ export default function Invoices() {
       {/* Dialog de paiement partiel */}
       <Dialog
         open={isPaymentDialogOpen}
-        onOpenChange={(open) => {
-          setIsPaymentDialogOpen(open);
-          if (!open) {
-            setPaymentPayerParticipantId('');
-          }
-        }}
+        onOpenChange={setIsPaymentDialogOpen}
       >
         <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">          <DialogHeader>
             <DialogTitle>Enregistrer le paiement</DialogTitle>
@@ -3030,44 +3008,6 @@ export default function Invoices() {
                   </div>
                 )}
               </div>
-
-              {selectedInvoice.trajetId &&
-                (() => {
-                  const tr = trips.find((t) => t.id === selectedInvoice.trajetId);
-                  if (!tr || !tripHasMultipleInvoicePayers(tr)) return null;
-                  const parts = (tr.clientParticipants ?? []).filter((p) => p.libelle.trim());
-                  return (
-                    <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
-                      <Label htmlFor="paymentPayerParticipant" className="text-foreground">
-                        Client qui verse cet encaissement *
-                      </Label>
-                      <Select
-                        value={paymentPayerParticipantId || undefined}
-                        onValueChange={setPaymentPayerParticipantId}
-                      >
-                        <SelectTrigger id="paymentPayerParticipant" className="mt-1 h-9">
-                          <SelectValue placeholder="Choisir le client qui verse" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {parts.map((p) => {
-                            const fiche = p.tierId
-                              ? thirdParties.find((tp) => tp.id === p.tierId && tp.type === 'client')
-                              : undefined;
-                            return (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.libelle.trim()}
-                                {fiche ? ` — ${fiche.nom}` : p.tierId ? ` — fiche ${p.tierId.slice(0, 8)}…` : ''}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Plusieurs clients sur ce trajet : ventilation de l’encaissement sur la facture.
-                      </p>
-                    </div>
-                  );
-                })()}
 
               <div>
                 <Label htmlFor="paymentAmount">
