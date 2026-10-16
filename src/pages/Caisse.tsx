@@ -105,6 +105,9 @@ const SORTIE_CATEGORIES = [
   'Transport',
   'Replicat',
   'Avance transport',
+  'Achat',
+  'Prime',
+  'Retrait',
   'Autre',
 ] as const;
 
