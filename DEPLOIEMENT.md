@@ -1,6 +1,6 @@
-# Déploiement SIA-ANSAR — Netlify + Supabase uniquement
+# Déploiement SIA-ANSAR
 
-## Stack
+## Stack actuelle (prod)
 
 | Couche | Où |
 |--------|-----|
@@ -8,7 +8,14 @@
 | API | **Netlify Functions** (`/api/*` → `server/`) |
 | Données | **Supabase** (Postgres) |
 
-**Pas de Koyeb, pas de Render, pas d’autre serveur backend.**
+## Alternative VPS Camtel (Docker)
+
+Voir **[deploy/camtel/README.md](deploy/camtel/README.md)** : Nginx + API Nest + Postgres optionnel.
+
+```bash
+cp deploy/camtel/.env.example deploy/camtel/.env
+./deploy/camtel/up.sh
+```
 
 ---
 

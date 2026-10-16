@@ -1,5 +1,5 @@
 # API NestJS — contexte de build = racine du dépôt (monorepo).
-# Sur Koyeb : Dockerfile location = Dockerfile (racine), sans "Root directory" obligatoire.
+# Legacy / Koyeb. Pour VPS Camtel préférer : docker/api.Dockerfile + deploy/camtel/.
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app

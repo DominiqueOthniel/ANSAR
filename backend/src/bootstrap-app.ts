@@ -45,7 +45,9 @@ function configureCors(app: Awaited<ReturnType<typeof NestFactory.create>>): voi
         /^https:\/\/[\w.-]+\.vercel\.app$/i.test(o) ||
         /^https:\/\/[\w.-]+\.onrender\.com$/i.test(o) ||
         /^https:\/\/[\w.-]+\.railway\.app$/i.test(o) ||
-        /^https:\/\/[\w.-]+\.koyeb\.app$/i.test(o);
+        /^https:\/\/[\w.-]+\.koyeb\.app$/i.test(o) ||
+        /^https?:\/\/[\w.-]+\.cm(?::\d+)?$/i.test(o) ||
+        /^https?:\/\/\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/i.test(o);
       callback(null, isAllowed);
     },
     credentials: true,
