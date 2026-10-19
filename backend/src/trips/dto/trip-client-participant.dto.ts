@@ -18,10 +18,32 @@ export class TripClientParticipantDto {
   @MaxLength(255)
   libelle: string;
 
-  /** Part de recette attribuée (FCFA), optionnelle (aide au suivi). */
+  /** Part de recette / montant ligne (FCFA). */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   montantAttribue?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  prixUnitaire?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  quantite?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  lieuLivraison?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  sousReferenceBon?: string;
 }

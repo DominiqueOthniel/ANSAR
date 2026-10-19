@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsIn,
   IsArray,
+  IsUUID,
+  ValidateIf,
   ValidateNested,
   MaxLength,
   Min,
@@ -116,4 +118,10 @@ export class CreateTripDto {
   @IsString()
   @MaxLength(64)
   payeurParticipantId?: string;
+
+  /** Bon de chargement (supplier_loadings) lié à la mission. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
+  @IsUUID()
+  supplierLoadingId?: string | null;
 }

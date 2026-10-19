@@ -68,12 +68,23 @@ export class TripsService {
         row.montantAttribue !== undefined && row.montantAttribue !== null
           ? Number(row.montantAttribue)
           : undefined;
+      const prix =
+        row.prixUnitaire !== undefined && row.prixUnitaire !== null
+          ? Number(row.prixUnitaire)
+          : undefined;
+      const qty =
+        row.quantite !== undefined && row.quantite !== null ? Number(row.quantite) : undefined;
       out.push({
         id,
         tierId: row.tierId?.trim() || undefined,
         libelle: lib,
         montantAttribue:
           mont !== undefined && !Number.isNaN(mont) && mont >= 0 ? mont : undefined,
+        prixUnitaire:
+          prix !== undefined && !Number.isNaN(prix) && prix >= 0 ? prix : undefined,
+        quantite: qty !== undefined && !Number.isNaN(qty) && qty >= 0 ? qty : undefined,
+        lieuLivraison: row.lieuLivraison?.trim() || undefined,
+        sousReferenceBon: row.sousReferenceBon?.trim() || undefined,
       });
     }
     if (out.length === 0) {
