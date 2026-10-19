@@ -157,57 +157,22 @@
       <tr><th>Fichiers / médias</th><td>Images et exports ; stockage estimé modéré</td></tr>
       <tr><th>Bande passante</th><td>Usage métier classique ; pas de streaming vidéo</td></tr>
     </table>
-
-    <h2>6. Dimensionnement VPS recommandé</h2>
-    <table>
-      <tr>
-        <th>Profil</th>
-        <td><strong>Démarrage recommandé</strong></td>
-        <td><strong>Évolution (si charge croît)</strong></td>
-      </tr>
-      <tr>
-        <th>vCPU</th>
-        <td>4 vCPU</td>
-        <td>6 à 8 vCPU</td>
-      </tr>
-      <tr>
-        <th>RAM</th>
-        <td>8 Go</td>
-        <td>16 Go</td>
-      </tr>
-      <tr>
-        <th>Stockage SSD</th>
-        <td>80 à 100 Go</td>
-        <td>150 à 200 Go</td>
-      </tr>
-      <tr>
-        <th>Système</th>
-        <td colspan="2">Ubuntu Server LTS 64 bits</td>
-      </tr>
-      <tr>
-        <th>Réseau</th>
-        <td colspan="2">1 IP publique ; HTTPS ; débit symétrique ou asymétrique selon offre CAMTEL</td>
-      </tr>
-      <tr>
-        <th>Sauvegardes</th>
-        <td colspan="2">Sauvegarde quotidienne automatique (rétention 7 à 30 jours souhaitée)</td>
-      </tr>
-    </table>
     <p class="note">
-      Ces valeurs couvrent Nginx + API Node + PostgreSQL pour plusieurs petites instances métier.
-      Elles restent indicatives : CAMTEL pourra ajuster selon ses packs VPS et la montée en charge réelle.
+      Le dimensionnement précis du VPS (CPU, RAM, stockage, débit) est laissé à l’appréciation
+      de CAMTEL, sur la base des informations ci-dessus.
     </p>
 
-    <h2>7. Services attendus de CAMTEL</h2>
+    <h2>6. Services attendus de CAMTEL</h2>
     <ul>
-      <li>Mise à disposition d’un VPS Linux avec accès root / SSH</li>
+      <li>Proposition d’une offre VPS adaptée à la charge décrite</li>
+      <li>Mise à disposition d’un VPS Linux (Ubuntu LTS) avec accès root / SSH</li>
       <li>IP publique et connectivité Internet stable</li>
       <li>Possibilité d’ouvrir les ports HTTP/HTTPS (80/443) et SSH (22)</li>
       <li>Option sauvegarde / snapshot si disponible</li>
       <li>Accompagnement pour la mise en service et communication du SLA / délais</li>
     </ul>
 
-    <h2>8. Points hors périmètre immédiat</h2>
+    <h2>7. Points hors périmètre immédiat</h2>
     <ul>
       <li>Pas de besoin de messagerie (mail serveur) sur ce VPS au démarrage</li>
       <li>Pas de besoin de GPU / calcul haute performance</li>
