@@ -1,6 +1,8 @@
 /**
  * Quand un bon est redistribué à des clients via Trajets,
  * crée / met à jour les commandes + affectations pour impacter le compte client (FAC-CMD / encours).
+ *
+ * Sans montant > 0, l’API n’émet pas de FAC-CMD → l’encours client ne bouge pas.
  */
 
 import type { ClientOrderPayload, SupplierLoadingAssignmentPayload } from '@/lib/api';
@@ -17,6 +19,8 @@ export type TripBonLike = {
   articleId?: string;
   quantite?: number;
   unite?: string;
+  /** Montant total du bon (FCFA), utilisé pour déduire un prix unitaire. */
+  montantBon?: number;
   assignments?: Array<{
     clientOrderId: string;
     clientId?: string;
@@ -49,6 +53,40 @@ function normName(value?: string | null): string {
   return (value ?? '').trim().toLocaleLowerCase('fr');
 }
 
+/** Prix unitaire déduit du montant total du bon. */
+export function deriveBonPrixUnitaire(bon: Pick<TripBonLike, 'montantBon' | 'quantite'>): number | undefined {
+  const q = bon.quantite;
+  const m = bon.montantBon;
+  if (q == null || q <= 0 || m == null || m <= 0) return undefined;
+  return Math.round((m / q) * 100) / 100;
+}
+
+/** Montant ligne + prix effectif (saisie client, sinon déduit du bon). */
+export function resolveParticipantBilling(
+  participant: TripClientParticipant,
+  bon: Pick<TripBonLike, 'montantBon' | 'quantite'>,
+): { prixUnitaire?: number; montant?: number } {
+  const fromLine = participantLineMontant(participant);
+  if (fromLine != null && fromLine > 0) {
+    return {
+      prixUnitaire:
+        participant.prixUnitaire != null && participant.prixUnitaire > 0
+          ? participant.prixUnitaire
+          : undefined,
+      montant: fromLine,
+    };
+  }
+  const derivedPu = deriveBonPrixUnitaire(bon);
+  const qty = participant.quantite;
+  if (derivedPu != null && qty != null && qty > 0) {
+    return {
+      prixUnitaire: derivedPu,
+      montant: Math.round(derivedPu * qty),
+    };
+  }
+  return {};
+}
+
 /** Associe une affectation existante du bon à un participant trajet. */
 export function matchBonAssignmentToParticipant(
   assignment: NonNullable<TripBonLike['assignments']>[number],
@@ -77,6 +115,20 @@ export async function syncTripBonToClientAccounts(params: {
     return { orderIds: [], created: 0, updated: 0 };
   }
 
+  for (const p of activeParts) {
+    const billing = resolveParticipantBilling(p, bon);
+    if (billing.montant == null || billing.montant <= 0) {
+      throw new Error(
+        `Indique un prix unitaire (ou un montant bon) pour « ${p.libelle.trim()} » : sans montant, aucune facture n’est créée et le compte client ne bouge pas.`,
+      );
+    }
+    if (!p.tierId?.trim()) {
+      throw new Error(
+        `Choisis une fiche client pour « ${p.libelle.trim()} » (pas seulement un libellé) afin d’impacter son compte.`,
+      );
+    }
+  }
+
   const usedOrderIds = new Set<string>();
   const assignments: SupplierLoadingAssignmentPayload[] = [];
   let created = 0;
@@ -86,7 +138,7 @@ export async function syncTripBonToClientAccounts(params: {
     : 'Affectation via trajet — bon fournisseur';
 
   for (const p of activeParts) {
-    const montant = participantLineMontant(p);
+    const billing = resolveParticipantBilling(p, bon);
     const existingAssign = (bon.assignments ?? []).find(
       (a) =>
         !usedOrderIds.has(a.clientOrderId) && matchBonAssignmentToParticipant(a, p),
@@ -100,31 +152,24 @@ export async function syncTripBonToClientAccounts(params: {
         designation: bon.designation?.trim() || p.libelle.trim(),
         quantite: p.quantite,
         unite: bon.unite,
-        prixUnitaire:
-          p.prixUnitaire != null && p.prixUnitaire > 0 ? p.prixUnitaire : undefined,
-        montant: montant != null && montant > 0 ? montant : undefined,
+        prixUnitaire: billing.prixUnitaire,
+        montant: billing.montant,
         destination: p.lieuLivraison?.trim() || undefined,
         reference: p.sousReferenceBon?.trim() || undefined,
         notes: noteBase,
       });
       updated += 1;
     } else {
-      const tierId = p.tierId?.trim();
-      const isWalkIn = !tierId;
-      const clientFields = buildOrderClientFields(
-        isWalkIn,
-        isWalkIn ? undefined : tierId,
-        p.libelle.trim(),
-      );
+      const tierId = p.tierId!.trim();
+      const clientFields = buildOrderClientFields(false, tierId, p.libelle.trim());
       const order = await writers.createClientOrder({
         ...clientFields,
         articleId: sanitizeOptionalUuid(bon.articleId),
         designation: bon.designation?.trim() || p.libelle.trim(),
         quantite: p.quantite,
         unite: bon.unite,
-        prixUnitaire:
-          p.prixUnitaire != null && p.prixUnitaire > 0 ? p.prixUnitaire : undefined,
-        montant: montant != null && montant > 0 ? montant : undefined,
+        prixUnitaire: billing.prixUnitaire,
+        montant: billing.montant,
         statut: 'confirmee',
         dateCommande,
         destination: p.lieuLivraison?.trim() || undefined,
