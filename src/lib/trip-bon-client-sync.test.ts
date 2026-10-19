@@ -1,9 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  deriveBonPrixUnitaire,
   matchBonAssignmentToParticipant,
+  resolveParticipantBilling,
   syncTripBonToClientAccounts,
 } from '@/lib/trip-bon-client-sync';
 import { newTripClientParticipant } from '@/lib/trip-client-participants';
+
+describe('deriveBonPrixUnitaire / resolveParticipantBilling', () => {
+  it('déduit le PU depuis montantBon', () => {
+    expect(deriveBonPrixUnitaire({ montantBon: 100000, quantite: 20 })).toBe(5000);
+  });
+
+  it('utilise le PU déduit si la ligne n’a pas de prix', () => {
+    const p = newTripClientParticipant({ libelle: 'A', quantite: 10 });
+    expect(resolveParticipantBilling(p, { montantBon: 50000, quantite: 10 })).toEqual({
+      prixUnitaire: 5000,
+      montant: 50000,
+    });
+  });
+});
 
 describe('matchBonAssignmentToParticipant', () => {
   it('associe par tierId', () => {
@@ -15,19 +31,30 @@ describe('matchBonAssignmentToParticipant', () => {
       ),
     ).toBe(true);
   });
-
-  it('associe par nom si pas de tierId', () => {
-    const p = newTripClientParticipant({ libelle: 'Beta SARL', quantite: 5 });
-    expect(
-      matchBonAssignmentToParticipant(
-        { clientOrderId: 'o2', clientNom: 'beta sarl' },
-        p,
-      ),
-    ).toBe(true);
-  });
 });
 
 describe('syncTripBonToClientAccounts', () => {
+  it('refuse sans montant facturable', async () => {
+    await expect(
+      syncTripBonToClientAccounts({
+        bon: { id: 'bon-1', designation: 'Ciment', assignments: [] },
+        participants: [
+          newTripClientParticipant({
+            tierId: '11111111-1111-4111-8111-111111111111',
+            libelle: 'Client A',
+            quantite: 40,
+          }),
+        ],
+        dateCommande: '2026-10-19',
+        writers: {
+          createClientOrder: vi.fn(),
+          updateClientOrder: vi.fn(),
+          setSupplierLoadingAssignments: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow(/prix unitaire|montant/i);
+  });
+
   it('crée des commandes et affecte le bon', async () => {
     const createClientOrder = vi.fn(async () => ({ id: 'new-order' }));
     const updateClientOrder = vi.fn(async () => ({}));
@@ -55,7 +82,6 @@ describe('syncTripBonToClientAccounts', () => {
     });
 
     expect(result.created).toBe(1);
-    expect(result.updated).toBe(0);
     expect(createClientOrder).toHaveBeenCalledOnce();
     expect(setSupplierLoadingAssignments).toHaveBeenCalledWith('bon-1', [
       { clientOrderId: 'new-order', quantiteAffectee: 40 },

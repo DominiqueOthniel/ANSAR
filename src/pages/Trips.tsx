@@ -604,9 +604,23 @@ export default function Trips() {
             toast.error(`Indiquez la quantité pour « ${p.libelle.trim()} ».`);
             return;
           }
-          if (isAdmin && (p.prixUnitaire == null || p.prixUnitaire <= 0)) {
+          if (!p.tierId?.trim()) {
             toast.error(
-              `Le prix unitaire est obligatoire pour « ${p.libelle.trim()} » (compte administrateur).`,
+              `Choisis une fiche client pour « ${p.libelle.trim()} » afin d’impacter son compte.`,
+            );
+            return;
+          }
+          const hasPrix = p.prixUnitaire != null && p.prixUnitaire > 0;
+          const bonPu =
+            selectedBon?.montantBon != null &&
+            selectedBon.montantBon > 0 &&
+            selectedBon.quantite != null &&
+            selectedBon.quantite > 0
+              ? selectedBon.montantBon / selectedBon.quantite
+              : 0;
+          if (!hasPrix && bonPu <= 0) {
+            toast.error(
+              `Indique un prix unitaire pour « ${p.libelle.trim()} » (sinon aucune facture / encours client).`,
             );
             return;
           }
@@ -700,8 +714,10 @@ export default function Trips() {
               });
             } catch (linkErr) {
               console.error('link bon mission / compte client', linkErr);
-              toast.warning(
-                'Trajet enregistré, mais l’impact sur le compte client (commande / facture) a échoué. Vérifiez l’affectation du bon.',
+              toast.error(
+                linkErr instanceof Error
+                  ? linkErr.message
+                  : 'Trajet enregistré, mais l’impact compte client a échoué.',
               );
             }
           }
@@ -757,8 +773,10 @@ export default function Trips() {
             });
           } catch (linkErr) {
             console.error('link bon mission / compte client', linkErr);
-            toast.warning(
-              'Trajet créé, mais l’impact sur le compte client (commande / facture) a échoué. Vérifiez l’affectation du bon.',
+            toast.error(
+              linkErr instanceof Error
+                ? linkErr.message
+                : 'Trajet créé, mais l’impact compte client a échoué.',
             );
           }
         }
@@ -2012,7 +2030,7 @@ export default function Trips() {
                                 <div>
                                   <Label className="text-xs">
                                     Prix unitaire (FCFA)
-                                    {isAdmin ? ' *' : ' (optionnel)'}
+                                    {formData.supplierLoadingId ? ' *' : isAdmin ? ' *' : ' (optionnel)'}
                                   </Label>
                                   <NumberInput
                                     className="mt-1"
