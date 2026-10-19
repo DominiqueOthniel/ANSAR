@@ -410,26 +410,11 @@ export default function Trips() {
   };
 
   const addClientParticipantRow = () => {
-    const bon = formData.supplierLoadingId
-      ? supplierLoadings.find((l) => l.id === formData.supplierLoadingId)
-      : undefined;
-    const used = sumParticipantsQuantite(formData.clientParticipants);
-    const remaining =
-      bon?.quantite != null && bon.quantite > 0
-        ? Math.max(0, bon.quantite - used)
-        : undefined;
-    if (bon?.quantite != null && bon.quantite > 0 && remaining != null && remaining <= 1e-9) {
-      toast.error('Le bon est déjà entièrement redistribué.');
-      return;
-    }
+    // Ne pas préremplir la quantité avec le reste du bon : sinon le 1er client
+    // absorbe tout et bloque l’ajout des suivants. L’utilisateur saisit chaque part.
     setFormData((prev) => ({
       ...prev,
-      clientParticipants: [
-        ...prev.clientParticipants,
-        newTripClientParticipant({
-          quantite: remaining != null && remaining > 0 ? remaining : undefined,
-        }),
-      ],
+      clientParticipants: [...prev.clientParticipants, newTripClientParticipant()],
     }));
   };
 
@@ -1968,7 +1953,6 @@ export default function Trips() {
                       variant="secondary"
                       size="sm"
                       onClick={addClientParticipantRow}
-                      disabled={bonQtyRemaining != null && bonQtyRemaining <= 1e-9}
                     >
                       <Plus className="h-4 w-4 mr-1 shrink-0" />
                       Ajouter un client
@@ -1977,7 +1961,8 @@ export default function Trips() {
 
                   {formData.clientParticipants.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      Redistribuez toute la quantité du bon aux clients avant d’enregistrer la mission.
+                      Ajoutez les clients puis indiquez la quantité de chacun — le total doit
+                      égaler le bon avant d’enregistrer la mission.
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -2054,13 +2039,29 @@ export default function Trips() {
                                   <NumberInput
                                     className="mt-1"
                                     min={0}
-                                    value={p.quantite ?? 0}
+                                    allowEmpty
+                                    max={
+                                      selectedBonForForm?.quantite != null &&
+                                      selectedBonForForm.quantite > 0
+                                        ? Math.max(
+                                            0,
+                                            selectedBonForForm.quantite -
+                                              sumParticipantsQuantite(
+                                                formData.clientParticipants.filter(
+                                                  (x) => x.id !== p.id,
+                                                ),
+                                              ),
+                                          )
+                                        : undefined
+                                    }
+                                    value={p.quantite}
                                     onChange={(value) =>
                                       patchParticipant(index, {
-                                        quantite: value > 0 ? value : undefined,
+                                        quantite:
+                                          value != null && value > 0 ? value : undefined,
                                       })
                                     }
-                                    placeholder="0"
+                                    placeholder="Part du bon"
                                   />
                                 </div>
                                 <div>

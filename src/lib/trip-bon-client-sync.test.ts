@@ -88,6 +88,52 @@ describe('syncTripBonToClientAccounts', () => {
     ]);
   });
 
+  it('répartit le bon sur plusieurs clients (quantités distinctes)', async () => {
+    let orderSeq = 0;
+    const createClientOrder = vi.fn(async () => {
+      orderSeq += 1;
+      return { id: `ord-${orderSeq}` };
+    });
+    const updateClientOrder = vi.fn(async () => ({}));
+    const setSupplierLoadingAssignments = vi.fn(async () => ({}));
+
+    const result = await syncTripBonToClientAccounts({
+      bon: {
+        id: 'bon-multi',
+        numeroBon: 'B-MULTI',
+        designation: 'Ciment',
+        quantite: 100,
+        unite: 'sacs',
+        montantBon: 500000,
+        assignments: [],
+      },
+      participants: [
+        newTripClientParticipant({
+          tierId: '11111111-1111-4111-8111-111111111111',
+          libelle: 'Client A',
+          quantite: 40,
+          prixUnitaire: 5000,
+        }),
+        newTripClientParticipant({
+          tierId: '22222222-2222-4222-8222-222222222222',
+          libelle: 'Client B',
+          quantite: 60,
+          prixUnitaire: 5000,
+        }),
+      ],
+      dateCommande: '2026-10-19',
+      writers: { createClientOrder, updateClientOrder, setSupplierLoadingAssignments },
+    });
+
+    expect(result.created).toBe(2);
+    expect(result.orderIds).toEqual(['ord-1', 'ord-2']);
+    expect(createClientOrder).toHaveBeenCalledTimes(2);
+    expect(setSupplierLoadingAssignments).toHaveBeenCalledWith('bon-multi', [
+      { clientOrderId: 'ord-1', quantiteAffectee: 40 },
+      { clientOrderId: 'ord-2', quantiteAffectee: 60 },
+    ]);
+  });
+
   it('réutilise la commande déjà affectée au même client', async () => {
     const createClientOrder = vi.fn(async () => ({ id: 'should-not' }));
     const updateClientOrder = vi.fn(async () => ({}));
