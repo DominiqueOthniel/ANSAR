@@ -32,6 +32,10 @@ export interface TripClientParticipantPersisted {
   tierId?: string;
   libelle: string;
   montantAttribue?: number;
+  prixUnitaire?: number;
+  quantite?: number;
+  lieuLivraison?: string;
+  sousReferenceBon?: string;
 }
 
 @Entity('trips')
@@ -117,6 +121,10 @@ export class Trip {
   /** `id` d’une entrée de `clientParticipants` : client désigné pour le règlement / facture par défaut. */
   @Column({ type: 'varchar', length: 36, nullable: true })
   payeurParticipantId?: string | null;
+
+  /** Bon de chargement fournisseur lié à la mission (redistribution clients). */
+  @Column({ type: 'uuid', nullable: true })
+  supplierLoadingId?: string | null;
 
   @ManyToOne(() => Truck, { nullable: true })
   @JoinColumn({ name: 'tracteurId' })

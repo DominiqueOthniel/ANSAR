@@ -48,6 +48,7 @@ import {
   sumParticipantsQuantite,
 } from '@/lib/trip-client-participants';
 import type { TripClientParticipant } from '@/lib/trip-client-participants';
+import { syncTripBonToClientAccounts } from '@/lib/trip-bon-client-sync';
 import { formatTripCode } from '@/lib/trip-display';
 import {
   filterActivityNearDate,
@@ -197,6 +198,9 @@ export default function Trips() {
     deleteTrip,
     createExpense,
     updateSupplierLoading,
+    createClientOrder,
+    updateClientOrder,
+    setSupplierLoadingAssignments,
     createMerchandiseQuality,
     updateMerchandiseQuality,
     deleteMerchandiseQuality,
@@ -677,15 +681,28 @@ export default function Trips() {
             clientParticipants: cpPayload,
             payeurParticipantId: payeurPayload,
           });
-          if (formData.supplierLoadingId) {
+          if (formData.supplierLoadingId && selectedBon) {
             const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
             try {
               await updateSupplierLoading(formData.supplierLoadingId, {
                 ...(camionId ? { camionId } : {}),
                 statut: 'affecte',
               });
+              await syncTripBonToClientAccounts({
+                bon: selectedBon,
+                participants: participantsLint,
+                dateCommande: formData.dateDepart,
+                writers: {
+                  createClientOrder,
+                  updateClientOrder,
+                  setSupplierLoadingAssignments,
+                },
+              });
             } catch (linkErr) {
-              console.error('link bon mission', linkErr);
+              console.error('link bon mission / compte client', linkErr);
+              toast.warning(
+                'Trajet enregistré, mais l’impact sur le compte client (commande / facture) a échoué. Vérifiez l’affectation du bon.',
+              );
             }
           }
           toast.success('Trajet mis à jour');
@@ -721,17 +738,31 @@ export default function Trips() {
           clientParticipants: cpPayload.length ? cpPayload : undefined,
           payeurParticipantId: payeurPayload,
         });
-        if (formData.supplierLoadingId) {
+        if (formData.supplierLoadingId && selectedBon) {
           const camionId = formData.tracteurId || formData.remorqueuseId || undefined;
           try {
             await updateSupplierLoading(formData.supplierLoadingId, {
               ...(camionId ? { camionId } : {}),
               statut: 'affecte',
             });
+            await syncTripBonToClientAccounts({
+              bon: selectedBon,
+              participants: participantsLint,
+              dateCommande: formData.dateDepart,
+              writers: {
+                createClientOrder,
+                updateClientOrder,
+                setSupplierLoadingAssignments,
+              },
+            });
           } catch (linkErr) {
-            console.error('link bon mission', linkErr);
+            console.error('link bon mission / compte client', linkErr);
+            toast.warning(
+              'Trajet créé, mais l’impact sur le compte client (commande / facture) a échoué. Vérifiez l’affectation du bon.',
+            );
           }
-        }        if (formData.prefinancement > 0) {
+        }
+        if (formData.prefinancement > 0) {
           try {
             await createExpense({
               camionId: formData.tracteurId || formData.remorqueuseId || undefined,
@@ -2142,8 +2173,8 @@ export default function Trips() {
             marchandises (bon → affectation → livraison → facture commande).{' '}
             <strong className="text-foreground">Trajets</strong> gère la mission flotte : quel
             camion, quel chauffeur, quelles dates, préfinancement, dépenses et facture transport.
-            Les deux se croisent sur le même véhicule : la mission affiche l’activité client déjà
-            rattachée au camion pour éviter le double emploi.
+            Si un bon est redistribué à des clients sur le trajet, les commandes / factures
+            correspondantes sont créées ou mises à jour pour impacter le compte client.
           </p>
         </CardContent>
       </Card>
