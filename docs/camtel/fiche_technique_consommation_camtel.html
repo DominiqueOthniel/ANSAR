@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fiche technique et consommation — LCCA SARL / CAMTEL</title>
+  <style>
+    @page { size: A4; margin: 12mm 12mm 14mm 12mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 10pt;
+      line-height: 1.32;
+      color: #111;
+      background: #fff;
+    }
+    .sheet { max-width: 190mm; margin: 0 auto; }
+    h1 {
+      font-size: 12.5pt;
+      margin: 0 0 3px;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 9.5pt;
+      margin: 0 0 10px;
+      color: #222;
+    }
+    .letterhead {
+      border-bottom: 2px solid #111;
+      padding-bottom: 7px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { font-weight: 700; font-size: 11.5pt; }
+    .meta { font-size: 9pt; color: #222; line-height: 1.3; }
+    h2 {
+      font-size: 10.5pt;
+      margin: 11px 0 5px;
+      border-bottom: 1px solid #999;
+      padding-bottom: 2px;
+    }
+    p { margin: 0 0 6px; text-align: justify; }
+    ul { margin: 2px 0 6px 18px; padding: 0; }
+    li { margin: 1px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4px 0 8px;
+      font-size: 9.5pt;
+    }
+    th, td {
+      border: 1px solid #888;
+      padding: 3px 5px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f0f0f0;
+      font-weight: 700;
+      width: 32%;
+    }
+    .note {
+      font-size: 8.5pt;
+      color: #333;
+      margin-top: 4px;
+    }
+    .footer {
+      margin-top: 12px;
+      font-size: 8.5pt;
+      border-top: 1px solid #bbb;
+      padding-top: 5px;
+    }
+    .sig {
+      margin-top: 14px;
+      width: 50%;
+      margin-left: auto;
+      text-align: center;
+    }
+    .sig .space { height: 22px; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="letterhead">
+      <div>
+        <div class="brand">LCCA SARL</div>
+        <div class="meta">
+          LIDAF CONSULTING COORPORATION OF AFRICA<br />
+          NIU : M052318293081H · RCCM : RC/DLA/2023/B/3599<br />
+          Douala · Tél. : 695 258 918 / 674 574 133
+        </div>
+      </div>
+      <div class="meta" style="text-align:right">
+        Document à l’attention de<br />
+        <strong>CAMTEL</strong><br />
+        Douala<br />
+        20 octobre 2026
+      </div>
+    </div>
+
+    <h1>Fiche technique et consommation</h1>
+    <p class="subtitle">
+      Demande d’offre VPS — processeur, RAM et stockage utilisés (mesures)
+    </p>
+
+    <h2>1. Objet</h2>
+    <p>
+      La présente fiche décrit le projet logiciel de <strong>LCCA SARL</strong> et la
+      <strong>consommation réelle observée</strong> (processeur, mémoire RAM, stockage)
+      de la stack applicative, afin de permettre à CAMTEL de proposer une offre
+      <strong>VPS</strong> adaptée.
+    </p>
+
+    <h2>2. Présentation du projet</h2>
+    <table>
+      <tr><th>Client / Porteur</th><td>LCCA SARL (LIDAF CONSULTING COORPORATION OF AFRICA)</td></tr>
+      <tr><th>Nature du projet</th><td>Applications web métier de gestion (flotte, opérations, caisse, facturation, tiers, etc.)</td></tr>
+      <tr><th>Périmètre</th><td>Plusieurs entreprises / instances sur le même serveur (données séparées)</td></tr>
+      <tr><th>Usage</th><td>Outil de travail quotidien (bureau / terrain), accès navigateur web</td></tr>
+      <tr><th>Disponibilité souhaitée</th><td>7 j / 7, principalement heures ouvrées + accès ponctuel hors horaires</td></tr>
+      <tr><th>Localisation utilisateurs</th><td>Cameroun (principalement Douala et axes opérationnels)</td></tr>
+    </table>
+
+    <h2>3. Architecture technique</h2>
+    <table>
+      <tr><th>Type d’application</th><td>Application web (SPA) + API REST</td></tr>
+      <tr><th>Frontend</th><td>React / TypeScript (Vite), fichiers statiques servis par Nginx</td></tr>
+      <tr><th>Backend / API</th><td>Node.js 20 (NestJS), port HTTP 3000 (reverse-proxy 80/443)</td></tr>
+      <tr><th>Base de données</th><td>PostgreSQL 16</td></tr>
+      <tr><th>Système d’exploitation souhaité</th><td>Linux Ubuntu LTS (22.04 ou 24.04)</td></tr>
+      <tr><th>Composants sur le VPS</th><td>Nginx + API Node + PostgreSQL (+ éventuellement plusieurs instances)</td></tr>
+    </table>
+
+    <h2>4. Consommation mesurée (used so far)</h2>
+    <p>
+      Mesures réalisées le <strong>20 octobre 2026</strong> sur la stack Docker de production
+      (Nginx + API Nest + PostgreSQL 16), au repos puis avec appels santé HTTP.
+      Une instance applicative = un front + une API + une base.
+    </p>
+    <table>
+      <tr>
+        <th>Ressource</th>
+        <td><strong>Consommation observée (1 instance)</strong></td>
+      </tr>
+      <tr>
+        <th>Processeur (CPU)</th>
+        <td>
+          Au repos : &lt; 5&nbsp;% d’un vCPU pour l’API ; PostgreSQL ≈ 0&nbsp;% ; Nginx ≈ 0&nbsp;%.<br />
+          Au démarrage / pics légers : API jusqu’à ≈ 30&nbsp;% d’un vCPU (courte durée).<br />
+          Profil métier : charge faible à modérée (JSON / pages web, pas de calcul intensif).
+        </td>
+      </tr>
+      <tr>
+        <th>Mémoire RAM</th>
+        <td>
+          API Node (processus) : ≈ <strong>95–130&nbsp;Mo</strong> (repos → après requêtes).<br />
+          PostgreSQL : ≈ <strong>35–40&nbsp;Mo</strong> au repos.<br />
+          Nginx (front) : ≈ <strong>4–5&nbsp;Mo</strong>.<br />
+          <strong>Total observé ≈ 140–175&nbsp;Mo</strong> pour 1 instance complète au repos / usage léger.
+        </td>
+      </tr>
+      <tr>
+        <th>Stockage disque</th>
+        <td>
+          Images Docker (empreinte installée) :<br />
+          — API : ≈ 588&nbsp;Mo · Front/Nginx : ≈ 77&nbsp;Mo · PostgreSQL 16 : ≈ 420&nbsp;Mo<br />
+          → <strong>≈ 1,1&nbsp;Go</strong> pour les images de la stack.<br />
+          Données métier (base synchronisée, schéma + tables vides) : ≈ <strong>8&nbsp;Mo</strong>
+          (volume Postgres ≈ 47&nbsp;Mo avec fichiers système).<br />
+          Fichiers front (build) : ≈ 2,7&nbsp;Mo.
+        </td>
+      </tr>
+    </table>
+    <p class="note">
+      Ces chiffres correspondent à la consommation <em>actuelle</em> de l’application (empreinte
+      réelle mesurée). La croissance des données métier, des logs et le nombre d’entreprises
+      hébergées feront évoluer surtout le stockage et, dans une moindre mesure, la RAM.
+      Le dimensionnement commercial du VPS reste à la proposition de CAMTEL.
+    </p>
+
+    <h2>5. Estimation de charge (évolution)</h2>
+    <table>
+      <tr><th>Nombre d’entreprises hébergées</th><td>2 à 5 instances au démarrage (évolutif)</td></tr>
+      <tr><th>Utilisateurs simultanés</th><td>10 à 30 sessions actives en moyenne ; pics jusqu’à ~50</td></tr>
+      <tr><th>Utilisateurs nominaux</th><td>Environ 20 à 80 comptes au total selon déploiement</td></tr>
+      <tr><th>Profil de trafic</th><td>API JSON + pages web ; pics modérés aux heures de bureau</td></tr>
+      <tr><th>Projection RAM (ordre de grandeur)</th><td>≈ 0,2&nbsp;Go × nombre d’instances + marge OS / cache</td></tr>
+      <tr><th>Projection stockage</th><td>Images ≈ 1,1&nbsp;Go + données métier (croissance progressive) + sauvegardes</td></tr>
+      <tr><th>Bande passante</th><td>Usage métier classique ; pas de streaming vidéo</td></tr>
+    </table>
+
+    <h2>6. Modules métier principaux</h2>
+    <ul>
+      <li>Gestion flotte (camions), chauffeurs, trajets / missions</li>
+      <li>Caisse, banque, crédits, dépenses</li>
+      <li>Facturation, clients / tiers, fournisseurs et chargements</li>
+      <li>Opérations (TJK, Camrail, dépôt, articles, audit)</li>
+      <li>Exports PDF / Excel et pièces jointes légères (photos véhicules)</li>
+    </ul>
+
+    <h2>7. Services attendus de CAMTEL</h2>
+    <ul>
+      <li>Proposition d’une offre VPS adaptée à la consommation mesurée et à la charge prévue</li>
+      <li>Mise à disposition d’un VPS Linux (Ubuntu LTS) avec accès root / SSH</li>
+      <li>IP publique et connectivité Internet stable</li>
+      <li>Ports HTTP/HTTPS (80/443) et SSH (22)</li>
+      <li>Option sauvegarde / snapshot si disponible</li>
+      <li>Accompagnement mise en service et communication du SLA / délais</li>
+    </ul>
+
+    <h2>8. Points hors périmètre immédiat</h2>
+    <ul>
+      <li>Pas de besoin de messagerie (mail serveur) sur ce VPS au démarrage</li>
+      <li>Pas de besoin de GPU / calcul haute performance</li>
+      <li>Pas de trafic multimédia lourd (vidéo)</li>
+    </ul>
+
+    <div class="footer">
+      Document établi pour instruction du dossier d’offre VPS auprès de CAMTEL.
+      Mesures de consommation (CPU / RAM / stockage) réalisées le 20 octobre 2026 sur la stack
+      Docker Nginx + NestJS + PostgreSQL 16.
+    </div>
+
+    <div class="sig">
+      <div>Pour LCCA SARL</div>
+      <div class="space"></div>
+      <div><strong>Le Gérant</strong></div>
+    </div>
+  </div>
+</body>
+</html>
