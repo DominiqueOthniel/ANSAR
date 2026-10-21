@@ -158,7 +158,8 @@ export interface TripPayload {
   statut: 'planifie' | 'en_cours' | 'termine' | 'annule';
   stops?: TripStopPayload[];
   clientParticipants?: TripClientParticipant[];
-  payeurParticipantId?: string;
+  /** Vide / omis = aucun payeur désigné (y compris multi-clients). */
+  payeurParticipantId?: string | null;
   /** Bon de chargement (supplier_loadings) lié à la mission. */
   supplierLoadingId?: string | null;
 }

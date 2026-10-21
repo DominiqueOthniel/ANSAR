@@ -35,7 +35,7 @@ export function sumInvoicePaymentSlices(slices: InvoicePaymentEncaissement[]): n
   return slices.reduce((s, x) => s + x.montant, 0);
 }
 
-/** Plusieurs clients sur le trajet : proposer le payeur pour chaque encaissement. */
+/** Plusieurs clients sur le trajet (utilitaire ; plus d’obligation de choisir un payeur). */
 export function tripHasMultipleInvoicePayers(
   trip: { clientParticipants?: { id: string; libelle?: string }[] } | undefined,
 ): boolean {
@@ -102,7 +102,7 @@ export function mergeTripInvoicePaymentSlices(args: {
   };
   trip: { clientParticipants?: TripClientParticipant[]; payeurParticipantId?: string } | undefined;
   additionalAmount: number;
-  /** Obligatoire si ≥ 2 participants sur le trajet : id du participant payeur. */
+  /** Optionnel : id du participant payeur (sinon défaut automatique). */
   payerParticipantId?: string;
   thirdParties: { id: string; nom: string }[];
 }): { paiementsEncaissements: InvoicePaymentEncaissement[]; payerDescription: string; payerClientTierId?: string } {
