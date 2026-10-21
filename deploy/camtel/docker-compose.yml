@@ -31,6 +31,11 @@ services:
       DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-false}
     networks:
       - ansar
+    # Avec profile with-db : attendre Postgres avant le healthcheck API.
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
       interval: 30s

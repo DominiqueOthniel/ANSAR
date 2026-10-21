@@ -62,9 +62,19 @@ function buildTypeOrmOptions(): TypeOrmModuleOptions {
     database: process.env.DATABASE_URL
       ? undefined
       : process.env.DB_DATABASE || 'truck_track',
-    ssl: process.env.DATABASE_URL
-      ? { rejectUnauthorized: false }
-      : false,
+    // Supabase exige SSL ; Postgres Docker local (`@db:`) ou sslmode=disable : sans SSL.
+    ssl: (() => {
+      const url = process.env.DATABASE_URL?.trim();
+      if (!url) return false;
+      if (
+        process.env.DB_SSL === 'false' ||
+        /(?:^|[?&])sslmode=disable(?:&|$)/i.test(url) ||
+        /@db(?::\d+)?\//i.test(url)
+      ) {
+        return false;
+      }
+      return { rejectUnauthorized: false };
+    })(),
     extra: process.env.DATABASE_URL
       ? { connectionTimeoutMillis: 20000 }
       : undefined,
