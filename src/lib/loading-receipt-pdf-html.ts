@@ -174,7 +174,7 @@ export function buildLoadingReceiptPdfInnerHtml(opts: {
 
       <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:24px;">
         <div style="padding-top:28px;border-top:1px solid ${S.border};text-align:center;font-size:7.5pt;color:${S.muted};">Signature fournisseur</div>
-        <div style="padding-top:28px;border-top:1px solid ${S.border};text-align:center;font-size:7.5pt;color:${S.muted};">Signature ANSA'R</div>
+        <div style="padding-top:28px;border-top:1px solid ${S.border};text-align:center;font-size:7.5pt;color:${S.muted};">Signature ${COMPANY_NAME}</div>
       </div>
 
       <p style="margin:14px 0 0;text-align:center;font-size:7pt;color:#94a3b8;">Document généré le ${escapePdfHtml(formatPdfDateTime())} — reçu de bon de chargement</p>

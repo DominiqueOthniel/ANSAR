@@ -2,7 +2,7 @@
 # Le service API est dans le dossier backend.
 services:
   - type: web
-    name: truck-track-api
+    name: sia-ansar-api
     runtime: node
     region: frankfurt
     plan: free

@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { BRAND_NAME } from '@/lib/brand';
 
-/** Logo entreprise ANSA'R sarl — fichier servi depuis `public/logo-ansar.png`. */
+/** Logo SIA-ANSAR — fichier servi depuis `public/logo-ansar.png`. */
 export const APP_LOGO_SRC = `${import.meta.env.BASE_URL}logo-ansar.png`;
 
 type AppLogoVariant = 'login' | 'sidebar' | 'header' | 'compact' | 'hero';
@@ -61,7 +62,7 @@ const variantConfig: Record<
 export function AppLogo({
   variant = 'sidebar',
   className,
-  alt = 'ANSA\'R sarl',
+  alt = BRAND_NAME,
 }: {
   variant?: AppLogoVariant;
   className?: string;
