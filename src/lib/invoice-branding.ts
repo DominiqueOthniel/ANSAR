@@ -4,8 +4,8 @@
 
 import { BRAND_NAME } from '@/lib/brand';
 
-/** Raison sociale affichée sur les documents (logo ANSA'R). */
-export const COMPANY_NAME = "ANSA'R sarl";
+/** Raison sociale / marque affichée sur les documents. */
+export const COMPANY_NAME = BRAND_NAME;
 
 export const COMPANY_TAGLINE = 'Transport · Prestation de services · Commerce général';
 

@@ -32,6 +32,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppLogo } from '@/components/AppLogo';
+import { BRAND_NAME } from '@/lib/brand';
 
 const SIDEBAR_HIDDEN_KEY = 'truck_track_sidebar_desktop_hidden';
 
@@ -340,7 +341,7 @@ function SidebarContent({
         <div className="flex items-center gap-2.5 min-w-0">
           <AppLogo variant="sidebar" />
           <div className="min-w-0">
-            <p className="font-bold text-sm text-sidebar-foreground leading-none truncate">SIA-ANSAR</p>
+            <p className="font-bold text-sm text-sidebar-foreground leading-none truncate">{BRAND_NAME}</p>
             <p className="text-[10px] text-sidebar-foreground/40 leading-none mt-0.5">Gestion de flotte</p>
           </div>
         </div>
@@ -407,7 +408,7 @@ function SidebarContent({
           Déconnexion
         </button>
         <p className="text-center text-[10px] text-sidebar-foreground/25 mt-3">
-          © {new Date().getFullYear()} SIA-ANSAR
+          © {new Date().getFullYear()} {BRAND_NAME}
         </p>
       </div>
     </div>
