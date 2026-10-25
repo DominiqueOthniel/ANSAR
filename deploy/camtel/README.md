@@ -1,26 +1,40 @@
-# SIA-ANSAR — déploiement Docker sur VPS Camtel
+# SIA-ANSAR — Camtel (hybride) & Docker
 
-## Architecture
+## Architecture cible : hybride
+
+**Décision produit (oct. 2026)** : stockage des données chez **CAMTEL**, hébergement applicatif **ailleurs**.
 
 ```
-Internet
-   │
-   ▼
+Utilisateurs
+    │
+    ▼
 ┌──────────────────────────────┐
-│  web (Nginx :80)             │
-│  /        → React (SPA)      │
-│  /api/*   → proxy → api      │
+│  Hébergeur externe           │  ← front (SPA) + API Nest
+│  (Netlify / autre)           │
 └────────────┬─────────────────┘
-             │
+             │  DATABASE_URL (TLS)
              ▼
 ┌──────────────────────────────┐
-│  api (NestJS :3000)          │
-└────────────┬─────────────────┘
-             │
-      ┌──────┴───────┐
-      ▼              ▼
-  Supabase       Postgres Docker
-  (externe)      (profile with-db)
+│  CAMTEL — stockage           │  ← PostgreSQL (+ fichiers / backups)
+│  hosting.camtel.cm           │
+└──────────────────────────────┘
+```
+
+| Couche | Où | Rôle |
+|--------|----|------|
+| Front + API | Hors Camtel | Application web métier |
+| Base / fichiers | **Camtel** | PostgreSQL 16, pièces jointes, sauvegardes |
+
+Fiche demande d’offre : `docs/camtel/fiche_hybride_stockage_camtel.pdf`.
+
+---
+
+## Option alternative : stack Docker complète sur VPS Camtel
+
+Si un jour tout tourne chez Camtel (non hybride) :
+
+```
+Internet → Nginx (web) → API Nest → Postgres (Camtel ou profile with-db)
 ```
 
 | Service | Rôle |
@@ -29,12 +43,12 @@ Internet
 | `api` | API NestJS (même code que `backend/`) |
 | `db` | Postgres 16 optionnel (`--profile with-db`) |
 
-## Prérequis VPS Camtel
+## Prérequis (si VPS applicatif Camtel)
 
 - Ubuntu / Debian
 - Docker Engine + plugin Compose v2
 - Ports **80** (et 443 plus tard pour HTTPS) ouverts
-- Forfait recommandé : **CB VPS S** (4 Go) ou **M**
+- Forfait : selon offre Camtel (catalogue [hosting.camtel.cm](https://hosting.camtel.cm/#services))
 
 Installation Docker (exemple Ubuntu) :
 
