@@ -631,14 +631,16 @@ export default function Chargements() {
         cap = Math.max(0, assignLoading.quantite - others);
       }
       if (cap != null && cap <= 0) {
-        toast.error('Quantité du bon entièrement répartie.');
+        toast.error('Quantité du bon entièrement répartie — réduisez une affectation existante.');
         return prev;
       }
+      // Ne pas verser tout le reste du bon sur la 1re commande sans quantité :
+      // chaque ligne doit recevoir sa propre part (saisie ou qty commande).
       const defaultQty =
-        cap != null
-          ? order.quantite != null && order.quantite > 0
+        order.quantite != null && order.quantite > 0
+          ? cap != null
             ? Math.min(order.quantite, cap)
-            : cap
+            : order.quantite
           : undefined;
       return [...prev, { clientOrderId: orderId, quantiteAffectee: defaultQty }];
     });
