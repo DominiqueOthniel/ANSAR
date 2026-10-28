@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture hybride — stockage CAMTEL / hébergement externe — LCCA SARL</title>
+  <style>
+    @page { size: A4; margin: 15mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 10.5pt;
+      line-height: 1.32;
+      color: #111;
+      background: #fff;
+    }
+    .sheet { max-width: 180mm; margin: 0 auto; }
+    .letterhead {
+      border-bottom: 2px solid #111;
+      padding-bottom: 7px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { font-weight: 700; font-size: 12.5pt; }
+    .meta { font-size: 9pt; color: #222; line-height: 1.3; }
+    h1 {
+      font-size: 12.5pt;
+      margin: 0 0 4px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 10pt;
+      margin: 0 0 12px;
+    }
+    h2 {
+      font-size: 10.5pt;
+      margin: 10px 0 4px;
+      border-bottom: 1px solid #999;
+      padding-bottom: 1px;
+    }
+    p { margin: 0 0 6px; text-align: justify; }
+    ul { margin: 2px 0 6px 18px; padding: 0; }
+    li { margin: 1px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 6px 0 8px;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1px solid #666;
+      padding: 5px 7px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f0f0f0;
+      font-weight: 700;
+      width: 30%;
+    }
+    .note { font-size: 9pt; color: #333; }
+    .footer {
+      margin-top: 14px;
+      font-size: 8.5pt;
+      border-top: 1px solid #bbb;
+      padding-top: 6px;
+    }
+    .sig {
+      margin-top: 18px;
+      width: 48%;
+      margin-left: auto;
+      text-align: center;
+    }
+    .sig .space { height: 28px; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="letterhead">
+      <div>
+        <div class="brand">LCCA SARL</div>
+        <div class="meta">
+          LIDAF CONSULTING COORPORATION OF AFRICA<br />
+          NIU : M052318293081H · RCCM : RC/DLA/2023/B/3599<br />
+          Douala · Tél. : 695 258 918 / 674 574 133
+        </div>
+      </div>
+      <div class="meta" style="text-align:right">
+        Document à l’attention de<br />
+        <strong>CAMTEL Hosting</strong><br />
+        hosting.camtel.cm<br />
+        25 octobre 2026
+      </div>
+    </div>
+
+    <h1>Demande d’offre — architecture hybride</h1>
+    <p class="subtitle">
+      Stockage des données chez CAMTEL · Hébergement applicatif ailleurs
+    </p>
+
+    <h2>1. Objet</h2>
+    <p>
+      LCCA SARL souhaite une architecture <strong>hybride</strong> :
+      le <strong>stockage des données</strong> (base PostgreSQL et fichiers)
+      chez CAMTEL, et l’<strong>hébergement de l’application</strong>
+      (site web + API) sur une infrastructure externe déjà en place.
+      Nous ne sollicitons pas un VPS applicatif complet auprès de CAMTEL.
+    </p>
+
+    <h2>2. Répartition souhaitée</h2>
+    <table>
+      <tr>
+        <th>Chez CAMTEL (stockage)</th>
+        <td>
+          Base de données PostgreSQL 16<br />
+          Fichiers / pièces jointes légères (exports, photos)<br />
+          Sauvegardes des données si disponible
+        </td>
+      </tr>
+      <tr>
+        <th>Ailleurs (hébergement app)</th>
+        <td>
+          Frontend web (SPA React)<br />
+          API métier (Node.js / NestJS)<br />
+          Accès utilisateurs via HTTPS
+        </td>
+      </tr>
+    </table>
+
+    <h2>3. Volume de stockage (référence)</h2>
+    <table>
+      <tr>
+        <th>Empreinte actuelle</th>
+        <td>
+          Schéma / données métier : ≈ 8–50&nbsp;Mo au démarrage<br />
+          Croissance progressive (multi-entreprises)
+        </td>
+      </tr>
+      <tr>
+        <th>Besoin demandé</th>
+        <td>
+          Espace de stockage utile de l’ordre de <strong>50 à 100&nbsp;Go</strong>
+          (marge croissance + sauvegardes), accessible en réseau
+          depuis l’hébergeur applicatif externe (IP autorisées / VPN / TLS).
+        </td>
+      </tr>
+      <tr>
+        <th>Accès technique</th>
+        <td>
+          Connexion distante sécurisée à PostgreSQL (port dédié, SSL)<br />
+          et/ou volume / partage de fichiers si proposé par CAMTEL
+        </td>
+      </tr>
+    </table>
+
+    <h2>4. Offre attendue de CAMTEL</h2>
+    <ul>
+      <li>Proposition d’une offre <strong>orientée stockage / données</strong>
+          (pas d’hébergement web complet requis)</li>
+      <li>PostgreSQL managé ou VPS minimal dédié base + disque, selon catalogue
+          (réf. hosting.camtel.cm)</li>
+      <li>Option sauvegarde / snapshot des données</li>
+      <li>IP, accès réseau et consignes de sécurisation (firewall, VPN)</li>
+      <li>Tarif mensuel / annuel et délais de mise en service</li>
+    </ul>
+
+    <p class="note">
+      Source catalogue consultée : https://hosting.camtel.cm/#services
+      (VPS, stockage additionnel, Data Backups). Le dimensionnement commercial
+      exact reste à la proposition de CAMTEL.
+    </p>
+
+    <div class="footer">
+      LCCA SARL — demande d’offre hybride : stockage CAMTEL / application hébergée ailleurs.
+    </div>
+
+    <div class="sig">
+      <div>Pour LCCA SARL</div>
+      <div class="space"></div>
+      <div><strong>Le Gérant</strong></div>
+    </div>
+  </div>
+</body>
+</html>
