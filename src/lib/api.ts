@@ -411,10 +411,20 @@ export const depotGarouaBoulaiApi = {
   delete: (id: string) => request<void>(`/depot-garoua-boulai/${id}`, { method: 'DELETE' }),
 };
 
+export interface TjkClientSharePayload {
+  id?: string;
+  clientId?: string | null;
+  clientNom?: string;
+  quantite?: number | null;
+  montant?: number | null;
+}
+
 export interface TjkOperationPayload {
   date: string;
   clientId?: string | null;
   clientNom?: string;
+  /** Ventilation multi-clients (quantités / montants). */
+  clientShares?: TjkClientSharePayload[] | null;
   quantite: number;
   unite?: string;
   qualite?: string;

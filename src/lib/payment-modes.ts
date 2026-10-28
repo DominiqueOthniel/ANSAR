@@ -34,6 +34,7 @@ export const ANSAR_BANQUES = [
   'Crédit du Sahel',
   'Express Exchange',
   'SGC',
+  'SCB',
 ] as const;
 export type AnsarBanque = (typeof ANSAR_BANQUES)[number];
 
