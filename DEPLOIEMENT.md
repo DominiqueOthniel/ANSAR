@@ -39,7 +39,9 @@ Cause habituelle : SPA React Router sans rewrite vers `index.html` (racine `/` O
 
 ### Si la page `/login` s’affiche mais la connexion échoue
 
-Souvent `/api/*` est avalé par le rewrite SPA (réponse HTML au lieu de JSON). Vérifier `https://TON-PROJET.vercel.app/api/health` → JSON avec `"runtime":"vercel"`. Si c’est du HTML, le rewrite doit exclure `/api` (déjà le cas dans `vercel.json`). Vérifier aussi les variables `DATABASE_URL` et `FRONTEND_URL` sur le projet Vercel.
+1. `https://TON-PROJET.vercel.app/api/health` doit renvoyer du JSON `"runtime":"vercel"` (pas du HTML).
+2. `POST /api/auth/login` et les routes multi-segments (`/api/users/…`, `/api/caisse/…`) passent par un rewrite ` /api/(.*) → /api ` vers `api/index.js` (hors Next.js, Vercel ne gère pas `[...path]` multi-segments).
+3. Variables **sur le projet Vercel** `sia-ansar` (pas Netlify) : `DATABASE_URL` (Supabase pooler 6543), `FRONTEND_URL`, `VITE_API_URL=same`.
 
 ### Deux URLs `*.vercel.app` (ex. ansar-roan et sia-ansar)
 
