@@ -33,12 +33,17 @@ async function handleLocal(method, path, event, origin) {
   const p = qs(event);
 
   if (method === 'GET' && (path === '/api' || path === '/api/health')) {
+    const runtime = process.env.VERCEL
+      ? 'vercel'
+      : process.env.NETLIFY
+        ? 'netlify-functions'
+        : 'server';
     return json(
       200,
       {
         status: 'ok',
         version: '2.0.0-netlify',
-        runtime: 'netlify-functions',
+        runtime,
         capabilities: [
           'trucks',
           'drivers',
