@@ -38,7 +38,11 @@ async function handleLocal(method, path, event, origin) {
       {
         status: 'ok',
         version: '2.0.0-netlify',
-        runtime: 'netlify-functions',
+        runtime: process.env.VERCEL
+          ? 'vercel-functions'
+          : process.env.NETLIFY
+            ? 'netlify-functions'
+            : 'server',
         capabilities: [
           'trucks',
           'drivers',

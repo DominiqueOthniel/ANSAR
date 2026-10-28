@@ -34,3 +34,6 @@ backend/*.sqlite
 
 # Raccourcis Windows
 *.lnk
+
+# Vercel CLI
+.vercel

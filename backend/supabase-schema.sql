@@ -275,6 +275,29 @@ CREATE TABLE IF NOT EXISTS app_users (
 );
 CREATE INDEX IF NOT EXISTS idx_app_users_login ON app_users (login);
 
+-- Expéditions colis (manquante dans les premiers schémas ; provoquait le bandeau « Connexion indisponible »)
+CREATE TABLE IF NOT EXISTS parcel_expeditions (
+  id UUID PRIMARY KEY,
+  reference VARCHAR NOT NULL,
+  origine VARCHAR NOT NULL,
+  "origineLat" DECIMAL(10, 7),
+  "origineLng" DECIMAL(10, 7),
+  destination VARCHAR NOT NULL,
+  "destinationLat" DECIMAL(10, 7),
+  "destinationLng" DECIMAL(10, 7),
+  "tracteurId" UUID REFERENCES trucks(id) ON DELETE SET NULL,
+  "remorqueuseId" UUID REFERENCES trucks(id) ON DELETE SET NULL,
+  "chauffeurId" UUID NOT NULL REFERENCES drivers(id),
+  "dateDepart" DATE NOT NULL,
+  "dateArrivee" DATE,
+  statut VARCHAR(20) NOT NULL,
+  lots JSONB NOT NULL DEFAULT '[]'::jsonb,
+  description TEXT,
+  "commissionPct" DECIMAL(5, 2),
+  "dateCreation" DATE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_parcel_expeditions_depart ON parcel_expeditions ("dateDepart" DESC);
+
 -- Expéditions colis : commission (ajout sur bases déjà déployées)
 ALTER TABLE IF EXISTS parcel_expeditions
   ADD COLUMN IF NOT EXISTS "commissionPct" DECIMAL(5, 2);
