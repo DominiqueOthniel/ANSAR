@@ -6,16 +6,16 @@
   "installCommand": "npm install",
   "rewrites": [
     {
-      "source": "/((?!api(?:/|$).*).*)",
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
   "functions": {
     "api/index.js": {
-      "includeFiles": "server/**",
-      "maxDuration": 30
-    },
-    "api/[...path].js": {
       "includeFiles": "server/**",
       "maxDuration": 30
     }
