@@ -41,6 +41,46 @@ function optionalNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeClientShares(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (!Array.isArray(raw)) throw HttpError(400, 'clientShares invalide.');
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const clientNom = item.clientNom != null ? String(item.clientNom).trim() : '';
+    const clientId = item.clientId ? String(item.clientId) : null;
+    if (!clientId && !clientNom) continue;
+    const quantite = optionalNum(item.quantite);
+    if (quantite == null || quantite <= 0) {
+      throw HttpError(400, 'Chaque part client doit avoir une quantité positive.');
+    }
+    const montant = optionalNum(item.montant);
+    if (montant != null && montant < 0) {
+      throw HttpError(400, 'Montant de part client invalide.');
+    }
+    out.push({
+      id: item.id ? String(item.id) : randomUUID(),
+      clientId,
+      clientNom: clientNom || null,
+      quantite,
+      montant: montant != null ? montant : null,
+    });
+  }
+  return out;
+}
+
+function hasAnyClient(body) {
+  const shares = Array.isArray(body.clientShares) ? body.clientShares : null;
+  if (shares && shares.some((s) => s && (s.clientId || (s.clientNom && String(s.clientNom).trim())))) {
+    return true;
+  }
+  return (
+    Boolean(body.clientId?.toString?.().trim?.() || body.clientId) ||
+    Boolean(body.clientNom?.trim())
+  );
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   await query(`
@@ -50,7 +90,8 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS tonnage NUMERIC(12, 2),
       ADD COLUMN IF NOT EXISTS "telChauffeur" VARCHAR(40),
       ADD COLUMN IF NOT EXISTS "prixTrans" NUMERIC(14, 2),
-      ADD COLUMN IF NOT EXISTS paiement NUMERIC(14, 2)
+      ADD COLUMN IF NOT EXISTS paiement NUMERIC(14, 2),
+      ADD COLUMN IF NOT EXISTS "clientShares" JSONB
   `);
   schemaReady = true;
 }
@@ -60,19 +101,23 @@ function validatePayload(body, partial) {
     if (!body.date?.trim()) throw HttpError(400, 'Date requise.');
   }
   if (!partial) {
-    const hasClient =
-      Boolean(body.clientId?.toString?.().trim?.() || body.clientId) ||
-      Boolean(body.clientNom?.trim());
-    if (!hasClient) {
+    if (!hasAnyClient(body)) {
       throw HttpError(400, 'Indiquez un client (fiche ou nom libre).');
     }
-  } else if (body.clientId !== undefined || body.clientNom !== undefined) {
-    const clientId =
-      body.clientId !== undefined ? body.clientId || null : undefined;
-    const clientNom =
-      body.clientNom !== undefined ? body.clientNom?.trim() || '' : undefined;
-    if (clientId !== undefined && clientNom !== undefined) {
-      if (!clientId && !clientNom) {
+  } else if (
+    body.clientId !== undefined ||
+    body.clientNom !== undefined ||
+    body.clientShares !== undefined
+  ) {
+    if (body.clientShares !== undefined) {
+      normalizeClientShares(body.clientShares);
+    }
+    if (
+      body.clientId !== undefined &&
+      body.clientNom !== undefined &&
+      body.clientShares === undefined
+    ) {
+      if (!body.clientId && !body.clientNom?.trim()) {
         throw HttpError(400, 'Indiquez un client (fiche ou nom libre).');
       }
     }
@@ -80,6 +125,9 @@ function validatePayload(body, partial) {
   if (!partial || body.quantite !== undefined) {
     const q = num(body.quantite);
     if (!Number.isFinite(q) || q < 0) throw HttpError(400, 'Quantité invalide.');
+  }
+  if (body.clientShares !== undefined) {
+    normalizeClientShares(body.clientShares);
   }
 }
 
@@ -103,20 +151,22 @@ async function createOperation(body, actor) {
   const id = randomUUID();
   const clientNom = body.clientNom?.trim() || null;
   const q = num(body.quantite);
+  const clientShares = normalizeClientShares(body.clientShares) ?? null;
 
   await query(
     `INSERT INTO ${TABLE}
-      (id, date, "clientId", "clientNom", quantite, unite, qualite, destination,
+      (id, date, "clientId", "clientNom", "clientShares", quantite, unite, qualite, destination,
        "camionNom", "camionImmatriculation", "referenceAtc", "supplierLoadingId",
        qtes, tonnage, "telChauffeur", "prixTrans", paiement, notes, utilisateur,
        "soldeAnterieur", "nombreCamions", "tonnageTotal", "qtfs", "resteAPayer",
        "prixTransport", "totalTransport", "prixVoyage", "totalPalemarr")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
     [
       id,
       dateOnly(body.date),
       body.clientId || null,
       clientNom,
+      clientShares ? JSON.stringify(clientShares) : null,
       q,
       body.unite?.trim() || null,
       body.qualite?.trim() || null,
@@ -161,7 +211,15 @@ async function updateOperation(id, body, actor) {
     body.clientNom !== undefined
       ? body.clientNom?.trim() || null
       : prev.clientNom || null;
-  if (!nextClientId && !nextClientNom) {
+  const nextClientShares =
+    body.clientShares !== undefined
+      ? normalizeClientShares(body.clientShares)
+      : prev.clientShares != null
+        ? prev.clientShares
+        : null;
+  const hasShares =
+    Array.isArray(nextClientShares) && nextClientShares.length > 0;
+  if (!nextClientId && !nextClientNom && !hasShares) {
     throw HttpError(400, 'Indiquez un client (fiche ou nom libre).');
   }
 
@@ -199,29 +257,30 @@ async function updateOperation(id, body, actor) {
       date = COALESCE($2, date),
       "clientId" = $3,
       "clientNom" = $4,
-      quantite = COALESCE($5, quantite),
-      unite = COALESCE($6, unite),
-      qualite = COALESCE($7, qualite),
-      destination = COALESCE($8, destination),
-      "camionNom" = COALESCE($9, "camionNom"),
-      "camionImmatriculation" = COALESCE($10, "camionImmatriculation"),
-      "referenceAtc" = COALESCE($11, "referenceAtc"),
-      "supplierLoadingId" = $12,
-      qtes = $13,
-      tonnage = $14,
-      "telChauffeur" = $15,
-      "prixTrans" = $16,
-      paiement = $17,
-      notes = COALESCE($18, notes),
-      "soldeAnterieur" = COALESCE($19, "soldeAnterieur"),
-      "nombreCamions" = COALESCE($20, "nombreCamions"),
-      "tonnageTotal" = COALESCE($21, "tonnageTotal"),
-      "qtfs" = COALESCE($22, "qtfs"),
-      "resteAPayer" = COALESCE($23, "resteAPayer"),
-      "prixTransport" = COALESCE($24, "prixTransport"),
-      "totalTransport" = COALESCE($25, "totalTransport"),
-      "prixVoyage" = COALESCE($26, "prixVoyage"),
-      "totalPalemarr" = COALESCE($27, "totalPalemarr")
+      "clientShares" = $5::jsonb,
+      quantite = COALESCE($6, quantite),
+      unite = COALESCE($7, unite),
+      qualite = COALESCE($8, qualite),
+      destination = COALESCE($9, destination),
+      "camionNom" = COALESCE($10, "camionNom"),
+      "camionImmatriculation" = COALESCE($11, "camionImmatriculation"),
+      "referenceAtc" = COALESCE($12, "referenceAtc"),
+      "supplierLoadingId" = $13,
+      qtes = $14,
+      tonnage = $15,
+      "telChauffeur" = $16,
+      "prixTrans" = $17,
+      paiement = $18,
+      notes = COALESCE($19, notes),
+      "soldeAnterieur" = COALESCE($20, "soldeAnterieur"),
+      "nombreCamions" = COALESCE($21, "nombreCamions"),
+      "tonnageTotal" = COALESCE($22, "tonnageTotal"),
+      "qtfs" = COALESCE($23, "qtfs"),
+      "resteAPayer" = COALESCE($24, "resteAPayer"),
+      "prixTransport" = COALESCE($25, "prixTransport"),
+      "totalTransport" = COALESCE($26, "totalTransport"),
+      "prixVoyage" = COALESCE($27, "prixVoyage"),
+      "totalPalemarr" = COALESCE($28, "totalPalemarr")
      WHERE id = $1`,
     [
       id,
@@ -230,6 +289,7 @@ async function updateOperation(id, body, actor) {
       body.clientNom !== undefined
         ? body.clientNom?.trim() || null
         : prev.clientNom || null,
+      nextClientShares != null ? JSON.stringify(nextClientShares) : null,
       body.quantite !== undefined ? num(body.quantite) : null,
       body.unite !== undefined ? body.unite?.trim() || null : null,
       body.qualite !== undefined ? body.qualite?.trim() || null : null,

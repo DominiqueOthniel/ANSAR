@@ -3,6 +3,10 @@
  */
 
 import { tjkOperationsApi, type TjkOperationPayload } from '@/lib/api';
+import {
+  formatTjkSharesLabel,
+  type TjkClientShare,
+} from '@/lib/tjk-client-shares';
 
 export const TJK_OPERATIONS_STORAGE_KEY = 'tjk_operations';
 
@@ -11,6 +15,8 @@ export interface TjkOperation {
   date: string;
   clientId?: string;
   clientNom?: string;
+  /** Parts clients (ventilation multi-clients). */
+  clientShares?: TjkClientShare[];
   quantite: number;
   unite?: string;
   qualite?: string;
@@ -50,12 +56,38 @@ export function isRemoteTjkOperations(): boolean {
   return Boolean(import.meta.env.VITE_API_URL?.trim());
 }
 
+function normalizeClientShares(raw: unknown): TjkClientShare[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const shares: TjkClientShare[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const id = row.id != null ? String(row.id) : '';
+    if (!id) continue;
+    shares.push({
+      id,
+      clientId: row.clientId ? String(row.clientId) : undefined,
+      clientNom: row.clientNom != null ? String(row.clientNom) : '',
+      quantite:
+        row.quantite != null && String(row.quantite) !== ''
+          ? parseNum(row.quantite)
+          : undefined,
+      montant:
+        row.montant != null && String(row.montant) !== ''
+          ? parseNum(row.montant)
+          : undefined,
+    });
+  }
+  return shares.length ? shares : undefined;
+}
+
 export function normalizeTjkOperation(r: Record<string, unknown>): TjkOperation {
   return {
     id: String(r.id),
     date: String(r.date).split('T')[0],
     clientId: r.clientId ? String(r.clientId) : undefined,
     clientNom: r.clientNom ? String(r.clientNom) : undefined,
+    clientShares: normalizeClientShares(r.clientShares),
     quantite: parseNum(r.quantite),
     unite: r.unite ? String(r.unite) : undefined,
     qualite: r.qualite ? String(r.qualite) : undefined,
@@ -124,8 +156,10 @@ export function formatTjkCamionLabel(
 }
 
 export function formatTjkClientLabel(
-  op: Pick<TjkOperation, 'clientNom' | 'clientId'>,
+  op: Pick<TjkOperation, 'clientNom' | 'clientId' | 'clientShares'>,
 ): string {
+  const fromShares = formatTjkSharesLabel(op.clientShares);
+  if (fromShares) return fromShares;
   const nom = op.clientNom?.trim();
   if (nom) return nom;
   return '—';
@@ -176,6 +210,7 @@ export async function createTjkOperation(
     date: payload.date,
     clientId: payload.clientId || undefined,
     clientNom: payload.clientNom?.trim() || undefined,
+    clientShares: normalizeClientShares(payload.clientShares),
     quantite: payload.quantite,
     unite: payload.unite?.trim() || undefined,
     qualite: payload.qualite?.trim() || undefined,
@@ -249,6 +284,10 @@ export async function updateTjkOperation(
       payload.clientNom !== undefined
         ? payload.clientNom?.trim() || undefined
         : prev.clientNom,
+    clientShares:
+      payload.clientShares !== undefined
+        ? normalizeClientShares(payload.clientShares)
+        : prev.clientShares,
     quantite: payload.quantite !== undefined ? payload.quantite : prev.quantite,
     unite:
       payload.unite !== undefined ? payload.unite?.trim() || undefined : prev.unite,

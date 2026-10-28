@@ -38,7 +38,7 @@ import { ListSortSelect } from '@/components/ListSortSelect';
 import { ClipboardList, Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, exportToPrintablePDF } from '@/lib/export-utils';
-import { frCollator, parseDateMs, stableSort } from '@/lib/list-sort';
+import { frCollator, formatDateLocal, localTodayIso, parseDateMs, stableSort } from '@/lib/list-sort';
 import { normalizeLoadingEntryMode } from '@/lib/hub-transit';
 import { isLoadingFinished, isLoadingOpenForSelection } from '@/lib/supplier-loadings';
 import {
@@ -63,6 +63,14 @@ import {
   tjkMontantFromPrixTonnage,
   tjkQuantiteToQtesTonnage,
 } from '@/lib/tjk-quantities';
+import {
+  coerceTjkClientShares,
+  newTjkClientShare,
+  sumTjkShareMontant,
+  sumTjkShareQuantite,
+  type TjkClientShare,
+  validateTjkClientShares,
+} from '@/lib/tjk-client-shares';
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Date (récent → ancien)' },
@@ -72,7 +80,7 @@ const SORT_OPTIONS = [
 ] as const;
 
 function todayIso(): string {
-  return new Date().toISOString().split('T')[0];
+  return localTodayIso();
 }
 
 function isTjkLoading(l: SupplierLoading): boolean {
@@ -91,8 +99,8 @@ function ventilatedQtyForLoading(
 
 type FormState = {
   date: string;
-  clientId: string;
-  clientNom: string;
+  /** Parts clients (un bon peut être ventilé sur plusieurs clients). */
+  clientShares: TjkClientShare[];
   tjkDestinationId: string;
   /** Poids unitaire (kg) pour le calcul automatique du tonnage. */
   poidsUniteKg: number;
@@ -114,6 +122,19 @@ type FormState = {
   notes: string;
 };
 
+function syncFormFromShares(prev: FormState, shares: TjkClientShare[]): FormState {
+  const quantite = sumTjkShareQuantite(shares);
+  const montantSum = sumTjkShareMontant(shares);
+  const withQty = withQuantiteSynced(
+    { ...prev, clientShares: shares },
+    quantite > 0 ? quantite : undefined,
+  );
+  if (montantSum > 0) {
+    return { ...withQty, prixTrans: montantSum };
+  }
+  return withQty;
+}
+
 type DestFormState = {
   libelle: string;
   quantiteDefaut: number | undefined;
@@ -131,12 +152,23 @@ const emptyDestForm = (): DestFormState => ({
 function withQuantiteSynced(prev: FormState, quantite: number | undefined): FormState {
   const { qtes, tonnage } = tjkQuantiteToQtesTonnage(quantite, prev.poidsUniteKg);
   const montant = tjkMontantFromPrixTonnage(tonnage, prev.prixTonnage);
+  const prixTrans = montant ?? prev.prixTrans;
+  let clientShares = prev.clientShares;
+  // Une seule part sans montant saisi : aligne le montant auto sur la part.
+  if (
+    clientShares.length === 1 &&
+    (clientShares[0].montant == null || clientShares[0].montant <= 0) &&
+    prixTrans != null
+  ) {
+    clientShares = [{ ...clientShares[0], montant: prixTrans }];
+  }
   return {
     ...prev,
+    clientShares,
     quantite,
     qtes,
     tonnage,
-    prixTrans: montant ?? prev.prixTrans,
+    prixTrans,
   };
 }
 
@@ -145,24 +177,51 @@ function withPrixTonnageSynced(
   prixTonnage: number | undefined,
 ): FormState {
   const montant = tjkMontantFromPrixTonnage(prev.tonnage, prixTonnage);
+  const prixTrans = montant ?? prev.prixTrans;
+  let clientShares = prev.clientShares;
+  if (
+    clientShares.length === 1 &&
+    (clientShares[0].montant == null || clientShares[0].montant <= 0) &&
+    prixTrans != null
+  ) {
+    clientShares = [{ ...clientShares[0], montant: prixTrans }];
+  }
   return {
     ...prev,
+    clientShares,
     prixTonnage,
-    prixTrans: montant ?? prev.prixTrans,
+    prixTrans,
   };
 }
 
 function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormState {
   const poids = dest.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
-  const quantite =
-    prev.quantite != null && prev.quantite > 0
-      ? prev.quantite
-      : dest.quantiteDefaut != null && dest.quantiteDefaut > 0
-        ? dest.quantiteDefaut
-        : prev.quantite;
+  const shareQty = sumTjkShareQuantite(prev.clientShares);
+  let clientShares = prev.clientShares;
+  let quantite =
+    shareQty > 0
+      ? shareQty
+      : prev.quantite != null && prev.quantite > 0
+        ? prev.quantite
+        : dest.quantiteDefaut != null && dest.quantiteDefaut > 0
+          ? dest.quantiteDefaut
+          : prev.quantite;
+  // Si aucune part n’a encore de quantité, préremplit la 1re part avec le défaut destination.
+  if (
+    shareQty <= 0 &&
+    quantite != null &&
+    quantite > 0 &&
+    clientShares.length === 1 &&
+    (clientShares[0].quantite == null || clientShares[0].quantite <= 0)
+  ) {
+    clientShares = [{ ...clientShares[0], quantite }];
+  } else if (shareQty > 0) {
+    quantite = shareQty;
+  }
   const prixTonnage = dest.prixTonnage;
   const base: FormState = {
     ...prev,
+    clientShares,
     tjkDestinationId: dest.id,
     destination: dest.libelle,
     poidsUniteKg: poids,
@@ -171,9 +230,15 @@ function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormSt
   };
   const synced = withQuantiteSynced(base, quantite);
   if (synced.prixTrans == null && (dest.prixTrans != null || dest.prixTransport != null)) {
+    const prixTrans = dest.prixTrans ?? dest.prixTransport;
+    const shares =
+      synced.clientShares.length === 1
+        ? [{ ...synced.clientShares[0], montant: prixTrans }]
+        : synced.clientShares;
     return {
       ...synced,
-      prixTrans: dest.prixTrans ?? dest.prixTransport,
+      clientShares: shares,
+      prixTrans,
     };
   }
   return synced;
@@ -181,8 +246,7 @@ function mergeDestinationIntoForm(dest: TjkDestination, prev: FormState): FormSt
 
 const emptyForm = (): FormState => ({
   date: todayIso(),
-  clientId: '',
-  clientNom: '',
+  clientShares: [newTjkClientShare()],
   tjkDestinationId: '',
   poidsUniteKg: TJK_DEFAULT_UNIT_WEIGHT_KG,
   prixTonnage: undefined,
@@ -277,28 +341,53 @@ export default function Tjk() {
     if (!loadingId) return { ...prev, supplierLoadingId: '' };
     const bon = tjkLoadings.find((l) => l.id === loadingId);
     if (!bon) return { ...prev, supplierLoadingId: loadingId };
-    const used = ventilatedQtyForLoading(loadingId, operations, editing?.id);
-    const reste =
-      bon.quantite != null && bon.quantite > 0
-        ? Math.max(0, bon.quantite - used)
-        : undefined;
-    const quantite =
-      prev.quantite != null && prev.quantite > 0
-        ? prev.quantite
-        : reste != null && reste > 0
-          ? reste
-          : prev.quantite;
-    return withQuantiteSynced(
-      {
-        ...prev,
-        supplierLoadingId: loadingId,
-        referenceAtc: bon.numeroBon?.trim() || prev.referenceAtc,
-        qualite: bon.designation?.trim() || prev.qualite,
-        unite: bon.unite?.trim() || prev.unite,
-        date: bon.dateChargement || prev.date,
-      },
-      quantite,
+    // Ne pas préremplir toute la quantité restante sur le 1er client :
+    // chaque part se saisit distinctement (ventilation multi-clients).
+    const dateBon = bon.dateChargement ? String(bon.dateChargement).split('T')[0] : '';
+    return {
+      ...prev,
+      supplierLoadingId: loadingId,
+      referenceAtc: bon.numeroBon?.trim() || prev.referenceAtc,
+      qualite: bon.designation?.trim() || prev.qualite,
+      unite: bon.unite?.trim() || prev.unite,
+      date: dateBon || prev.date,
+    };
+  };
+
+  const bonResteForForm = useMemo(() => {
+    if (!form.supplierLoadingId) return null;
+    const bon = tjkLoadings.find((l) => l.id === form.supplierLoadingId);
+    if (!bon || bon.quantite == null || bon.quantite <= 0) return null;
+    const used = ventilatedQtyForLoading(
+      form.supplierLoadingId,
+      operations,
+      editing?.id,
     );
+    return Math.max(0, bon.quantite - used);
+  }, [form.supplierLoadingId, tjkLoadings, operations, editing?.id]);
+
+  const patchClientShare = (shareId: string, patch: Partial<TjkClientShare>) => {
+    setForm((prev) => {
+      const shares = prev.clientShares.map((s) =>
+        s.id === shareId ? { ...s, ...patch } : s,
+      );
+      return syncFormFromShares(prev, shares);
+    });
+  };
+
+  const addClientShareRow = () => {
+    setForm((prev) => {
+      const shares = [...prev.clientShares, newTjkClientShare()];
+      return { ...prev, clientShares: shares };
+    });
+  };
+
+  const removeClientShareRow = (shareId: string) => {
+    setForm((prev) => {
+      const next = prev.clientShares.filter((s) => s.id !== shareId);
+      const shares = next.length > 0 ? next : [newTjkClientShare()];
+      return syncFormFromShares(prev, shares);
+    });
   };
 
   const loadAll = async () => {
@@ -392,10 +481,10 @@ export default function Tjk() {
     const matched = findTjkDestinationByLibelle(destinations, op.destination || '');
     const poids = matched?.poidsUniteKg ?? TJK_DEFAULT_UNIT_WEIGHT_KG;
     const prixTonnage = matched?.prixTonnage;
+    const clientShares = coerceTjkClientShares(op);
     const base: FormState = {
       date: op.date.split('T')[0] || op.date,
-      clientId: op.clientId || '',
-      clientNom: op.clientNom || '',
+      clientShares,
       tjkDestinationId: matched?.id || '',
       poidsUniteKg: poids,
       prixTonnage,
@@ -414,7 +503,6 @@ export default function Tjk() {
       paiement: op.paiement ?? op.totalPalemarr,
       notes: op.notes || '',
     };
-    // Recalcule qtes/tonnage/montant si prix tonnage connu.
     setForm(
       prixTonnage != null
         ? withQuantiteSynced(base, op.quantite)
@@ -425,24 +513,16 @@ export default function Tjk() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const q = Number(form.quantite);
     if (!form.date) {
       toast.error('Indiquez la date de l’opération.');
-      return;
-    }
-    const clientNom = form.clientNom.trim();
-    if (!form.clientId && !clientNom) {
-      toast.error('Indiquez un client (fiche ou nom libre).');
-      return;
-    }
-    if (!Number.isFinite(q) || q < 0) {
-      toast.error('Indiquez une quantité valide.');
       return;
     }
     if (!form.destination.trim()) {
       toast.error('Indiquez la destination.');
       return;
     }
+
+    let maxQuantite: number | undefined;
     if (form.supplierLoadingId) {
       const bon = tjkLoadings.find((l) => l.id === form.supplierLoadingId);
       if (bon?.quantite != null && bon.quantite > 0) {
@@ -451,27 +531,48 @@ export default function Tjk() {
           operations,
           editing?.id,
         );
-        if (used + q > bon.quantite + 1e-6) {
-          toast.error(
-            `Quantité trop élevée : reste ${Math.max(0, bon.quantite - used).toLocaleString('fr-FR')} sur ce bon TJK.`,
-          );
-          return;
-        }
+        maxQuantite = Math.max(0, bon.quantite - used);
       }
     }
+
+    const validated = validateTjkClientShares(form.clientShares, { maxQuantite });
+    if (validated.ok === false) {
+      toast.error(validated.message);
+      return;
+    }
+
+    const q = validated.quantite;
+    const { qtes, tonnage } = tjkQuantiteToQtesTonnage(q, form.poidsUniteKg);
+    const autoMontant = tjkMontantFromPrixTonnage(tonnage, form.prixTonnage);
+    const prixTrans =
+      validated.montantSum > 0
+        ? validated.montantSum
+        : form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
+          ? Number(form.prixTrans)
+          : autoMontant ?? null;
+
     if (!form.camionNom.trim() && !form.camionImmatriculation.trim()) {
       toast.warning('Camion non renseigné (nom ou immatriculation recommandé).');
     }
 
-    const selectedClient = clients.find((c) => c.id === form.clientId);
-    const qtesVal =
-      form.qtes != null && Number.isFinite(Number(form.qtes))
-        ? Number(form.qtes)
-        : q;
+    const primary = validated.shares[0];
+    const selectedClient = primary.clientId
+      ? clients.find((c) => c.id === primary.clientId)
+      : undefined;
+    const clientNom =
+      primary.clientNom.trim() || selectedClient?.nom || undefined;
+    const qtesVal = qtes;
     const payload = {
       date: form.date,
-      clientId: form.clientId || null,
-      clientNom: clientNom || selectedClient?.nom || undefined,
+      clientId: primary.clientId || null,
+      clientNom,
+      clientShares: validated.shares.map((s) => ({
+        id: s.id,
+        clientId: s.clientId || null,
+        clientNom: s.clientNom.trim() || undefined,
+        quantite: s.quantite ?? null,
+        montant: s.montant ?? null,
+      })),
       quantite: q,
       unite: form.unite.trim() || undefined,
       qualite: form.qualite.trim() || undefined,
@@ -481,15 +582,9 @@ export default function Tjk() {
       referenceAtc: form.referenceAtc.trim() || undefined,
       supplierLoadingId: form.supplierLoadingId || null,
       qtes: qtesVal,
-      tonnage:
-        form.tonnage != null && Number.isFinite(Number(form.tonnage))
-          ? Number(form.tonnage)
-          : null,
+      tonnage: tonnage != null && Number.isFinite(tonnage) ? tonnage : null,
       telChauffeur: form.telChauffeur.trim() || undefined,
-      prixTrans:
-        form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
-          ? Number(form.prixTrans)
-          : null,
+      prixTrans,
       paiement:
         form.paiement != null && Number.isFinite(Number(form.paiement))
           ? Number(form.paiement)
@@ -497,11 +592,7 @@ export default function Tjk() {
       notes: form.notes.trim() || undefined,
       utilisateur: user?.login || 'system',
       qtfs: qtesVal,
-      // Aligne l’ancien champ prixTransport sur le montant final (un seul montant saisi).
-      prixTransport:
-        form.prixTrans != null && Number.isFinite(Number(form.prixTrans))
-          ? Number(form.prixTrans)
-          : null,
+      prixTransport: prixTrans,
       totalPalemarr:
         form.paiement != null && Number.isFinite(Number(form.paiement))
           ? Number(form.paiement)
@@ -655,7 +746,7 @@ export default function Tjk() {
   const exportColumns = [
     {
       header: 'Date',
-      value: (op: TjkOperation) => new Date(op.date).toLocaleDateString('fr-FR'),
+      value: (op: TjkOperation) => formatDateLocal(op.date) || '',
     },
     { header: 'Client', value: (op: TjkOperation) => formatTjkClientLabel(op) },
     {
@@ -846,54 +937,145 @@ export default function Tjk() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Client *</Label>
-                      <ThirdPartyPicker
-                        options={clients}
-                        value={form.clientId}
-                        onValueChange={(id) => {
-                          const tp = clients.find((c) => c.id === id);
-                          setForm((f) => ({
-                            ...f,
-                            clientId: id,
-                            clientNom: tp?.nom ?? (id ? f.clientNom : ''),
-                          }));
-                        }}
-                        placeholder="Choisir un client…"
-                        searchPlaceholder="Nom, téléphone…"
-                        topChoices={[{ id: '', label: 'Saisie libre (hors fiche)' }]}
-                        orphanLabel={
-                          form.clientNom.trim() && !form.clientId
-                            ? form.clientNom.trim()
-                            : undefined
-                        }
-                      />
-                      <Input
-                        placeholder="Nom client (si hors fiche)"
-                        value={form.clientNom}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            clientNom: e.target.value,
-                          }))
-                        }
-                      />
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Label>Clients *</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addClientShareRow}
+                          disabled={
+                            bonResteForForm != null &&
+                            sumTjkShareQuantite(form.clientShares) >= bonResteForForm - 1e-9
+                          }
+                        >
+                          <Plus className="h-4 w-4 mr-1 shrink-0" />
+                          Ajouter un client
+                        </Button>
+                      </div>
+                      {bonResteForForm != null && (
+                        <p className="text-xs text-muted-foreground">
+                          Reste à ventiler sur ce bon :{' '}
+                          {(
+                            bonResteForForm - sumTjkShareQuantite(form.clientShares)
+                          ).toLocaleString('fr-FR')}
+                          {form.unite ? ` ${form.unite}` : ''}
+                          {' '}(total bon disponible{' '}
+                          {bonResteForForm.toLocaleString('fr-FR')}
+                          {form.unite ? ` ${form.unite}` : ''}).
+                        </p>
+                      )}
+                      <div className="space-y-3">
+                        {form.clientShares.map((share) => (
+                          <div
+                            key={share.id}
+                            className="rounded-md border bg-background p-3 space-y-3"
+                          >
+                            <div className="flex flex-wrap items-end gap-2 justify-between">
+                              <div className="flex-1 min-w-[200px]">
+                                <Label className="text-xs">Client *</Label>
+                                <ThirdPartyPicker
+                                  className="mt-1"
+                                  triggerSize="sm"
+                                  options={clients}
+                                  value={share.clientId ?? ''}
+                                  onValueChange={(id) => {
+                                    const tp = clients.find((c) => c.id === id);
+                                    patchClientShare(share.id, {
+                                      clientId: id || undefined,
+                                      clientNom: tp?.nom ?? (id ? share.clientNom : ''),
+                                    });
+                                  }}
+                                  placeholder="Choisir un client…"
+                                  searchPlaceholder="Nom, téléphone…"
+                                  topChoices={[
+                                    { id: '', label: 'Saisie libre (hors fiche)' },
+                                  ]}
+                                  orphanLabel={
+                                    share.clientNom.trim() && !share.clientId
+                                      ? share.clientNom.trim()
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 text-destructive shrink-0"
+                                onClick={() => removeClientShareRow(share.id)}
+                                title="Retirer"
+                                disabled={form.clientShares.length <= 1}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <Input
+                              placeholder="Nom client (si hors fiche)"
+                              value={share.clientNom}
+                              onChange={(e) =>
+                                patchClientShare(share.id, { clientNom: e.target.value })
+                              }
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs">Quantité *</Label>
+                                <NumberInput
+                                  className="mt-1"
+                                  min={0}
+                                  allowEmpty
+                                  value={share.quantite}
+                                  onChange={(quantite) =>
+                                    patchClientShare(share.id, {
+                                      quantite:
+                                        quantite != null && Number.isFinite(quantite)
+                                          ? quantite
+                                          : undefined,
+                                    })
+                                  }
+                                  placeholder="Ex. 100"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Montant (FCFA)</Label>
+                                <NumberInput
+                                  className="mt-1"
+                                  min={0}
+                                  allowEmpty
+                                  value={share.montant}
+                                  onChange={(montant) =>
+                                    patchClientShare(share.id, {
+                                      montant:
+                                        montant != null && Number.isFinite(montant)
+                                          ? montant
+                                          : undefined,
+                                    })
+                                  }
+                                  placeholder="Optionnel"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="tjk-qty">Quantité *</Label>
-                        <NumberInput
+                        <Label htmlFor="tjk-qty">Quantité totale</Label>
+                        <Input
                           id="tjk-qty"
-                          value={form.quantite}
-                          onChange={(quantite) =>
-                            setForm((f) => withQuantiteSynced(f, quantite))
+                          readOnly
+                          value={
+                            form.quantite != null
+                              ? form.quantite.toLocaleString('fr-FR')
+                              : ''
                           }
-                          min={0}
-                          allowEmpty
-                          placeholder="Ex. 200"
+                          placeholder="Somme des parts clients"
+                          className="bg-muted/40"
                         />
-                        {form.quantite != null && (
+                        {form.quantite != null && form.quantite > 0 && (
                           <p className="text-xs text-muted-foreground mt-1">
                             Qtes {form.qtes?.toLocaleString('fr-FR') ?? '—'} · Tonnage{' '}
                             {form.tonnage != null
@@ -1353,7 +1535,7 @@ export default function Tjk() {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {bon.fournisseurNom || 'Fournisseur'} ·{' '}
-                    {new Date(bon.dateChargement).toLocaleDateString('fr-FR')}
+                    {formatDateLocal(bon.dateChargement) || '—'}
                     {total > 0 && (
                       <>
                         {' '}
@@ -1496,7 +1678,7 @@ export default function Tjk() {
                   sorted.map((op) => (
                     <TableRow key={op.id}>
                       <TableCell className="whitespace-nowrap">
-                        {new Date(op.date).toLocaleDateString('fr-FR')}
+                        {formatDateLocal(op.date) || '—'}
                       </TableCell>
                       <TableCell className="text-right tabular-nums whitespace-nowrap">
                         {op.quantite.toLocaleString('fr-FR')}

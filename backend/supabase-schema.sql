@@ -309,6 +309,7 @@ CREATE TABLE IF NOT EXISTS tjk_operations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tjk_operations_date ON tjk_operations (date DESC, created_at DESC);
+ALTER TABLE tjk_operations ADD COLUMN IF NOT EXISTS "clientShares" JSONB;
 
 -- Registre opérations Camrail (wagons / chargements ferroviaires)
 CREATE TABLE IF NOT EXISTS camrail_operations (
