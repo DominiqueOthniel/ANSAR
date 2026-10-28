@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consommation CPU / RAM / stockage — LCCA SARL / CAMTEL</title>
+  <style>
+    @page { size: A4; margin: 16mm 18mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 11pt;
+      line-height: 1.35;
+      color: #111;
+      background: #fff;
+    }
+    .sheet { max-width: 180mm; margin: 0 auto; }
+    .letterhead {
+      border-bottom: 2px solid #111;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { font-weight: 700; font-size: 13pt; }
+    .meta { font-size: 9.5pt; color: #222; line-height: 1.3; }
+    h1 {
+      font-size: 13.5pt;
+      margin: 0 0 6px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 10.5pt;
+      margin: 0 0 18px;
+    }
+    p { margin: 0 0 10px; text-align: justify; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 11pt;
+    }
+    th, td {
+      border: 1px solid #666;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f0f0f0;
+      font-weight: 700;
+      width: 28%;
+    }
+    .note {
+      font-size: 9.5pt;
+      color: #333;
+      margin-top: 8px;
+    }
+    .footer {
+      margin-top: 22px;
+      font-size: 9pt;
+      border-top: 1px solid #bbb;
+      padding-top: 8px;
+    }
+    .sig {
+      margin-top: 28px;
+      width: 48%;
+      margin-left: auto;
+      text-align: center;
+    }
+    .sig .space { height: 36px; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="letterhead">
+      <div>
+        <div class="brand">LCCA SARL</div>
+        <div class="meta">
+          LIDAF CONSULTING COORPORATION OF AFRICA<br />
+          NIU : M052318293081H · RCCM : RC/DLA/2023/B/3599<br />
+          Douala · Tél. : 695 258 918 / 674 574 133
+        </div>
+      </div>
+      <div class="meta" style="text-align:right">
+        Document à l’attention de<br />
+        <strong>CAMTEL</strong><br />
+        Douala<br />
+        20 octobre 2026
+      </div>
+    </div>
+
+    <h1>Consommation actuelle</h1>
+    <p class="subtitle">
+      Processeur · RAM · Stockage utilisés (mesures du 20 octobre 2026)
+    </p>
+
+    <p>
+      Consommation observée de l’application métier LCCA SARL
+      (stack Docker : Nginx + API Node/NestJS + PostgreSQL 16),
+      pour <strong>une instance</strong> au repos / usage léger.
+    </p>
+
+    <table>
+      <tr>
+        <th>Processeur (CPU)</th>
+        <td>
+          Au repos : &lt; 5&nbsp;% d’un vCPU<br />
+          Pics légers (démarrage / requêtes) : ≈ 30&nbsp;% d’un vCPU (courte durée)
+        </td>
+      </tr>
+      <tr>
+        <th>Mémoire RAM</th>
+        <td>
+          API : ≈ 95–130&nbsp;Mo<br />
+          PostgreSQL : ≈ 35–40&nbsp;Mo<br />
+          Nginx : ≈ 4–5&nbsp;Mo<br />
+          <strong>Total ≈ 140–175&nbsp;Mo</strong>
+        </td>
+      </tr>
+      <tr>
+        <th>Stockage</th>
+        <td>
+          Images Docker (stack complète) : ≈ <strong>1,1&nbsp;Go</strong><br />
+          (API ≈ 588&nbsp;Mo · Front ≈ 77&nbsp;Mo · PostgreSQL ≈ 420&nbsp;Mo)<br />
+          Données métier actuelles (schéma) : ≈ 8&nbsp;Mo
+        </td>
+      </tr>
+    </table>
+
+    <p class="note">
+      Mesures réalisées le 20 octobre 2026. La croissance des données et le nombre
+      d’entreprises hébergées feront évoluer surtout le stockage. Le dimensionnement
+      commercial du VPS reste à la proposition de CAMTEL.
+    </p>
+
+    <div class="footer">
+      LCCA SARL — consommation CPU / RAM / stockage pour instruction d’offre VPS CAMTEL.
+    </div>
+
+    <div class="sig">
+      <div>Pour LCCA SARL</div>
+      <div class="space"></div>
+      <div><strong>Le Gérant</strong></div>
+    </div>
+  </div>
+</body>
+</html>
