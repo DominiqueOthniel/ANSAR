@@ -17,10 +17,35 @@ function headerValue(headers, name) {
   return undefined;
 }
 
+/** Chemin d’origine si Vercel a réécrit /api/* vers /api. */
+function resolveRawUrl(req) {
+  const headers = req.headers || {};
+  const candidates = [
+    req.url,
+    headerValue(headers, 'x-forwarded-uri'),
+    headerValue(headers, 'x-invoke-path'),
+    headerValue(headers, 'x-vercel-forwarded-path'),
+  ].filter(Boolean);
+
+  let best = candidates[0] || '/';
+  for (const c of candidates) {
+    try {
+      const pathOnly = String(c).split('?')[0] || '';
+      if (pathOnly.startsWith('/api/') && pathOnly.length > 4) {
+        best = c;
+        break;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return best;
+}
+
 function toEvent(req) {
   const host = headerValue(req.headers, 'host') || 'localhost';
   const proto = headerValue(req.headers, 'x-forwarded-proto') || 'https';
-  const rawUrl = req.url || '/';
+  const rawUrl = resolveRawUrl(req);
   const url = new URL(rawUrl, `${proto}://${host}`);
 
   let pathname = url.pathname || '/';
@@ -89,4 +114,4 @@ async function vercelHandler(req, res) {
   }
 }
 
-module.exports = { vercelHandler, toEvent };
+module.exports = { vercelHandler, toEvent, resolveRawUrl };
