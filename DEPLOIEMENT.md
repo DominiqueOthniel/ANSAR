@@ -35,7 +35,11 @@ Build local : `npm run build:vercel`.
 
 ### Si `/login` renvoie la page Vercel 404 NOT_FOUND
 
-Cause habituelle : SPA React Router sans rewrite vers `index.html` (racine `/` OK, deep links `/login` KO). Le fichier `vercel.json` de ce repo corrige ça (`rewrites` → `/index.html`). Après merge sur la branche branchée au projet Vercel : Redeploy.
+Cause habituelle : SPA React Router sans rewrite vers `index.html` (racine `/` OK, deep links `/login` KO). Le fichier `vercel.json` de ce repo corrige ça (`rewrites` → `/index.html`, **hors** `/api`). Après merge sur la branche branchée au projet Vercel : Redeploy.
+
+### Si la page `/login` s’affiche mais la connexion échoue
+
+Souvent `/api/*` est avalé par le rewrite SPA (réponse HTML au lieu de JSON). Vérifier `https://TON-PROJET.vercel.app/api/health` → JSON avec `"runtime":"vercel"`. Si c’est du HTML, le rewrite doit exclure `/api` (déjà le cas dans `vercel.json`). Vérifier aussi les variables `DATABASE_URL` et `FRONTEND_URL` sur le projet Vercel.
 
 ### Deux URLs `*.vercel.app` (ex. ansar-roan et sia-ansar)
 
